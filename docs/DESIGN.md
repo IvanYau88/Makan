@@ -85,7 +85,6 @@ Independent steps run in parallel and a merge step combines the results.
 
 This is the complete path for a solo user.
 It needs no account, and it runs as a session with a single participant whose link is never shared.
-Group consensus is a separate workflow that builds on the same graph engine, tools, and schema.
 
 1. Classify the request with a small model.
 2. Fan out in parallel: reviews, menus, hours, and distance.
@@ -93,6 +92,9 @@ Group consensus is a separate workflow that builds on the same graph engine, too
 4. Rank, then explain the pick.
 
 ### Group consensus
+
+This is a separate workflow from single-user research, not that workflow run once per participant.
+It shares the graph engine, tools, and schema, and the research step of the single-user workflow supplies the candidate options that the steps below filter and score.
 
 1. Collect each participant's hard constraints and preferences.
 2. Apply hard constraints first, such as allergies, dietary needs, and budget ceilings.
