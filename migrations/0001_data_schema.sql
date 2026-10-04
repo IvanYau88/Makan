@@ -165,22 +165,21 @@ create policy profiles_own on profiles
 create policy sessions_own on sessions
   for all using (user_id = makan_current_user_id()) with check (user_id = makan_current_user_id());
 
--- Participants are visible to the person themselves and to the owner of the session.
--- A person adds themselves, and the owner adds guests, who have no user id.
--- This reads `sessions` only, and the `sessions` policy never reads `participants`, so
--- the two policies cannot recurse into each other.
-create policy participants_own on participants
+-- A person reads their own participant row, and the owner of a session reads and manages
+-- every participant in it. Only the owner adds participants, either themself or a guest
+-- with no user id. Joining a session through its link is a backend operation that checks
+-- the link token, so no client policy lets someone insert themself into a session.
+-- These read `sessions` only, and the `sessions` policy never reads `participants`, so
+-- the policies cannot recurse into each other.
+create policy participants_read_self on participants
+  for select using (user_id = makan_current_user_id());
+
+create policy participants_owner on participants
   for all
-  using (
-    user_id = makan_current_user_id()
-    or session_id in (select id from sessions where user_id = makan_current_user_id())
-  )
+  using (session_id in (select id from sessions where user_id = makan_current_user_id()))
   with check (
-    user_id = makan_current_user_id()
-    or (
-      user_id is null
-      and session_id in (select id from sessions where user_id = makan_current_user_id())
-    )
+    session_id in (select id from sessions where user_id = makan_current_user_id())
+    and (user_id is null or user_id = makan_current_user_id())
   );
 
 create policy memory_facts_own on memory_facts

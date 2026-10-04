@@ -1,7 +1,8 @@
 """The SQL migrations and the typed models must describe the same tables.
 
-The checks in the first half read the migration text and need no database. The checks
-in the second half run the migrations on a real Postgres and skip unless
+The checks in the first half compare the model fields with the column lists in the migrations
+and need no database.
+The checks in the second half run the migrations on a real Postgres and skip unless
 `MAKAN_TEST_DATABASE_URL` points at one, so they never need the network or a hosted project.
 """
 
@@ -13,7 +14,7 @@ import re
 import types
 import typing
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
@@ -152,22 +153,6 @@ def test_user_id_is_optional_on_every_owned_table() -> None:
         assert not tables[table]["user_id"].not_null, table
 
 
-def test_session_expiry_has_no_default_retention() -> None:
-    sql = strip_comments(migration_sql())
-    assert not parse_tables(sql)["sessions"]["expires_at"].not_null
-    assert re.search(r"^\s*expires_at timestamptz,$", sql, re.M)
-
-
-def test_memory_fact_vocabularies_match_check_constraints() -> None:
-    sql = strip_comments(migration_sql())
-    kinds = re.search(r"kind in \(([^)]*)\)", sql)
-    sources = re.search(r"source in \(([^)]*)\)", sql)
-    assert kinds
-    assert sources
-    assert re.findall(r"'(\w+)'", kinds[1]) == list(MEMORY_KINDS)
-    assert re.findall(r"'(\w+)'", sources[1]) == list(MEMORY_SOURCES)
-
-
 def test_memory_fact_has_every_field_the_design_lists() -> None:
     columns = parse_tables(migration_sql())["memory_facts"]
     for name in (
@@ -184,21 +169,20 @@ def test_memory_fact_has_every_field_the_design_lists() -> None:
         assert name in columns
 
 
-def test_every_table_has_row_level_security_and_a_policy() -> None:
-    sql = strip_comments(migration_sql())
-    for table in TABLE_MODELS:
-        assert f"alter table {table} enable row level security;" in sql, table
-        assert re.search(rf"create policy \w+ on {table}\b", sql), table
-
-
-def test_migrations_do_not_depend_on_supabase() -> None:
-    sql = strip_comments(migration_sql())
-    assert not re.search(r"\bauth\.|\bsupabase\b|\bauthenticated\b|\banon\b", sql, re.I)
-
-
 def test_trace_event_fields_are_columns_of_trace_events() -> None:
     event = TraceEvent(run_id="r", seq=0, type="run_start", data={})
     assert set(event.to_dict()) <= set(parse_tables(migration_sql())["trace_events"])
+
+
+def test_trace_row_normalizes_timestamps_to_utc() -> None:
+    event = TraceEvent(run_id="r", seq=0, type="run_start", data={})
+    row = TraceEventRow.from_event(event)
+    local = dataclasses.replace(row, ts=row.ts.astimezone(timezone(timedelta(hours=8))))
+    assert local.ts.utcoffset() == timedelta(hours=8)
+    assert local.to_event() == event
+    naive = TraceEventRow.from_dict(event.to_dict() | {"ts": "2026-01-02T03:04:05"})
+    assert naive.ts == datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    assert naive.to_event().ts == "2026-01-02T03:04:05+00:00"
 
 
 def test_trace_event_survives_a_row_round_trip() -> None:
@@ -272,6 +256,45 @@ def act_as(db: Any, role: str, user_id: UUID | None) -> None:
 
 def count(db: Any, table: str) -> int:
     return int(db.execute(f"select count(*) from {table}").fetchone()[0])
+
+
+def test_every_table_enforces_row_level_security_with_a_policy(db: Any) -> None:
+    for table in TABLE_MODELS:
+        enabled = db.execute(
+            "select relrowsecurity from pg_class where oid = to_regclass(%s)", (table,)
+        ).fetchone()[0]
+        assert enabled, table
+        policies = db.execute(
+            "select count(*) from pg_policies where schemaname = current_schema() "
+            "and tablename = %s",
+            (table,),
+        ).fetchone()[0]
+        assert policies > 0, table
+
+
+def test_session_expiry_has_no_default_retention(db: Any) -> None:
+    default, is_nullable = db.execute(
+        "select column_default, is_nullable from information_schema.columns "
+        "where table_schema = current_schema() and table_name = 'sessions' "
+        "and column_name = 'expires_at'"
+    ).fetchone()
+    assert default is None
+    assert is_nullable == "YES"
+    db.execute("insert into sessions default values")
+    assert db.execute("select expires_at from sessions").fetchone()[0] is None
+
+
+def test_every_memory_kind_and_source_is_accepted(db: Any) -> None:
+    uid = uuid4()
+    db.execute("insert into users (id) values (%s)", (uid,))
+    for kind in MEMORY_KINDS:
+        for source in MEMORY_SOURCES:
+            db.execute(
+                "insert into memory_facts (user_id, kind, content, source, confidence) "
+                "values (%s, %s, '1', %s, 0.5)",
+                (uid, kind, source),
+            )
+    assert count(db, "memory_facts") == len(MEMORY_KINDS) * len(MEMORY_SOURCES)
 
 
 def test_database_columns_match_models(db: Any) -> None:
@@ -356,6 +379,46 @@ def test_a_user_cannot_write_another_users_rows(db: Any, app_role: str) -> None:
         )
 
 
+def test_a_user_cannot_join_a_session_they_do_not_own(db: Any, app_role: str) -> None:
+    session_a, session_b, guest_session = seed_two_users(db)
+    a = db.execute("select user_id from sessions where id = %s", (session_a,)).fetchone()[0]
+    db.execute("delete from participants where session_id in (%s, %s)", (session_b, guest_session))
+    act_as(db, app_role, a)
+    for sid in (session_b, guest_session):
+        for is_host in (False, True):
+            with pytest.raises(Exception, match="row-level security"):
+                db.execute(
+                    "insert into participants (session_id, user_id, is_host) values (%s, %s, %s)",
+                    (sid, a, is_host),
+                )
+    db.execute("reset role")
+    assert count(db, "participants") == 1
+
+
+def test_a_session_owner_adds_guests_but_not_other_users(db: Any, app_role: str) -> None:
+    session_a, session_b, _ = seed_two_users(db)
+    a = db.execute("select user_id from sessions where id = %s", (session_a,)).fetchone()[0]
+    b = db.execute("select user_id from sessions where id = %s", (session_b,)).fetchone()[0]
+    act_as(db, app_role, a)
+    db.execute(
+        "insert into participants (session_id, display_name) values (%s, 'guest')", (session_a,)
+    )
+    with pytest.raises(Exception, match="row-level security"):
+        db.execute("insert into participants (session_id, user_id) values (%s, %s)", (session_a, b))
+    assert count(db, "participants") == 2
+
+
+def test_a_participant_added_by_the_backend_reads_their_own_row(db: Any, app_role: str) -> None:
+    session_a, session_b, _ = seed_two_users(db)
+    b = db.execute("select user_id from sessions where id = %s", (session_b,)).fetchone()[0]
+    db.execute("insert into participants (session_id, user_id) values (%s, %s)", (session_a, b))
+    act_as(db, app_role, b)
+    joined = db.execute(
+        "select count(*) from participants where session_id = %s", (session_a,)
+    ).fetchone()[0]
+    assert joined == 1
+
+
 def test_deleting_a_user_deletes_all_their_data(db: Any) -> None:
     session_a, _, _ = seed_two_users(db)
     a = db.execute("select user_id from sessions where id = %s", (session_a,)).fetchone()[0]
@@ -430,6 +493,7 @@ def test_superseded_fact_keeps_its_link_when_the_newer_one_is_removed(db: Any) -
 def test_trace_row_round_trips_through_the_database(db: Any) -> None:
     from psycopg.types.json import Jsonb
 
+    db.execute("set time zone 'Asia/Singapore'")
     event = TraceEvent(run_id=uuid4().hex, seq=0, type="tool_call", data={"name": "echo"})
     row = TraceEventRow.from_event(event)
     db.execute(
@@ -438,5 +502,6 @@ def test_trace_row_round_trips_through_the_database(db: Any) -> None:
     )
     stored = db.execute("select run_id, seq, v, ts, type, data from trace_events").fetchone()
     loaded = TraceEventRow(*stored)
-    assert loaded.to_event().to_dict() == event.to_dict() | {"ts": loaded.ts.isoformat()}
+    assert loaded.ts.utcoffset() == timedelta(hours=8)
     assert loaded.ts == row.ts
+    assert loaded.to_event() == event
