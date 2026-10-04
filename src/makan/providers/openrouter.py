@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -78,13 +79,19 @@ def _wire_message(message: Message) -> dict[str, Any]:
     return wire
 
 
+def _arguments(function: dict[str, Any]) -> str:
+    # `ToolCall.arguments` is always JSON text; some upstreams send an object or null instead.
+    arguments = function.get("arguments")
+    return arguments if isinstance(arguments, str) else json.dumps(arguments)
+
+
 def _parse(data: dict[str, Any]) -> Completion:
     # OpenRouter can answer 200 with an error object, for example when an upstream model fails.
     if "error" in data:
         raise ProviderError(f"OpenRouter error: {str(data['error'])[:300]}")
     raw = data["choices"][0]["message"]
     calls = tuple(
-        ToolCall(id=c["id"], name=c["function"]["name"], arguments=c["function"]["arguments"])
+        ToolCall(id=c["id"], name=c["function"]["name"], arguments=_arguments(c["function"]))
         for c in raw.get("tool_calls") or []
     )
     usage = data.get("usage") or {}

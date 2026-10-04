@@ -91,6 +91,7 @@ Known failure modes to design against from the start:
   The model name is a per-call argument, so a cheap model and a larger model can share one provider.
 - Messages, tool calls, and usage are provider-neutral dataclasses in `makan.providers.base`.
   Tool call arguments stay as the raw JSON text the model wrote, and the loop parses them, so bad JSON is a tool error the model can see.
+  An adapter that receives arguments as an object or null instead of text re-serializes them with `json.dumps`, so the loop only ever sees text.
 - `OpenRouterProvider` talks to the chat-completions endpoint with `httpx`.
   The API key is passed in by the caller, who reads it from `OPENROUTER_API_KEY`.
   HTTP errors, error bodies returned with a 200, and malformed responses all become `ProviderError`.

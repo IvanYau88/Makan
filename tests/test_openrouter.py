@@ -6,7 +6,10 @@ from typing import Any
 import httpx
 import pytest
 
+from makan.loop import run
 from makan.providers import Message, OpenRouterProvider, ProviderError, ToolCall, ToolSpec, Usage
+from makan.trace import ListSink
+from tests.helpers import ECHO
 
 TOOLS = [ToolSpec("echo", "Echo.", {"type": "object", "properties": {}})]
 
@@ -80,6 +83,47 @@ def test_tool_calls_are_parsed() -> None:
     assert completion.message.tool_calls == (ToolCall("c9", "echo", '{"text": "x"}'),)
     assert completion.message.content is None
     assert completion.usage == Usage()
+
+
+@pytest.mark.parametrize(
+    ("sent", "expected"),
+    [({"text": "x"}, '{"text": "x"}'), (None, "null"), ([1], "[1]")],
+)
+def test_non_string_tool_arguments_are_reserialized_as_json_text(sent: Any, expected: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        message = {
+            "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "echo", "arguments": sent}}
+            ]
+        }
+        return httpx.Response(200, json={"choices": [{"message": message}]})
+
+    completion = provider_with(handler).complete(
+        model="m", messages=[Message("user", "go")], tools=TOOLS
+    )
+    assert completion.message.tool_calls == (ToolCall("c1", "echo", expected),)
+
+
+@pytest.mark.parametrize("sent", [None, [1], "not json"])
+def test_malformed_finish_arguments_from_the_provider_do_not_crash_the_run(
+    sent: Any, sink: ListSink
+) -> None:
+    replies = iter(
+        [
+            {"id": "c1", "function": {"name": "finish", "arguments": sent}},
+            {"id": "c2", "function": {"name": "finish", "arguments": '{"answer": "ok"}'}},
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        message = {"tool_calls": [next(replies)]}
+        return httpx.Response(200, json={"choices": [{"message": message}]})
+
+    result = run("hungry", provider=provider_with(handler), model="m", tools=(ECHO,), sink=sink)
+
+    assert (result.status, result.answer) == ("finished", "ok")
+    assert [e.data["ok"] for e in sink.events if e.type == "tool_result"][0] is False
+    assert sink.events[-1].type == "run_end"
 
 
 def test_tools_are_omitted_when_there_are_none() -> None:
