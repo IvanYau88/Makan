@@ -32,7 +32,7 @@ from typing import Any, Literal
 
 from makan.providers.base import Message, Provider, ProviderError, ToolCall, ToolSpec, Usage
 from makan.tools import Tool
-from makan.trace import NullSink, TraceEvent, TraceSink
+from makan.trace import Emitter, NullSink, TraceSink
 
 Status = Literal["finished", "max_iterations", "budget_exhausted", "provider_error"]
 
@@ -79,7 +79,7 @@ def run(
     registry = _registry(tools)
     specs = [t.spec() for t in tools] + [FINISH]
     run_id = uuid.uuid4().hex
-    emitter = _Emitter(run_id, sink or NullSink())
+    emitter = Emitter(run_id, sink or NullSink())
 
     messages: list[Message] = []
     if system_prompt:
@@ -163,7 +163,7 @@ def _handle_call(
     tool_call: ToolCall,
     registry: dict[str, Tool],
     messages: list[Message],
-    emit: _Emitter,
+    emit: Emitter,
     iteration: int,
 ) -> str | None:
     """Run one tool call, trace it, and answer the model. Return the answer if it was `finish`."""
@@ -244,14 +244,3 @@ def _run_tool(registry: dict[str, Tool], tool_call: ToolCall) -> tuple[bool, str
 
 def _ms(started: float) -> int:
     return round((time.perf_counter() - started) * 1000)
-
-
-class _Emitter:
-    def __init__(self, run_id: str, sink: TraceSink) -> None:
-        self._run_id = run_id
-        self._sink = sink
-        self._seq = 0
-
-    def __call__(self, type: str, **data: Any) -> None:
-        self._seq += 1
-        self._sink.emit(TraceEvent(self._run_id, self._seq, type, data))

@@ -2,7 +2,7 @@
 
 Every event is `{"v", "run_id", "seq", "ts", "type", "data"}`, written as one JSON line.
 `seq` orders events within a run. The `data` payload depends on `type` and is documented
-next to the code that emits it, in `makan.loop`.
+next to the code that emits it, in `makan.loop` and `makan.graph`.
 """
 
 from __future__ import annotations
@@ -40,6 +40,19 @@ class TraceEvent:
 
 class TraceSink(Protocol):
     def emit(self, event: TraceEvent) -> None: ...
+
+
+class Emitter:
+    """Numbers the events of one run and sends them to a sink. Call it with a type and data."""
+
+    def __init__(self, run_id: str, sink: TraceSink) -> None:
+        self._run_id = run_id
+        self._sink = sink
+        self._seq = 0
+
+    def __call__(self, type: str, **data: Any) -> None:
+        self._seq += 1
+        self._sink.emit(TraceEvent(self._run_id, self._seq, type, data))
 
 
 class NullSink:

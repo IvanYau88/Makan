@@ -1,6 +1,7 @@
 import pytest
 
 from makan.config import Config, ConfigError
+from makan.graph import GraphLimits
 from makan.loop import Limits
 
 
@@ -54,3 +55,21 @@ def test_places_settings_have_defaults_and_overrides() -> None:
 def test_a_bad_cache_ttl_is_rejected() -> None:
     with pytest.raises(ConfigError, match="MAKAN_PLACES_CACHE_TTL_SECONDS"):
         Config.from_env({"MAKAN_MODEL": "m", "MAKAN_PLACES_CACHE_TTL_SECONDS": "soon"})
+
+
+def test_graph_limits_have_defaults_and_overrides() -> None:
+    assert Config.from_env({"MAKAN_MODEL": "m"}).graph_limits == GraphLimits(4, 30.0)
+
+    config = Config.from_env(
+        {
+            "MAKAN_MODEL": "m",
+            "MAKAN_GRAPH_MAX_CONCURRENCY": "2",
+            "MAKAN_GRAPH_STEP_TIMEOUT_SECONDS": "90",
+        }
+    )
+    assert config.graph_limits == GraphLimits(max_concurrency=2, step_timeout_s=90.0)
+
+
+def test_a_bad_graph_limit_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="MAKAN_GRAPH_STEP_TIMEOUT_SECONDS"):
+        Config.from_env({"MAKAN_MODEL": "m", "MAKAN_GRAPH_STEP_TIMEOUT_SECONDS": "0"})

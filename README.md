@@ -6,7 +6,7 @@ It learns your taste and picks a spot that suits you, or that your whole group a
 
 > Work in progress.
 > The design is written down in [docs/DESIGN.md](docs/DESIGN.md).
-> Only the agent loop, the provider adapter, trace events, the nearby places tool, and the data schema exist so far, and there is no app to run yet.
+> Only the agent loop, the provider adapter, trace events, the nearby places tool, the data schema, and the graph workflow engine exist so far, and there is no app to run yet.
 
 ## What it does
 
@@ -76,6 +76,6 @@ They create and drop their own schema, so a throwaway database is enough.
 ## Status
 
 The design is in place and the harness is being built component by component.
-The core loop, the OpenRouter provider adapter with a fake provider for tests, trace events, and the data schema are built.
+The core loop, the OpenRouter provider adapter with a fake provider for tests, trace events, the data schema, and the graph workflow engine are built.
 The `search_nearby_places` tool is built too, backed by free Overture Maps data behind a provider interface and an in-memory cache.
 Run instructions arrive with the first runnable version.
