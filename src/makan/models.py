@@ -1,9 +1,9 @@
 """Typed models that mirror the tables in `migrations/`, one dataclass per table.
 
 Field names are column names. A column that allows null is `... | None`, and
-`tests/test_schema.py` fails if a model and a migration drift apart. The models hold
-rows and carry no behavior beyond converting trace events, so memory rules such as
-decay and superseding belong to the memory component, not here.
+`tests/test_schema.py` fails against a live Postgres if a model and the migrated tables
+drift apart. The models hold rows and carry no behavior beyond converting trace events,
+so memory rules such as decay and superseding belong to the memory component, not here.
 """
 
 from __future__ import annotations

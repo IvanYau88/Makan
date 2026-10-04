@@ -120,7 +120,7 @@ This keeps the open question of a local database versus a hosted Supabase projec
 Supabase can run the same files through its own migration tooling.
 
 - Tables are `users`, `profiles`, `sessions`, `participants`, `memory_facts`, and `trace_events`.
-  `makan.models` has one frozen dataclass per table, and `tests/test_schema.py` fails if a model and a migration drift apart.
+  `makan.models` has one frozen dataclass per table, and on a live Postgres `tests/test_schema.py` fails if a model and the migrated tables drift apart.
 - Every request is a session, and a solo request is a session with one participant, the host, whose link is never shared.
   There is no solo flag.
   A session is solo until the owner sets `shared_at`, which is when the link is first shared, and the schema has no special case for it.
