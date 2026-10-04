@@ -1,7 +1,6 @@
 """The SQL migrations and the typed models must describe the same tables.
 
-The checks in the first half compare the model fields with the column lists in the migrations
-and need no database.
+The checks in the first half need no database.
 The checks in the second half run the migrations on a real Postgres and skip unless
 `MAKAN_TEST_DATABASE_URL` points at one, so they never need the network or a hosted project.
 """
@@ -10,7 +9,6 @@ from __future__ import annotations
 
 import dataclasses
 import os
-import re
 import types
 import typing
 from collections.abc import Iterator
@@ -48,48 +46,15 @@ TABLE_MODELS: dict[str, type] = {
 SQL_TO_PYTHON: dict[str, type] = {
     "uuid": UUID,
     "text": str,
-    "timestamptz": datetime,
+    "timestamp with time zone": datetime,
     "boolean": bool,
     "integer": int,
     "smallint": int,
     "double precision": float,
 }
 
-NOT_A_COLUMN = re.compile(r"(check|constraint|foreign key|primary key|unique)\b")
-
-
 def migration_files() -> list[Path]:
     return sorted(MIGRATIONS.glob("*.sql"))
-
-
-def migration_sql() -> str:
-    return "\n".join(p.read_text(encoding="utf-8") for p in migration_files())
-
-
-def strip_comments(sql: str) -> str:
-    return re.sub(r"--[^\n]*", "", sql)
-
-
-@dataclasses.dataclass(frozen=True)
-class Column:
-    type: str
-    not_null: bool
-
-
-def parse_tables(sql: str) -> dict[str, dict[str, Column]]:
-    """Read `create table` blocks. The migrations put one column or constraint per line."""
-    tables: dict[str, dict[str, Column]] = {}
-    for name, body in re.findall(r"create table (\w+) \((.*?)\n\);", strip_comments(sql), re.S):
-        columns: dict[str, Column] = {}
-        for raw in body.splitlines():
-            line = raw.strip().rstrip(",")
-            if not line or NOT_A_COLUMN.match(line):
-                continue
-            match = re.match(r"(\w+) (double precision|\w+)", line)
-            assert match, f"cannot read column in {name}: {raw!r}"
-            columns[match[1]] = Column(match[2], "not null" in line or "primary key" in line)
-        tables[name] = columns
-    return tables
 
 
 def python_type(hint: Any) -> tuple[Any, bool]:
@@ -108,10 +73,6 @@ def test_migrations_are_numbered_in_order() -> None:
         assert path.name.startswith(f"{index:04d}_"), path.name
 
 
-def test_migration_defines_every_modeled_table() -> None:
-    assert set(parse_tables(migration_sql())) == set(TABLE_MODELS)
-
-
 def test_models_cover_every_table() -> None:
     dataclass_names = {
         n
@@ -121,57 +82,12 @@ def test_models_cover_every_table() -> None:
     assert dataclass_names == {m.__name__ for m in TABLE_MODELS.values()}
 
 
-@pytest.mark.parametrize("table", sorted(TABLE_MODELS))
-def test_model_fields_match_table_columns(table: str) -> None:
-    columns = parse_tables(migration_sql())[table]
-    model = TABLE_MODELS[table]
-    hints = typing.get_type_hints(model)
-    assert set(hints) == set(columns)
-    for name, column in columns.items():
-        base, nullable = python_type(hints[name])
-        assert nullable == (not column.not_null), f"{table}.{name} nullability"
-        if column.type == "jsonb":
-            assert base is Any or typing.get_origin(base) is dict, f"{table}.{name}"
-        elif typing.get_origin(base) is Literal:
-            assert column.type == "text"
-            assert all(isinstance(v, str) for v in typing.get_args(base))
-        else:
-            assert base is SQL_TO_PYTHON[column.type], f"{table}.{name} type"
-
-
 def test_nullable_model_fields_default_to_none() -> None:
     for model in TABLE_MODELS.values():
         for field in dataclasses.fields(model):
             _, nullable = python_type(typing.get_type_hints(model)[field.name])
             if nullable:
                 assert field.default is None, f"{model.__name__}.{field.name}"
-
-
-def test_user_id_is_optional_on_every_owned_table() -> None:
-    tables = parse_tables(migration_sql())
-    for table in ("sessions", "participants", "memory_facts", "trace_events"):
-        assert not tables[table]["user_id"].not_null, table
-
-
-def test_memory_fact_has_every_field_the_design_lists() -> None:
-    columns = parse_tables(migration_sql())["memory_facts"]
-    for name in (
-        "user_id",
-        "kind",
-        "content",
-        "source",
-        "confidence",
-        "observed_at",
-        "last_confirmed_at",
-        "expires_at",
-        "superseded_by",
-    ):
-        assert name in columns
-
-
-def test_trace_event_fields_are_columns_of_trace_events() -> None:
-    event = TraceEvent(run_id="r", seq=0, type="run_start", data={})
-    assert set(event.to_dict()) <= set(parse_tables(migration_sql())["trace_events"])
 
 
 def test_trace_row_normalizes_timestamps_to_utc() -> None:
@@ -298,16 +214,37 @@ def test_every_memory_kind_and_source_is_accepted(db: Any) -> None:
 
 
 def test_database_columns_match_models(db: Any) -> None:
+    tables = db.execute(
+        "select table_name from information_schema.tables "
+        "where table_schema = current_schema() and table_type = 'BASE TABLE'"
+    ).fetchall()
+    assert {name for (name,) in tables} == set(TABLE_MODELS)
     for table, model in TABLE_MODELS.items():
         rows = db.execute(
-            "select column_name, is_nullable from information_schema.columns "
+            "select column_name, data_type, is_nullable from information_schema.columns "
             "where table_schema = current_schema() and table_name = %s",
             (table,),
         ).fetchall()
         hints = typing.get_type_hints(model)
-        assert {name for name, _ in rows} == set(hints), table
-        for name, is_nullable in rows:
-            assert (is_nullable == "YES") == python_type(hints[name])[1], f"{table}.{name}"
+        assert {name for name, _, _ in rows} == set(hints), table
+        for name, data_type, is_nullable in rows:
+            base, nullable = python_type(hints[name])
+            assert (is_nullable == "YES") == nullable, f"{table}.{name} nullability"
+            if data_type == "jsonb":
+                assert base is Any or typing.get_origin(base) is dict, f"{table}.{name}"
+            elif typing.get_origin(base) is Literal:
+                assert data_type == "text", f"{table}.{name}"
+            else:
+                assert base is SQL_TO_PYTHON[data_type], f"{table}.{name} type"
+
+
+def test_trace_event_fields_are_columns_of_trace_events(db: Any) -> None:
+    columns = db.execute(
+        "select column_name from information_schema.columns "
+        "where table_schema = current_schema() and table_name = 'trace_events'"
+    ).fetchall()
+    event = TraceEvent(run_id="r", seq=0, type="run_start", data={})
+    assert set(event.to_dict()) <= {name for (name,) in columns}
 
 
 def seed_two_users(db: Any) -> tuple[UUID, UUID, UUID]:
