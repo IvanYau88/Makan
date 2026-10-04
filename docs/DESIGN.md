@@ -65,7 +65,7 @@ Known failure modes to design against from the start:
 ### Core loop decisions
 
 - The loop is synchronous and lives in one module, `makan.loop`, as a single `run` function.
-  Runs are independent, so the graph engine can fan out by running several in threads, and async can be added at the channel edge without changing the loop.
+  Runs are independent, so the graph engine fans out by running several in threads, and async stays at the edges without changing the loop.
 - A run asks the model, executes the tool calls it returns in order, appends each result, and repeats.
   Each model call is one iteration.
 - Finishing is an explicit `finish(answer)` tool that the loop adds to every tool list.
@@ -106,8 +106,10 @@ Known failure modes to design against from the start:
 
 - One event is one JSON object: `v`, `run_id`, `seq`, `ts`, `type`, and `data`.
   `v` is the schema version, `seq` orders events within a run, and `ts` is UTC ISO 8601.
-- Event types are `run_start`, `model_request`, `model_response`, `tool_call`, `tool_result`, `nudge`, `error`, and `run_end`.
+- Core loop event types are `run_start`, `model_request`, `model_response`, `tool_call`, `tool_result`, `nudge`, `error`, and `run_end`.
   The payload of each is documented in the docstring of `makan.loop`.
+  Graph runs add `graph_start`, `step_start`, `step_finish`, `step_error`, and `graph_end`, documented in `makan.graph`.
+  `makan.trace.Emitter` numbers the events of one run for both.
 - Events go to a `TraceSink`.
   `ListSink` keeps them in memory for tests and `JsonlSink` appends one line per event, so a crashed run still leaves a readable trace.
   The trace viewer will read the JSON Lines files through `read_jsonl`.
@@ -246,6 +248,51 @@ Rules:
 
 Workflows are explicit graphs of steps.
 Independent steps run in parallel and a merge step combines the results.
+
+### Graph engine decisions
+
+- The engine is one module, `makan.graph`, and `makan.steps` holds two ready-made steps.
+  A `Graph` is a named list of `Step`s, each with a name, a function, the steps it comes `after`, and an optional timeout.
+  The graph is validated when it is built: it needs a step, names are unique, every `after` names a step, and there are no cycles.
+  It is plain data, so a workflow defines its graph once and runs it for each request with `run_graph(graph, input)`.
+- A step starts when every step it comes after has ended, so independent steps run in parallel with no separate fan-out construct.
+  A merge step is a step that comes after all the branches.
+  There are no conditional edges or loops yet, because the planned workflows do not need them.
+- The engine is asyncio, with each step function run in a worker thread.
+  The tools and the core loop are synchronous, so a step can call either one unchanged, and `run_graph_async` lets a FastAPI handler await a run.
+  A threaded fan-out of core loop runs works because each run has its own state.
+  An agent step needs a provider that is safe to call from several threads when more than one runs at a time, and `FakeProvider` is not.
+- A step receives a `StepContext` with the graph input, the `StepResult` of each step it comes after, and the trace sink.
+  The results are in the order of `after`, never the order they finished, so a merge step is deterministic.
+- A failure is a result, not an exception.
+  An exception becomes a `StepResult` with status `error`, and a step that outlives its timeout becomes one with status `timeout`.
+  Steps after it still run and see that result, and the merge step decides what a missing branch means.
+  A step that cannot go on without a branch calls `unwrap` on its result, which fails that step in turn.
+  A graph is `ok` only when every step is, and a caller sees the failures in the results and in the trace.
+  This is the same rule the core loop has for tool errors.
+- Two limits bound a run, in `GraphLimits`: `max_concurrency` steps run at once, and `step_timeout_s` applies to any step without its own `timeout_s`.
+  They come from `MAKAN_GRAPH_MAX_CONCURRENCY` and `MAKAN_GRAPH_STEP_TIMEOUT_SECONDS`, with defaults of 4 and 30.
+  A step waits for its dependencies before it takes a slot, so a branch cannot starve the merge that follows it.
+  The timeout clock starts when the step starts running, not when it was queued.
+- Python cannot stop a thread, so a timed-out step's thread keeps running until its function returns.
+  The engine stops waiting for it and gives its slot back, so the bound is on steps being waited for and not on stray threads.
+  The process cannot exit until that thread ends, so steps that do I/O need their own timeouts, such as the `httpx` timeout.
+  Fixing this properly would mean running steps in processes, or cooperative cancellation, and neither is worth it yet.
+- Trace events share one `run_id` for the graph run, and `makan.graph` documents each payload.
+  They are `graph_start`, `step_start`, `step_finish`, `step_error`, and `graph_end`, and a timeout is a `step_error` with status `timeout`.
+  Every ended step lists `parallel_with`, the steps whose run overlapped its own, so a viewer can show what ran in parallel without inferring it from timestamps.
+  Overlap is recorded as it happens, so it shows what really ran together and not what the graph allowed.
+- A step that starts a core loop run records the run's `run_id` in `child_runs`, and the run's events go to the same sink.
+  The viewer can nest a loop run under its step.
+  If the provider fails, the loop raises before the run id is known, so that step has no `child_runs` entry.
+- The step value is any Python object, and the trace records it JSON safe, with `repr` for what JSON cannot hold.
+- `tool_step` calls a tool directly with fixed arguments, or with arguments built from the context, and the tool's output text is the step value.
+  `agent_step` runs the core loop with a prompt built from the context, and the answer is the step value.
+  A run that ends with no answer fails the step.
+- `tests/test_graph_research.py` is a generic workflow in the shape of the research path: classify, fan out to three tool steps, merge, rank.
+  It runs on `FakeProvider` and `FakePlacesProvider`, and it is not the real single-user workflow.
+
+Not done yet: the real single-user and group workflows, a retry policy for a failed step, a per-run time limit for the whole graph, and reading `graph_*` and `step_*` events in the trace viewer.
 
 ### Single-user research
 
