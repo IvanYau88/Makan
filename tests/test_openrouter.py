@@ -122,7 +122,7 @@ def test_malformed_finish_arguments_from_the_provider_do_not_crash_the_run(
     result = run("hungry", provider=provider_with(handler), model="m", tools=(ECHO,), sink=sink)
 
     assert (result.status, result.answer) == ("finished", "ok")
-    assert [e.data["ok"] for e in sink.events if e.type == "tool_result"][0] is False
+    assert next(e.data["ok"] for e in sink.events if e.type == "tool_result") is False
     assert sink.events[-1].type == "run_end"
 
 
