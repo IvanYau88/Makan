@@ -300,8 +300,8 @@ def test_guests_and_unset_connections_read_nothing(db: Any, app_role: str) -> No
 
 
 def test_a_user_cannot_write_another_users_rows(db: Any, app_role: str) -> None:
-    _, session_b, _ = seed_two_users(db)
-    a = db.execute("select user_id from sessions where user_id is not null limit 1").fetchone()[0]
+    session_a, session_b, _ = seed_two_users(db)
+    a = db.execute("select user_id from sessions where id = %s", (session_a,)).fetchone()[0]
     b = db.execute("select user_id from sessions where id = %s", (session_b,)).fetchone()[0]
     act_as(db, app_role, a)
     assert (
