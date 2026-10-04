@@ -297,8 +297,8 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   Sign in with Apple is skipped because it needs a paid Apple developer account.
 - Accounts are additive.
   Guests are fully supported, both solo and through session links, so `user_id` is optional throughout the schema.
-- A profile holds a display name, hard constraints, cuisine likes and dislikes, and places tried with ratings.
-  Every preference carries a timestamp and a confidence value.
+- A profile holds account settings, the display name and the location history opt-in.
+  Hard constraints, cuisine likes and dislikes, and places tried with ratings are memory facts, so every preference carries a timestamp and a confidence value.
 - Row-level security means each user can only read their own data.
 - Location is approximate and is not stored as a history unless the user opts in.
 - Users can export or delete all of their data.
