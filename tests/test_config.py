@@ -35,3 +35,22 @@ def test_api_key_is_not_leaked_by_repr() -> None:
 def test_bad_limits_are_rejected(value: str) -> None:
     with pytest.raises(ConfigError, match="MAKAN_MAX_ITERATIONS"):
         Config.from_env({"MAKAN_MODEL": "m", "MAKAN_MAX_ITERATIONS": value})
+
+
+def test_places_settings_have_defaults_and_overrides() -> None:
+    config = Config.from_env({"MAKAN_MODEL": "m"})
+    assert (config.overture_release, config.places_cache_ttl_seconds) == ("", 86_400)
+
+    config = Config.from_env(
+        {
+            "MAKAN_MODEL": "m",
+            "MAKAN_OVERTURE_RELEASE": " 2026-09-23.1 ",
+            "MAKAN_PLACES_CACHE_TTL_SECONDS": "60",
+        }
+    )
+    assert (config.overture_release, config.places_cache_ttl_seconds) == ("2026-09-23.1", 60)
+
+
+def test_a_bad_cache_ttl_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="MAKAN_PLACES_CACHE_TTL_SECONDS"):
+        Config.from_env({"MAKAN_MODEL": "m", "MAKAN_PLACES_CACHE_TTL_SECONDS": "soon"})

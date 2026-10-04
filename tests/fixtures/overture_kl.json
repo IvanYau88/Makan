@@ -1,0 +1,473 @@
+[
+ {
+  "id": "009bf6a1-e9a1-4f0a-948c-f3debd27d4d5",
+  "name": "Hong Ngek Restaurant",
+  "category": "chinese_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant",
+   "asian_restaurant",
+   "east_asian_restaurant",
+   "chinese_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.148487091064453,
+  "lon": 101.69771575927734,
+  "street": "50, Jalan Tun H S Lee",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "00bfe0cf-8e64-48fd-9c96-a44f51e172b7",
+  "name": "Warong Old China",
+  "category": "restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.1448867321014404,
+  "lon": 101.6966552734375,
+  "street": "144, Jalan Tun H S Lee",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "00da7bc1-8279-4062-99a3-04a8c4146d70",
+  "name": "Ikan Panggang",
+  "category": "chinese_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant",
+   "asian_restaurant",
+   "east_asian_restaurant",
+   "chinese_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.144347667694092,
+  "lon": 101.69784545898438,
+  "street": "Jalan Hang Lekir",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "02b06456-c6ab-40f8-8ae9-549ad433aeea",
+  "name": "Sin Kiew Yee Shin Kee Beef Noodles",
+  "category": "ramen_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant",
+   "asian_restaurant",
+   "ramen_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.1450750827789307,
+  "lon": 101.69695281982422,
+  "street": "7a, Jalan Tun Tan Cheng Lock",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "02c37d6a-41b5-4566-8ed9-7230314cdecd",
+  "name": "Bake and Beans KL",
+  "category": "coffee_shop",
+  "hierarchy": [
+   "food_and_drink",
+   "non_alcoholic_beverage_venue",
+   "coffee_shop"
+  ],
+  "alternates": null,
+  "lat": 3.147939920425415,
+  "lon": 101.6976089477539,
+  "street": "34 Jalan Hang Lekiu",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "05583b13-8ddd-43e1-8131-53823a42b573",
+  "name": "Special Recipe - Wisma Goldhill",
+  "category": "restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.1481895446777344,
+  "lon": 101.69874572753906,
+  "street": null,
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "0569eb5b-8fb1-4e6c-a92c-6f2e54e1e125",
+  "name": "LOKL Coffee Co",
+  "category": "cafe",
+  "hierarchy": [
+   "food_and_drink",
+   "casual_eatery",
+   "cafe"
+  ],
+  "alternates": null,
+  "lat": 3.148780107498169,
+  "lon": 101.69795989990234,
+  "street": "30, Jalan Tun H S Lee",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "0a47ea7d-9665-47b6-bc07-666626aff011",
+  "name": "Hong Kee Claypot Chicken Rice",
+  "category": "chicken_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant",
+   "meat_restaurant",
+   "chicken_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.1442477703094482,
+  "lon": 101.69877624511719,
+  "street": "89, Jalan Sultan",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "0aba3681-3b2e-4ff0-a5fd-39a17ec9b3ec",
+  "name": "Restaurant Green Veggie 绿素",
+  "category": "vegetarian_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant",
+   "special_diet_restaurant",
+   "vegetarian_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.143702507019043,
+  "lon": 101.69672393798828,
+  "street": "176, Jalan Tun H S Lee",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "0c393be7-b744-4c3f-82fa-ef5702204a3d",
+  "name": "Mountbatten Kuala Lumpur",
+  "category": "cafe",
+  "hierarchy": [
+   "food_and_drink",
+   "casual_eatery",
+   "cafe"
+  ],
+  "alternates": null,
+  "lat": 3.1478939056396484,
+  "lon": 101.69758605957031,
+  "street": "Jalan Tun Razak",
+  "locality": "Kuala Lumpur"
+ },
+ {
+  "id": "103d9405-4434-4cb8-9ab6-e245bd089834",
+  "name": "Asam Pedas Sg Balang, Muar",
+  "category": "malaysian_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant",
+   "asian_restaurant",
+   "southeast_asian_restaurant",
+   "malaysian_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.148979902267456,
+  "lon": 101.69786834716797,
+  "street": "29 Jalan Tun H.S. Lee",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "107877bc-25cc-4032-a3fd-d1efd6ef150c",
+  "name": "Kedai Mamak Jalan Tar",
+  "category": "asian_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant",
+   "asian_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.151874303817749,
+  "lon": 101.696533203125,
+  "street": "",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "10a1bd82-1ea5-4c4b-abc9-f4434f53f867",
+  "name": "Restaurant Royal Ruposhi ",
+  "category": "food_truck_stand",
+  "hierarchy": [
+   "food_and_drink",
+   "casual_eatery",
+   "food_truck_stand"
+  ],
+  "alternates": null,
+  "lat": 3.1490440368652344,
+  "lon": 101.69686889648438,
+  "street": "38 Jalan Tun Perak",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "123130c3-ca4e-4c7b-87bc-7b3ec57275e5",
+  "name": "Shahira",
+  "category": "indian_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant",
+   "asian_restaurant",
+   "south_asian_restaurant",
+   "indian_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.150808811187744,
+  "lon": 101.69611358642578,
+  "street": "Jalan Melayu Off Masjid India, Kuala Lumpur City Center, Kuala Lumpur",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "13b8fcff-c25e-4234-a9c4-53cc7ff2ca52",
+  "name": "Burger King",
+  "category": "fast_food_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "casual_eatery",
+   "fast_food_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.1491031646728516,
+  "lon": 101.6966781616211,
+  "street": "No. 11 & 13, Jalan Tun",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "15b396cb-1f1e-4ccb-8e82-82e4a2c08ccb",
+  "name": "Everest Kitchen",
+  "category": "nepalese_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant",
+   "asian_restaurant",
+   "south_asian_restaurant",
+   "himalayan_restaurant",
+   "nepalese_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.1467387676239014,
+  "lon": 101.69668579101562,
+  "street": "3, Jalan Yap Ah Loy",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "1b1720d1-3277-409a-9cdb-f5d03ff5f03d",
+  "name": "Pappadom Restaurant",
+  "category": "indian_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant",
+   "asian_restaurant",
+   "south_asian_restaurant",
+   "indian_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.1495821475982666,
+  "lon": 101.6976089477539,
+  "street": "34, Lebuh Ampang",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "1b5cffb8-2aeb-44b9-87cf-cafd0f033cb5",
+  "name": "Mansion Tea Stall",
+  "category": "tea_room",
+  "hierarchy": [
+   "food_and_drink",
+   "non_alcoholic_beverage_venue",
+   "tea_room"
+  ],
+  "alternates": null,
+  "lat": 3.151933193206787,
+  "lon": 101.69743347167969,
+  "street": "Off, Jalan Masjid India",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "1b802ae7-48af-4a84-bfc8-fc4ba13f5be4",
+  "name": "KLCG Confectionery and Bakery",
+  "category": "bakery",
+  "hierarchy": [
+   "food_and_drink",
+   "casual_eatery",
+   "bakery"
+  ],
+  "alternates": null,
+  "lat": 3.147226572036743,
+  "lon": 101.69324493408203,
+  "street": "27, Jln Raja",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "28eae79d-714b-4b54-a796-ce6e907d647c",
+  "name": "Subway",
+  "category": "sandwich_shop",
+  "hierarchy": [
+   "food_and_drink",
+   "casual_eatery",
+   "sandwich_shop"
+  ],
+  "alternates": null,
+  "lat": 3.1472201347351074,
+  "lon": 101.69436645507812,
+  "street": "No. G-01A, Wisma Badan Peguam 2 Leboh Pasar Besar,",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "2bbefff3-8677-4271-847a-e73cc0588c85",
+  "name": "Flaon",
+  "category": "dessert_shop",
+  "hierarchy": [
+   "food_and_drink",
+   "casual_eatery",
+   "dessert_shop"
+  ],
+  "alternates": null,
+  "lat": 3.1435885429382324,
+  "lon": 101.69664764404297,
+  "street": "180, Jalan Tun H S Lee",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "31bd49e9-bd12-46c8-9119-434ad0544912",
+  "name": "Pasar Besar",
+  "category": "food_and_drink",
+  "hierarchy": [
+   "food_and_drink"
+  ],
+  "alternates": null,
+  "lat": 3.1454572677612305,
+  "lon": 101.6951675415039,
+  "street": "Lot C53 & 55, Ground Floor, Central Market, Jalan Hang Kasturi",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "32f11343-a980-44cb-939a-4040347caf80",
+  "name": "The Colonial Restaurant And Bar",
+  "category": "bar",
+  "hierarchy": [
+   "food_and_drink",
+   "alcoholic_beverage_venue",
+   "bar"
+  ],
+  "alternates": null,
+  "lat": 3.1464526653289795,
+  "lon": 101.69548034667969,
+  "street": "Central Market, Jalan Hang Kasturi",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "3b9aeaa6-0690-4e5f-81ea-07743ac9c542",
+  "name": "Lorong Gerai Nasi Ayam",
+  "category": "indonesian_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant",
+   "asian_restaurant",
+   "southeast_asian_restaurant",
+   "indonesian_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.146113395690918,
+  "lon": 101.69801330566406,
+  "street": "Jalan Jun H.S Lee",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "451c2b98-cf4f-4e24-932c-d309fae05e76",
+  "name": "球记海鲜饭店",
+  "category": "seafood_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant",
+   "seafood_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.1477694511413574,
+  "lon": 101.69403076171875,
+  "street": "20,Medan Makmur Off Jln Usahawan 9/23a",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "5061c077-87e9-4e99-a2bd-784bc76b3f28",
+  "name": "Merdeka Grill",
+  "category": "bar_and_grill_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant",
+   "bar_and_grill_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.1489596366882324,
+  "lon": 101.69407653808594,
+  "street": "Level 75, Merdeka 118",
+  "locality": "Kuala Lumpur"
+ },
+ {
+  "id": "66042ce4-b6b9-41c2-b281-57c7a2381596",
+  "name": "茨場街後巷",
+  "category": "dim_sum_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant",
+   "asian_restaurant",
+   "east_asian_restaurant",
+   "chinese_restaurant",
+   "dim_sum_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.1448426246643066,
+  "lon": 101.69779968261719,
+  "street": "",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "70d16b8d-2db5-488c-aaec-fb664cad5493",
+  "name": "HP Aisha Coffee & Refreshment",
+  "category": "filipino_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant",
+   "asian_restaurant",
+   "southeast_asian_restaurant",
+   "filipino_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.14542555809021,
+  "lon": 101.697265625,
+  "street": "3.15, Level 3, Kompleks Kotaraya, Jalan Tun Tan Cheng Lock",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "73c5ad67-42a4-43fe-85dc-3d16cbfcd583",
+  "name": "Aung Nan Daw Restaurant",
+  "category": "burmese_restaurant",
+  "hierarchy": [
+   "food_and_drink",
+   "restaurant",
+   "asian_restaurant",
+   "southeast_asian_restaurant",
+   "burmese_restaurant"
+  ],
+  "alternates": null,
+  "lat": 3.1462180614471436,
+  "lon": 101.69715881347656,
+  "street": "F5, 1st Fl, Pudu St",
+  "locality": "Bandar Kuala Lumpur"
+ },
+ {
+  "id": "c8023d09-5509-49f9-b993-2741f229c62e",
+  "name": "Juzz Juice Bar",
+  "category": "smoothie_juice_bar",
+  "hierarchy": [
+   "food_and_drink",
+   "non_alcoholic_beverage_venue",
+   "smoothie_juice_bar"
+  ],
+  "alternates": null,
+  "lat": 3.1477699279785156,
+  "lon": 101.69401550292969,
+  "street": "4 Jalan Intan Baiduri 11D",
+  "locality": "Batu"
+ }
+]
