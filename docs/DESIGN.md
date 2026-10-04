@@ -111,8 +111,63 @@ Known failure modes to design against from the start:
 - Events go to a `TraceSink`.
   `ListSink` keeps them in memory for tests and `JsonlSink` appends one line per event, so a crashed run still leaves a readable trace.
   The trace viewer will read the JSON Lines files through `read_jsonl`.
-- Events do not carry a session or user id yet.
-  They gain an optional one when the data schema exists.
+- A persisted event carries an optional session id and user id as columns beside the event, not inside it.
+  The JSONL event is unchanged, and a run belongs to one session, so a JSONL file can still be tied to its session by `run_id`.
+
+## Data schema decisions
+
+The schema is plain SQL in `migrations/`, applied in file name order.
+It runs on any Postgres 13 or newer, including Supabase, and it does not reference the Supabase `auth` schema.
+This keeps the open question of a local database versus a hosted Supabase project open.
+Supabase can run the same files through its own migration tooling.
+
+- Tables are `users`, `profiles`, `sessions`, `participants`, `memory_facts`, and `trace_events`.
+  `makan.models` has one frozen dataclass per table, and on a live Postgres `tests/test_schema.py` fails if a model and the migrated tables drift apart.
+- Every request is a session, and a solo request is a session with one participant, the host, whose link is never shared.
+  There is no solo flag.
+  A session is solo until the owner sets `shared_at`, which is when the link is first shared, and the schema has no special case for it.
+- `user_id` is optional on sessions, participants, memory facts, and trace events.
+  A guest has no row in `users`.
+- `users.id` is supplied by the auth layer and has no foreign key into `auth.users`.
+  When Supabase is used, the id is the Supabase auth user id.
+- A profile holds a display name and the opt-in flag for storing location history.
+  Taste, hard constraints, and places tried are memory facts, so each carries its own timestamp and confidence in one place and the profile never duplicates them.
+- A session has a random `link_token` apart from its id, so the link can change without changing the session.
+  `context` holds the request inputs, such as approximate location, and goes when the session does.
+- Session expiry is an `expires_at` column with no default.
+  Null means no expiry is scheduled, so the retention period stays an open question and the app sets the field.
+  Expiry is enforced by a purge of rows past `expires_at`, not by row-level security, so whatever reads a session through the link must check the field too.
+  The purge job is not built yet.
+- Participants hold the `constraints` and `preferences` the person chose to share in that session, as JSON whose shape the group component defines.
+  A session has at most one host, and a signed-in user joins a session at most once.
+- A memory fact has every field the Memory section lists.
+  `kind` is one of `cuisine_like`, `cuisine_dislike`, `constraint`, or `place_rating`, and `source` is `stated` or `observed`.
+  Both are check constraints mirrored by the model, so a new kind is a migration.
+  `content` is JSON whose shape per kind belongs to the memory component.
+- A fact belongs to a user, or to a session, and at least one is required.
+  A guest's fact has no user and goes when the session is purged, so it cannot outlive its session.
+- `confidence` is the value as of `last_confirmed_at`, between 0 and 1.
+  Decay is computed when a fact is read and is never stored, so reconfirming a fact is one update.
+  A superseded fact keeps its row, and `superseded_by` becomes null only if the newer fact is deleted.
+- Persisted trace events use the JSONL fields `v`, `run_id`, `seq`, `ts`, `type`, and `data` as columns.
+  The primary key is `(run_id, seq)`, `run_id` stays text because the loop makes it, and `type` is unconstrained so a new event type needs no migration.
+  `TraceEventRow` converts to and from `TraceEvent` and a decoded JSONL line, and normalizes `ts` to UTC so a timestamp read back in the connection's time zone gives an equal event.
+- Row-level security is on for every table, and a policy lets a user read and change only their own rows.
+  A user reads their own participant rows and manages the participants of sessions they own, and the policies cannot recurse because the session policy never reads participants.
+  A signed-in user cannot insert themself into a session they do not own, so only the owner or the backend creates participant rows, and nobody can claim host on someone else's session.
+  Users can read and delete their own trace events, but only the backend writes them.
+- Who the user is comes from `makan_current_user_id()`, which reads the JWT subject from the request settings that Supabase sets.
+  A plain Postgres deployment sets the same setting for each request.
+  A guest, or an unset connection, matches no row.
+- Guests and group link access go through the backend on a privileged connection that bypasses row-level security.
+  The backend checks the link token and `expires_at` itself, and it creates the participant row when someone joins through a link.
+- Deleting a user cascades to their profile, sessions, participants, memory facts, and trace events, which is the data deletion the Profiles section promises.
+  Export has no schema support to add, since every owned row is reachable by `user_id`.
+- Tests that check the migrations on a live Postgres read `MAKAN_TEST_DATABASE_URL` and skip when it is unset.
+  They create and drop their own schema and role, and they use the `psycopg` dev dependency.
+  Nothing in the test suite touches the network.
+
+Not done yet: the migration runner, the expired-session purge, memory decay and the retrieval gate, the shape of participant constraints, and an adapter that writes trace events to the table.
 
 ## Places tool decisions
 
@@ -242,8 +297,8 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   Sign in with Apple is skipped because it needs a paid Apple developer account.
 - Accounts are additive.
   Guests are fully supported, both solo and through session links, so `user_id` is optional throughout the schema.
-- A profile holds a display name, hard constraints, cuisine likes and dislikes, and places tried with ratings.
-  Every preference carries a timestamp and a confidence value.
+- A profile holds account settings, the display name and the location history opt-in.
+  Hard constraints, cuisine likes and dislikes, and places tried with ratings are memory facts, so every preference carries a timestamp and a confidence value.
 - Row-level security means each user can only read their own data.
 - Location is approximate and is not stored as a history unless the user opts in.
 - Users can export or delete all of their data.
