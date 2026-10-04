@@ -40,7 +40,8 @@ No code was copied from them, so every line here is understood and owned.
 
 ## Stack
 
-- Python for the agent harness
+- Python for the agent harness, served by a FastAPI backend
+- React for the web frontend
 - A swappable LLM provider adapter, starting with OpenRouter and keeping the model name in config
 - Supabase (Postgres and auth) for memory, sessions, and profiles
 - Vercel for the web app

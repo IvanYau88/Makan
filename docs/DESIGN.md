@@ -159,8 +159,13 @@ It shares the graph engine, tools, and schema, and the research step of the sing
 1. Collect each participant's hard constraints and preferences.
 2. Apply hard constraints first, such as allergies, dietary needs, and budget ceilings.
 3. Score the remaining options per person.
-4. Break ties fairly.
+4. Pick by least misery: the winner is the option whose lowest-scoring participant is happiest.
+   When options are close on that score, the better average score wins.
 5. Explain the pick and show the runners-up.
+
+The explanation can say that nobody scored the pick below a stated score.
+Rotating priority was not chosen, because it needs a persistent group identity that guests joining by link do not have.
+It could be added later for signed-in friend groups.
 
 This merge step is the strongest demonstration of graph-workflow logic in the project.
 
@@ -229,6 +234,11 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - A release gate runs the evals before changes ship.
 - Every run emits structured trace events from the start, and the trace viewer renders them as a readable step-by-step view.
 
+## Web stack
+
+- The web frontend is React.
+- The Python backend is FastAPI.
+
 ## Hosting
 
 - Vercel on the Hobby plan, which is free but restricted to non-commercial use.
@@ -247,8 +257,8 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 
 ## Open questions
 
-- Which fair tie-breaking rule to use in group consensus, such as least misery, average score, or rotating who gets priority.
 - Whether hard constraints such as allergies should be exempt from confidence decay.
-- The web frontend framework, and how Python runs alongside it on Vercel.
+- Where the long-running FastAPI backend is hosted.
+  One recommendation can fan out into many model calls, so it may not suit short-lived serverless functions.
 - How long session data is kept before it expires.
 - Whether local development uses a local database or the hosted Supabase project.
