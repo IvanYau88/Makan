@@ -1,0 +1,442 @@
+"""The SQL migrations and the typed models must describe the same tables.
+
+The checks in the first half read the migration text and need no database. The checks
+in the second half run the migrations on a real Postgres and skip unless
+`MAKAN_TEST_DATABASE_URL` points at one, so they never need the network or a hosted project.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import os
+import re
+import types
+import typing
+from collections.abc import Iterator
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Literal
+from uuid import UUID, uuid4
+
+import pytest
+
+from makan import models
+from makan.models import (
+    MEMORY_KINDS,
+    MEMORY_SOURCES,
+    MemoryFact,
+    Participant,
+    Profile,
+    Session,
+    TraceEventRow,
+    User,
+)
+from makan.trace import JsonlSink, TraceEvent, read_jsonl
+
+MIGRATIONS = Path(__file__).resolve().parent.parent / "migrations"
+
+TABLE_MODELS: dict[str, type] = {
+    "users": User,
+    "profiles": Profile,
+    "sessions": Session,
+    "participants": Participant,
+    "memory_facts": MemoryFact,
+    "trace_events": TraceEventRow,
+}
+
+SQL_TO_PYTHON: dict[str, type] = {
+    "uuid": UUID,
+    "text": str,
+    "timestamptz": datetime,
+    "boolean": bool,
+    "integer": int,
+    "smallint": int,
+    "double precision": float,
+}
+
+NOT_A_COLUMN = re.compile(r"(check|constraint|foreign key|primary key|unique)\b")
+
+
+def migration_files() -> list[Path]:
+    return sorted(MIGRATIONS.glob("*.sql"))
+
+
+def migration_sql() -> str:
+    return "\n".join(p.read_text(encoding="utf-8") for p in migration_files())
+
+
+def strip_comments(sql: str) -> str:
+    return re.sub(r"--[^\n]*", "", sql)
+
+
+@dataclasses.dataclass(frozen=True)
+class Column:
+    type: str
+    not_null: bool
+
+
+def parse_tables(sql: str) -> dict[str, dict[str, Column]]:
+    """Read `create table` blocks. The migrations put one column or constraint per line."""
+    tables: dict[str, dict[str, Column]] = {}
+    for name, body in re.findall(r"create table (\w+) \((.*?)\n\);", strip_comments(sql), re.S):
+        columns: dict[str, Column] = {}
+        for raw in body.splitlines():
+            line = raw.strip().rstrip(",")
+            if not line or NOT_A_COLUMN.match(line):
+                continue
+            match = re.match(r"(\w+) (double precision|\w+)", line)
+            assert match, f"cannot read column in {name}: {raw!r}"
+            columns[match[1]] = Column(match[2], "not null" in line or "primary key" in line)
+        tables[name] = columns
+    return tables
+
+
+def python_type(hint: Any) -> tuple[Any, bool]:
+    """Split a type hint into its non-null part and whether it allows None."""
+    if typing.get_origin(hint) in (typing.Union, types.UnionType):
+        args = [a for a in typing.get_args(hint) if a is not type(None)]
+        assert len(args) == 1
+        return args[0], len(args) != len(typing.get_args(hint))
+    return hint, False
+
+
+def test_migrations_are_numbered_in_order() -> None:
+    files = migration_files()
+    assert files
+    for index, path in enumerate(files, start=1):
+        assert path.name.startswith(f"{index:04d}_"), path.name
+
+
+def test_migration_defines_every_modeled_table() -> None:
+    assert set(parse_tables(migration_sql())) == set(TABLE_MODELS)
+
+
+def test_models_cover_every_table() -> None:
+    dataclass_names = {
+        n
+        for n, o in vars(models).items()
+        if dataclasses.is_dataclass(o) and o.__module__ == models.__name__
+    }
+    assert dataclass_names == {m.__name__ for m in TABLE_MODELS.values()}
+
+
+@pytest.mark.parametrize("table", sorted(TABLE_MODELS))
+def test_model_fields_match_table_columns(table: str) -> None:
+    columns = parse_tables(migration_sql())[table]
+    model = TABLE_MODELS[table]
+    hints = typing.get_type_hints(model)
+    assert set(hints) == set(columns)
+    for name, column in columns.items():
+        base, nullable = python_type(hints[name])
+        assert nullable == (not column.not_null), f"{table}.{name} nullability"
+        if column.type == "jsonb":
+            assert base is Any or typing.get_origin(base) is dict, f"{table}.{name}"
+        elif typing.get_origin(base) is Literal:
+            assert column.type == "text"
+            assert all(isinstance(v, str) for v in typing.get_args(base))
+        else:
+            assert base is SQL_TO_PYTHON[column.type], f"{table}.{name} type"
+
+
+def test_nullable_model_fields_default_to_none() -> None:
+    for model in TABLE_MODELS.values():
+        for field in dataclasses.fields(model):
+            _, nullable = python_type(typing.get_type_hints(model)[field.name])
+            if nullable:
+                assert field.default is None, f"{model.__name__}.{field.name}"
+
+
+def test_user_id_is_optional_on_every_owned_table() -> None:
+    tables = parse_tables(migration_sql())
+    for table in ("sessions", "participants", "memory_facts", "trace_events"):
+        assert not tables[table]["user_id"].not_null, table
+
+
+def test_session_expiry_has_no_default_retention() -> None:
+    sql = strip_comments(migration_sql())
+    assert not parse_tables(sql)["sessions"]["expires_at"].not_null
+    assert re.search(r"^\s*expires_at timestamptz,$", sql, re.M)
+
+
+def test_memory_fact_vocabularies_match_check_constraints() -> None:
+    sql = strip_comments(migration_sql())
+    kinds = re.search(r"kind in \(([^)]*)\)", sql)
+    sources = re.search(r"source in \(([^)]*)\)", sql)
+    assert kinds
+    assert sources
+    assert re.findall(r"'(\w+)'", kinds[1]) == list(MEMORY_KINDS)
+    assert re.findall(r"'(\w+)'", sources[1]) == list(MEMORY_SOURCES)
+
+
+def test_memory_fact_has_every_field_the_design_lists() -> None:
+    columns = parse_tables(migration_sql())["memory_facts"]
+    for name in (
+        "user_id",
+        "kind",
+        "content",
+        "source",
+        "confidence",
+        "observed_at",
+        "last_confirmed_at",
+        "expires_at",
+        "superseded_by",
+    ):
+        assert name in columns
+
+
+def test_every_table_has_row_level_security_and_a_policy() -> None:
+    sql = strip_comments(migration_sql())
+    for table in TABLE_MODELS:
+        assert f"alter table {table} enable row level security;" in sql, table
+        assert re.search(rf"create policy \w+ on {table}\b", sql), table
+
+
+def test_migrations_do_not_depend_on_supabase() -> None:
+    sql = strip_comments(migration_sql())
+    assert not re.search(r"\bauth\.|\bsupabase\b|\bauthenticated\b|\banon\b", sql, re.I)
+
+
+def test_trace_event_fields_are_columns_of_trace_events() -> None:
+    event = TraceEvent(run_id="r", seq=0, type="run_start", data={})
+    assert set(event.to_dict()) <= set(parse_tables(migration_sql())["trace_events"])
+
+
+def test_trace_event_survives_a_row_round_trip() -> None:
+    event = TraceEvent(run_id=uuid4().hex, seq=3, type="tool_call", data={"name": "echo", "n": 1})
+    session_id, user_id = uuid4(), uuid4()
+    row = TraceEventRow.from_event(event, session_id=session_id, user_id=user_id)
+    assert (row.session_id, row.user_id) == (session_id, user_id)
+    assert row.to_event() == event
+
+
+def test_jsonl_trace_lines_load_as_rows(tmp_path: Path) -> None:
+    path = tmp_path / "trace.jsonl"
+    sink = JsonlSink(path)
+    events = [TraceEvent("run1", i, "model_request", {"i": i}) for i in range(3)]
+    for event in events:
+        sink.emit(event)
+    rows = [TraceEventRow.from_dict(line) for line in read_jsonl(path)]
+    assert [r.to_event() for r in rows] == events
+    assert all(r.session_id is None and r.user_id is None for r in rows)
+
+
+# Live Postgres checks. These skip unless MAKAN_TEST_DATABASE_URL is set.
+
+
+@pytest.fixture
+def db() -> Iterator[Any]:
+    url = os.environ.get("MAKAN_TEST_DATABASE_URL", "").strip()
+    if not url:
+        pytest.skip("MAKAN_TEST_DATABASE_URL is not set")
+    psycopg = pytest.importorskip("psycopg")
+    schema = f"makan_test_{uuid4().hex[:8]}"
+    conn = psycopg.connect(url, autocommit=True)
+    try:
+        conn.execute(f"create schema {schema}")
+        conn.execute(f"set search_path to {schema}")
+        for path in migration_files():
+            conn.execute(path.read_text(encoding="utf-8"))
+        yield conn
+    finally:
+        conn.execute("reset role")
+        conn.execute(f"drop schema {schema} cascade")
+        conn.close()
+
+
+@pytest.fixture
+def app_role(db: Any) -> Iterator[str]:
+    """An ordinary role, so row-level security applies, as it does for a signed-in user."""
+    role = f"makan_test_{uuid4().hex[:8]}"
+    schema = db.execute("select current_schema()").fetchone()[0]
+    try:
+        db.execute(f"create role {role} nologin")
+    except Exception:
+        pytest.skip("cannot create a role on this database")
+    try:
+        db.execute(f"grant usage on schema {schema} to {role}")
+        db.execute(f"grant all on all tables in schema {schema} to {role}")
+        db.execute(f"grant execute on all functions in schema {schema} to {role}")
+        yield role
+    finally:
+        db.execute("reset role")
+        db.execute(f"drop owned by {role}")
+        db.execute(f"drop role {role}")
+
+
+def act_as(db: Any, role: str, user_id: UUID | None) -> None:
+    claims = "" if user_id is None else f'{{"sub": "{user_id}"}}'
+    db.execute("reset role")
+    db.execute(f"set role {role}")
+    db.execute("select set_config('request.jwt.claims', %s, false)", (claims,))
+
+
+def count(db: Any, table: str) -> int:
+    return int(db.execute(f"select count(*) from {table}").fetchone()[0])
+
+
+def test_database_columns_match_models(db: Any) -> None:
+    for table, model in TABLE_MODELS.items():
+        rows = db.execute(
+            "select column_name, is_nullable from information_schema.columns "
+            "where table_schema = current_schema() and table_name = %s",
+            (table,),
+        ).fetchall()
+        hints = typing.get_type_hints(model)
+        assert {name for name, _ in rows} == set(hints), table
+        for name, is_nullable in rows:
+            assert (is_nullable == "YES") == python_type(hints[name])[1], f"{table}.{name}"
+
+
+def seed_two_users(db: Any) -> tuple[UUID, UUID, UUID]:
+    """Two users with a session each, plus a guest session. Returns the three session ids."""
+    a, b = uuid4(), uuid4()
+    db.execute("insert into users (id) values (%s), (%s)", (a, b))
+    ids = [uuid4(), uuid4(), uuid4()]
+    for sid, uid in zip(ids, (a, b, None), strict=True):
+        db.execute("insert into sessions (id, user_id) values (%s, %s)", (sid, uid))
+        db.execute(
+            "insert into participants (session_id, user_id, is_host) values (%s, %s, true)",
+            (sid, uid),
+        )
+        db.execute(
+            "insert into trace_events (run_id, seq, v, ts, type, session_id, user_id) "
+            "values (%s, 0, 1, now(), 'run_start', %s, %s)",
+            (uuid4().hex, sid, uid),
+        )
+    for uid in (a, b):
+        db.execute(
+            "insert into profiles (user_id) values (%s)",
+            (uid,),
+        )
+        db.execute(
+            "insert into memory_facts (user_id, kind, content, source, confidence) "
+            "values (%s, 'cuisine_like', '\"thai\"', 'stated', 0.9)",
+            (uid,),
+        )
+    db.execute(
+        "insert into memory_facts (session_id, kind, content, source, confidence) "
+        "values (%s, 'constraint', '\"halal\"', 'stated', 1)",
+        (ids[2],),
+    )
+    return ids[0], ids[1], ids[2]
+
+
+def test_each_user_reads_only_their_own_rows(db: Any, app_role: str) -> None:
+    seed_two_users(db)
+    a = db.execute("select id from users order by id limit 1").fetchone()[0]
+    expected = {"users": 1, "profiles": 1, "sessions": 1, "participants": 1}
+    expected |= {"memory_facts": 1, "trace_events": 1}
+    act_as(db, app_role, a)
+    for table, rows in expected.items():
+        assert count(db, table) == rows, table
+
+
+def test_guests_and_unset_connections_read_nothing(db: Any, app_role: str) -> None:
+    seed_two_users(db)
+    act_as(db, app_role, None)
+    for table in TABLE_MODELS:
+        assert count(db, table) == 0, table
+
+
+def test_a_user_cannot_write_another_users_rows(db: Any, app_role: str) -> None:
+    _, session_b, _ = seed_two_users(db)
+    a = db.execute("select user_id from sessions where user_id is not null limit 1").fetchone()[0]
+    b = db.execute("select user_id from sessions where id = %s", (session_b,)).fetchone()[0]
+    act_as(db, app_role, a)
+    assert (
+        db.execute("update memory_facts set confidence = 0 where user_id = %s", (b,)).rowcount == 0
+    )
+    with pytest.raises(Exception, match="row-level security"):
+        db.execute("insert into participants (session_id) values (%s)", (session_b,))
+    with pytest.raises(Exception, match="row-level security"):
+        db.execute(
+            "insert into trace_events (run_id, seq, v, ts, type, user_id) "
+            "values ('x', 0, 1, now(), 't', %s)",
+            (a,),
+        )
+
+
+def test_deleting_a_user_deletes_all_their_data(db: Any) -> None:
+    session_a, _, _ = seed_two_users(db)
+    a = db.execute("select user_id from sessions where id = %s", (session_a,)).fetchone()[0]
+    db.execute("delete from users where id = %s", (a,))
+    for table in ("profiles", "sessions", "participants", "memory_facts", "trace_events"):
+        assert (
+            db.execute(f"select count(*) from {table} where user_id = %s", (a,)).fetchone()[0] == 0
+        ), table
+    assert count(db, "sessions") == 2
+    assert count(db, "memory_facts") == 2
+
+
+def test_a_solo_guest_session_needs_no_account(db: Any) -> None:
+    sid = uuid4()
+    db.execute("insert into sessions (id) values (%s)", (sid,))
+    db.execute("insert into participants (session_id, is_host) values (%s, true)", (sid,))
+    row = db.execute("select user_id, shared_at, expires_at from sessions").fetchone()
+    assert tuple(row) == (None, None, None)
+
+
+def test_a_session_has_at_most_one_host(db: Any) -> None:
+    sid = uuid4()
+    db.execute("insert into sessions (id) values (%s)", (sid,))
+    db.execute("insert into participants (session_id, is_host) values (%s, true)", (sid,))
+    db.execute("insert into participants (session_id) values (%s)", (sid,))
+    with pytest.raises(Exception, match="participants_one_host_idx"):
+        db.execute("insert into participants (session_id, is_host) values (%s, true)", (sid,))
+
+
+def test_memory_fact_rules(db: Any) -> None:
+    uid = uuid4()
+    db.execute("insert into users (id) values (%s)", (uid,))
+    insert = (
+        "insert into memory_facts (user_id, kind, content, source, confidence) "
+        "values (%s, %s, '1', %s, %s)"
+    )
+    for args in (
+        (uid, "mood", "stated", 0.5),
+        (uid, "constraint", "guessed", 0.5),
+        (uid, "constraint", "stated", 1.5),
+        (None, "constraint", "stated", 0.5),
+    ):
+        with pytest.raises(Exception, match="violates check constraint"):
+            db.execute(insert, args)
+    with pytest.raises(Exception, match="violates check constraint"):
+        db.execute(
+            "insert into memory_facts (user_id, kind, content, source, confidence, "
+            "observed_at, last_confirmed_at) "
+            "values (%s, 'constraint', '1', 'stated', 1, now(), now() - interval '1 day')",
+            (uid,),
+        )
+    db.execute(insert, (uid, "place_rating", "observed", 0.5))
+
+
+def test_superseded_fact_keeps_its_link_when_the_newer_one_is_removed(db: Any) -> None:
+    uid = uuid4()
+    db.execute("insert into users (id) values (%s)", (uid,))
+    old, new = uuid4(), uuid4()
+    for fid in (old, new):
+        db.execute(
+            "insert into memory_facts (id, user_id, kind, content, source, confidence) "
+            "values (%s, %s, 'cuisine_like', '\"thai\"', 'stated', 0.5)",
+            (fid, uid),
+        )
+    db.execute("update memory_facts set superseded_by = %s where id = %s", (new, old))
+    with pytest.raises(Exception, match="violates check constraint"):
+        db.execute("update memory_facts set superseded_by = id where id = %s", (new,))
+    db.execute("delete from memory_facts where id = %s", (new,))
+    assert db.execute("select superseded_by from memory_facts").fetchone()[0] is None
+
+
+def test_trace_row_round_trips_through_the_database(db: Any) -> None:
+    from psycopg.types.json import Jsonb
+
+    event = TraceEvent(run_id=uuid4().hex, seq=0, type="tool_call", data={"name": "echo"})
+    row = TraceEventRow.from_event(event)
+    db.execute(
+        "insert into trace_events (run_id, seq, v, ts, type, data) values (%s, %s, %s, %s, %s, %s)",
+        (row.run_id, row.seq, row.v, row.ts, row.type, Jsonb(row.data)),
+    )
+    stored = db.execute("select run_id, seq, v, ts, type, data from trace_events").fetchone()
+    loaded = TraceEventRow(*stored)
+    assert loaded.to_event().to_dict() == event.to_dict() | {"ts": loaded.ts.isoformat()}
+    assert loaded.ts == row.ts
