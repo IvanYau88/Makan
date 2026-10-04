@@ -149,15 +149,16 @@ Supabase can run the same files through its own migration tooling.
   A superseded fact keeps its row, and `superseded_by` becomes null only if the newer fact is deleted.
 - Persisted trace events use the JSONL fields `v`, `run_id`, `seq`, `ts`, `type`, and `data` as columns.
   The primary key is `(run_id, seq)`, `run_id` stays text because the loop makes it, and `type` is unconstrained so a new event type needs no migration.
-  `TraceEventRow` converts to and from `TraceEvent` and a decoded JSONL line.
+  `TraceEventRow` converts to and from `TraceEvent` and a decoded JSONL line, and normalizes `ts` to UTC so a timestamp read back in the connection's time zone gives an equal event.
 - Row-level security is on for every table, and a policy lets a user read and change only their own rows.
-  A user also sees the participants of sessions they own, and the two policies cannot recurse because the session policy never reads participants.
+  A user reads their own participant rows and manages the participants of sessions they own, and the policies cannot recurse because the session policy never reads participants.
+  A signed-in user cannot insert themself into a session they do not own, so only the owner or the backend creates participant rows, and nobody can claim host on someone else's session.
   Users can read and delete their own trace events, but only the backend writes them.
 - Who the user is comes from `makan_current_user_id()`, which reads the JWT subject from the request settings that Supabase sets.
   A plain Postgres deployment sets the same setting for each request.
   A guest, or an unset connection, matches no row.
 - Guests and group link access go through the backend on a privileged connection that bypasses row-level security.
-  The backend checks the link token and `expires_at` itself.
+  The backend checks the link token and `expires_at` itself, and it creates the participant row when someone joins through a link.
 - Deleting a user cascades to their profile, sessions, participants, memory facts, and trace events, which is the data deletion the Profiles section promises.
   Export has no schema support to add, since every owned row is reachable by `user_id`.
 - Tests that check the migrations on a live Postgres read `MAKAN_TEST_DATABASE_URL` and skip when it is unset.

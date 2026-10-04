@@ -9,7 +9,7 @@ decay and superseding belong to the memory component, not here.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal, Self, get_args
 from uuid import UUID
 
@@ -20,6 +20,11 @@ MemorySource = Literal["stated", "observed"]
 
 MEMORY_KINDS: tuple[str, ...] = get_args(MemoryKind)
 MEMORY_SOURCES: tuple[str, ...] = get_args(MemorySource)
+
+
+def _utc(value: datetime) -> datetime:
+    """A naive timestamp is taken as UTC, and an aware one is converted to UTC."""
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 @dataclass(frozen=True)
@@ -98,7 +103,7 @@ class TraceEventRow:
             run_id=event.run_id,
             seq=event.seq,
             v=SCHEMA_VERSION,
-            ts=datetime.fromisoformat(event.ts),
+            ts=_utc(datetime.fromisoformat(event.ts)),
             type=event.type,
             data=event.data,
             session_id=session_id,
@@ -118,7 +123,7 @@ class TraceEventRow:
             run_id=event["run_id"],
             seq=event["seq"],
             v=event["v"],
-            ts=datetime.fromisoformat(event["ts"]),
+            ts=_utc(datetime.fromisoformat(event["ts"])),
             type=event["type"],
             data=event["data"],
             session_id=session_id,
@@ -127,5 +132,9 @@ class TraceEventRow:
 
     def to_event(self) -> TraceEvent:
         return TraceEvent(
-            run_id=self.run_id, seq=self.seq, type=self.type, data=self.data, ts=self.ts.isoformat()
+            run_id=self.run_id,
+            seq=self.seq,
+            type=self.type,
+            data=self.data,
+            ts=_utc(self.ts).isoformat(),
         )
