@@ -40,6 +40,15 @@ The harness is the point.
 | Evals | core loop, tools | Deterministic tests and model-graded quality checks |
 | Trace viewer | trace events | Human-readable view of a run |
 
+## Project tooling
+
+- Python 3.12 or newer, with a `src/makan` package layout and `pyproject.toml` as the single config file.
+- Build backend is `hatchling`, and the only runtime dependency is `httpx`.
+- Dev tools are `pytest` for tests, `ruff` for lint and format, and `mypy` in strict mode for types.
+  They install through the `dev` extra: `pip install -e ".[dev]"`.
+- Settings come from environment variables through `makan.config.Config.from_env`.
+  The model name has no default in code, and a missing `MAKAN_MODEL` is an error.
+
 ## Core loop
 
 The loop is reason, tool call, observe, repeat.
@@ -51,6 +60,57 @@ Known failure modes to design against from the start:
 - **Silent tool failures:** tool errors are returned to the model and recorded in the trace, never swallowed.
 - **Tool bloat:** keep the tool set small and each tool well described.
 - **Termination failures:** enforce a hard maximum iteration count, plus an explicit finish action and a per-run budget.
+
+### Core loop decisions
+
+- The loop is synchronous and lives in one module, `makan.loop`, as a single `run` function.
+  Runs are independent, so the graph engine can fan out by running several in threads, and async can be added at the channel edge without changing the loop.
+- A run asks the model, executes the tool calls it returns in order, appends each result, and repeats.
+  Each model call is one iteration.
+- Finishing is an explicit `finish(answer)` tool that the loop adds to every tool list.
+  A reply with no tool call is not a final answer.
+  The loop traces a `nudge`, tells the model to call `finish`, and counts the turn against the iteration limit.
+  Calls that come after `finish` in the same turn are not run.
+  A malformed `finish` is a tool error and the run continues.
+- Every run ends in one of four statuses: `finished`, `max_iterations`, `budget_exhausted`, or `provider_error`.
+  A provider failure is traced and then raised, so callers cannot mistake it for an answer.
+- The per-run budget counts tokens, prompt plus completion, as reported by the provider.
+  It is checked before each model call, so the last call can overshoot it by one response.
+  Money cost is not tracked yet because free models report none.
+- Limits are `Limits(max_iterations, token_budget)`, set through `MAKAN_MAX_ITERATIONS` and `MAKAN_TOKEN_BUDGET` with defaults of 10 and 50,000.
+- Tool failures, which include an unknown tool, arguments that are not a JSON object, a missing required argument, and any exception from the tool, never end a run.
+  The error text goes back to the model as the tool result, and the trace records `ok: false` with the same text.
+- A tool is a name, a description, a JSON Schema for its arguments, and a function from the parsed arguments to a string.
+  Tool names must be unique and `finish` is reserved.
+  The loop only checks that required arguments are present, and each tool validates the rest.
+- Not done yet: trimming or summarizing old turns and truncating large tool output, which the context-rot failure mode above calls for.
+
+## Provider adapter decisions
+
+- Providers implement `complete(model, messages, tools) -> Completion`.
+  The model name is a per-call argument, so a cheap model and a larger model can share one provider.
+- Messages, tool calls, and usage are provider-neutral dataclasses in `makan.providers.base`.
+  Tool call arguments stay as the raw JSON text the model wrote, and the loop parses them, so bad JSON is a tool error the model can see.
+  An adapter that receives arguments as an object or null instead of text re-serializes them with `json.dumps`, so the loop only ever sees text.
+- `OpenRouterProvider` talks to the chat-completions endpoint with `httpx`.
+  The API key is passed in by the caller, who reads it from `OPENROUTER_API_KEY`.
+  HTTP errors, error bodies returned with a 200, and malformed responses all become `ProviderError`.
+  There are no retries yet, which matters once free-tier rate limits bite.
+- `FakeProvider` replays a scripted list of completions and records every request.
+  It ships in the package so later evals can use it too.
+  Tests never make a network call, and the OpenRouter adapter is tested against an `httpx` mock transport.
+
+## Trace event decisions
+
+- One event is one JSON object: `v`, `run_id`, `seq`, `ts`, `type`, and `data`.
+  `v` is the schema version, `seq` orders events within a run, and `ts` is UTC ISO 8601.
+- Event types are `run_start`, `model_request`, `model_response`, `tool_call`, `tool_result`, `nudge`, `error`, and `run_end`.
+  The payload of each is documented in the docstring of `makan.loop`.
+- Events go to a `TraceSink`.
+  `ListSink` keeps them in memory for tests and `JsonlSink` appends one line per event, so a crashed run still leaves a readable trace.
+  The trace viewer will read the JSON Lines files through `read_jsonl`.
+- Events do not carry a session or user id yet.
+  They gain an optional one when the data schema exists.
 
 ## Memory
 
