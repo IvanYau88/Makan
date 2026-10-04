@@ -85,7 +85,7 @@ Independent steps run in parallel and a merge step combines the results.
 
 This is the complete path for a solo user.
 It needs no account and no shared link, and it runs as a session with a single participant.
-The same workflow is the building block that group consensus reuses for each participant.
+Group consensus is a separate workflow that builds on the same graph engine, tools, and schema.
 
 1. Classify the request with a small model.
 2. Fan out in parallel: reviews, menus, hours, and distance.
@@ -108,8 +108,7 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   It runs as a session with one participant, and no link is created or shared.
 - A guest gets a recommendation with no account, using only what they enter in that request, and the guest's solo session expires like any other session.
 - A signed-in user gets recommendations shaped by their stored memory and profile.
-- Every request, solo or group, is a session with one or more participants, so the schema and the workflow need no special case for solo use.
-- A solo user can turn a session into a group session at any point by choosing to share its link, which lets others join as participants.
+- Every request, solo or group, is a session with one or more participants, so the schema needs no special case for solo use.
 
 ## Group sessions
 
@@ -190,5 +189,4 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - Whether hard constraints such as allergies should be exempt from confidence decay.
 - The web frontend framework, and how Python runs alongside it on Vercel.
 - How long session data is kept before it expires, and whether a guest's solo session uses the same period as a group session.
-- Whether turning a solo request into a group session carries over the original requester's inputs automatically or asks them to confirm what to share.
 - Whether local development uses a local database or the hosted Supabase project.

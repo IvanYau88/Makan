@@ -20,7 +20,6 @@ Eating with others, share a session link with your friends.
 They open it in any browser, with no account, and add their own dietary needs, budget, and tastes.
 Makan applies everyone's hard constraints first, scores what is left for each person, and picks a spot that works for the group.
 It explains the pick and shows the runners-up.
-Solo and group use run on the same core, so a group is a solo request with more people added.
 
 ## How it works
 
