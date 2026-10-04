@@ -2,7 +2,10 @@
 
 ## Purpose
 
-Makan recommends food based on where you are, what you like, and what your group needs.
+Makan recommends food based on where you are, what you like, and, when you eat with others, what your group needs.
+It is a first-class experience for one person and for a group.
+Every request is a session with one or more participants, and a solo user simply never shares the session link.
+Group use is an addition on top of the same core, not a separate product.
 It is a personal portfolio project and a hands-on study of modern AI engineering: agent loops, graph workflows, memory, and harness engineering.
 The food app is the vehicle.
 The harness is the point.
@@ -26,13 +29,14 @@ The harness is the point.
 | Provider adapter | nothing | One interface over swappable LLM providers |
 | Trace events | core loop | Structured record of every step, emitted from the start |
 | Tool interface and places tool | core loop | Typed tools, starting with nearby place search |
-| Data schema | nothing | Users, sessions, participants, memory, trace |
+| Data schema | nothing | Users, sessions, participants, memory, trace, where every request is a session with one or more participants |
 | Memory and retrieval gate | core loop, schema | Timestamped, confidence-tagged facts with gated lookup |
 | Graph workflow engine | core loop, tools | Parallel fan-out and merge steps |
-| Group session and consensus | graph engine, schema | Shared link, constraints, scoring, explanation |
-| Web channel | core loop, sessions | Primary interface, works in any browser |
+| Solo recommendation | graph engine, tools, schema | Single-user research workflow as a complete product path, run as a one-participant session whose link is never shared |
+| Group session and consensus | solo recommendation, graph engine, schema | Shared link, constraints, scoring, explanation |
+| Web channel | core loop, solo recommendation | Primary interface, works in any browser for solo and group use |
 | Auth and profiles | schema, web channel | Optional accounts that make Makan remember you |
-| Telegram channel | core loop | Secondary channel for personal use |
+| Telegram channel | core loop, solo recommendation | Secondary channel for solo use |
 | Evals | core loop, tools | Deterministic tests and model-graded quality checks |
 | Trace viewer | trace events | Human-readable view of a run |
 
@@ -79,12 +83,18 @@ Independent steps run in parallel and a merge step combines the results.
 
 ### Single-user research
 
+This is the complete path for a solo user.
+It needs no account, and it runs as a session with a single participant whose link is never shared.
+
 1. Classify the request with a small model.
 2. Fan out in parallel: reviews, menus, hours, and distance.
 3. Merge the results.
 4. Rank, then explain the pick.
 
 ### Group consensus
+
+This is a separate workflow from single-user research, not that workflow run once per participant.
+It shares the graph engine, tools, and schema, and the research step of the single-user workflow supplies the candidate options that the steps below filter and score.
 
 1. Collect each participant's hard constraints and preferences.
 2. Apply hard constraints first, such as allergies, dietary needs, and budget ceilings.
@@ -94,9 +104,17 @@ Independent steps run in parallel and a merge step combines the results.
 
 This merge step is the strongest demonstration of graph-workflow logic in the project.
 
+## Solo use
+
+- "Locate me" runs the single-user research workflow directly.
+  It runs as a session with one participant, and a solo user simply does not share the session link.
+- A guest gets a recommendation with no account, using only what they enter in that request, and the guest's solo session expires like any other session.
+- A signed-in user gets recommendations shaped by their stored memory and profile.
+- Every request, solo or group, is a session with one or more participants, so the schema needs no special case for solo use.
+
 ## Group sessions
 
-- "Locate me" creates a shareable session link.
+- "Locate me" creates a shareable session link, and a group forms when the user shares it.
 - Friends open the link in a browser with no account and enter their own preferences.
 - The link carries an Open Graph preview card so it looks right in iMessage, SMS, RCS, and other chat apps.
 - The web app can be added to the home screen so it feels like an app.
@@ -107,7 +125,7 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - Supabase Auth provides email magic links and Google sign-in.
   Sign in with Apple is skipped because it needs a paid Apple developer account.
 - Accounts are additive.
-  Guests are fully supported through session links, so `user_id` is optional throughout the schema.
+  Guests are fully supported, both solo and through session links, so `user_id` is optional throughout the schema.
 - A profile holds a display name, hard constraints, cuisine likes and dislikes, and places tried with ratings.
   Every preference carries a timestamp and a confidence value.
 - Row-level security means each user can only read their own data.
@@ -118,8 +136,8 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 ## Channels
 
 - **Web app:** the primary channel.
-  It works the same on iPhone, Android, and desktop through a shared link.
-- **Telegram:** a secondary channel for personal use through a bot.
+  It works the same on iPhone, Android, and desktop, directly for a solo request or through a shared link for a group.
+- **Telegram:** a secondary channel for solo use through a bot.
 - **Rejected for groups:**
   - An iMessage bot has no public Apple bot API, and bridges need an always-on Mac signed into a personal Apple ID.
   - SMS through Twilio needs paid carrier registration.
@@ -172,5 +190,5 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - Which fair tie-breaking rule to use in group consensus, such as least misery, average score, or rotating who gets priority.
 - Whether hard constraints such as allergies should be exempt from confidence decay.
 - The web frontend framework, and how Python runs alongside it on Vercel.
-- How long group session data is kept before it expires.
+- How long session data is kept before it expires.
 - Whether local development uses a local database or the hosted Supabase project.
