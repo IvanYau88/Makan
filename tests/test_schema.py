@@ -53,6 +53,7 @@ SQL_TO_PYTHON: dict[str, type] = {
     "double precision": float,
 }
 
+
 def migration_files() -> list[Path]:
     return sorted(MIGRATIONS.glob("*.sql"))
 
