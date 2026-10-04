@@ -28,7 +28,7 @@ Makan is a hands-on tour of modern AI engineering, and each piece is visible.
 - **Agent loop:** reason, call a tool, observe, repeat, with a hard iteration limit and a small readable core.
 - **Graph workflows:** reviews, menus, hours, and distance are researched in parallel, then merged.
 - **Memory:** a structured store where every fact carries a timestamp and a confidence, so stale tastes fade instead of silently skewing results, whether it holds one person's taste or a group's.
-- **Group consensus:** a merge step that handles constraints, per-person scoring, and fair tie-breaking.
+- **Group consensus:** a merge step that handles constraints, per-person scoring, and a least-misery pick with average score as the tiebreaker.
 - **Trace view:** every step the agent takes can be inspected.
 
 ## Why from scratch
@@ -40,7 +40,8 @@ No code was copied from them, so every line here is understood and owned.
 
 ## Stack
 
-- Python for the agent harness
+- Python for the agent harness, served by a FastAPI backend
+- React for the web frontend
 - A swappable LLM provider adapter, starting with OpenRouter and keeping the model name in config
 - Supabase (Postgres and auth) for memory, sessions, and profiles
 - Vercel for the web app
