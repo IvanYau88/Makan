@@ -4,7 +4,7 @@
 
 Makan recommends food based on where you are, what you like, and, when you eat with others, what your group needs.
 It is a first-class experience for one person and for a group.
-Every request is a session with one or more participants, and a solo user never needs to share a session link.
+Every request is a session with one or more participants, and a solo user simply never shares the session link.
 Group use is an addition on top of the same core, not a separate product.
 It is a personal portfolio project and a hands-on study of modern AI engineering: agent loops, graph workflows, memory, and harness engineering.
 The food app is the vehicle.
@@ -32,7 +32,7 @@ The harness is the point.
 | Data schema | nothing | Users, sessions, participants, memory, trace, where every request is a session with one or more participants |
 | Memory and retrieval gate | core loop, schema | Timestamped, confidence-tagged facts with gated lookup |
 | Graph workflow engine | core loop, tools | Parallel fan-out and merge steps |
-| Solo recommendation | graph engine, tools, schema | Single-user research workflow as a complete product path, run as a one-participant session that is never shared |
+| Solo recommendation | graph engine, tools, schema | Single-user research workflow as a complete product path, run as a one-participant session whose link is never shared |
 | Group session and consensus | solo recommendation, graph engine, schema | Shared link, constraints, scoring, explanation |
 | Web channel | core loop, solo recommendation | Primary interface, works in any browser for solo and group use |
 | Auth and profiles | schema, web channel | Optional accounts that make Makan remember you |
@@ -84,7 +84,7 @@ Independent steps run in parallel and a merge step combines the results.
 ### Single-user research
 
 This is the complete path for a solo user.
-It needs no account and no shared link, and it runs as a session with a single participant.
+It needs no account, and it runs as a session with a single participant whose link is never shared.
 Group consensus is a separate workflow that builds on the same graph engine, tools, and schema.
 
 1. Classify the request with a small model.
@@ -105,14 +105,14 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 ## Solo use
 
 - "Locate me" runs the single-user research workflow directly.
-  It runs as a session with one participant, and no link is created or shared.
+  It runs as a session with one participant, and a solo user simply does not share the session link.
 - A guest gets a recommendation with no account, using only what they enter in that request, and the guest's solo session expires like any other session.
 - A signed-in user gets recommendations shaped by their stored memory and profile.
 - Every request, solo or group, is a session with one or more participants, so the schema needs no special case for solo use.
 
 ## Group sessions
 
-- A user opts in to a group by sharing a session link, and "locate me" on its own never produces one.
+- "Locate me" creates a shareable session link, and a group forms when the user shares it.
 - Friends open the link in a browser with no account and enter their own preferences.
 - The link carries an Open Graph preview card so it looks right in iMessage, SMS, RCS, and other chat apps.
 - The web app can be added to the home screen so it feels like an app.
@@ -188,5 +188,5 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - Which fair tie-breaking rule to use in group consensus, such as least misery, average score, or rotating who gets priority.
 - Whether hard constraints such as allergies should be exempt from confidence decay.
 - The web frontend framework, and how Python runs alongside it on Vercel.
-- How long session data is kept before it expires, and whether a guest's solo session uses the same period as a group session.
+- How long session data is kept before it expires.
 - Whether local development uses a local database or the hosted Supabase project.

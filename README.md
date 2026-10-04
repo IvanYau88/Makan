@@ -12,11 +12,11 @@ It learns your taste and picks a spot that suits you, or that your whole group a
 
 Tap "locate me" and Makan finds food nearby based on what you like.
 Eating alone, that is all it takes.
-There is no session link to create or share, and no account is needed.
+You never need to share the session link, and no account is needed.
 Makan researches nearby options, ranks them for you, explains the pick, and shows the runners-up.
 If you sign in, it remembers your taste so the picks get better over time.
 
-Eating with others, share a session link with your friends.
+Eating with others, send the session link to your friends.
 They open it in any browser, with no account, and add their own dietary needs, budget, and tastes.
 Makan applies everyone's hard constraints first, scores what is left for each person, and picks a spot that works for the group.
 It explains the pick and shows the runners-up.
