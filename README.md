@@ -6,7 +6,7 @@ It learns your taste and picks a spot that suits you, or that your whole group a
 
 > Work in progress.
 > The design is written down in [docs/DESIGN.md](docs/DESIGN.md).
-> Nothing here is runnable yet.
+> Only the agent loop, the provider adapter, and trace events exist so far, and there is no app to run yet.
 
 ## What it does
 
@@ -51,7 +51,23 @@ No code was copied from them, so every line here is understood and owned.
 Secrets live in a local `.env` file that is never committed.
 Copy `.env.example` to `.env` and fill in the values you need.
 
+## Development
+
+You need Python 3.12 or newer.
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e ".[dev]"
+
+pytest          # tests, with no network calls
+ruff check .    # lint
+ruff format .   # format
+mypy            # types
+```
+
 ## Status
 
 The design is in place and the harness is being built component by component.
-Setup instructions arrive with the first runnable version.
+The core loop, the OpenRouter provider adapter with a fake provider for tests, and trace events are built.
+Run instructions arrive with the first runnable version.
