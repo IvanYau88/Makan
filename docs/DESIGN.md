@@ -169,7 +169,7 @@ Supabase can run the same files through its own migration tooling.
   They create and drop their own schema and role, and they use the `psycopg` dev dependency.
   Nothing in the test suite touches the network.
 
-Not done yet: the migration runner, the expired-session purge, memory decay and the retrieval gate, the shape of participant constraints, and an adapter that writes trace events to the table.
+Not done yet: the migration runner, the expired-session purge, the shape of participant constraints, and an adapter that writes trace events to the table.
 
 ## Places tool decisions
 
@@ -243,6 +243,22 @@ Rules:
 - Stale facts are flagged to the user instead of being used silently.
 - A retrieval gate decides whether a turn needs a memory lookup at all.
   A small, cheap model or a simple rule makes that call.
+
+Implementation decisions:
+
+- `MemoryStore` has in-memory and Postgres implementations over the existing `memory_facts` table, with the memory rules in one service shared by both stores.
+  The Postgres adapter takes a caller-owned psycopg connection, so connection pooling and row-level security stay with the application.
+- Fact content is validated and normalized by kind in `makan.memory.content`; facts with the same subject and different values contradict one another, including a cuisine like and dislike.
+  A repeated value reconfirms the active fact, while a changed value links the old row to its replacement.
+- Confidence is read-time exponential decay with a configurable half-life per kind: 180 days for cuisine preferences, 365 for constraints, and 90 for place ratings.
+  Every kind decays by default; the policy can set a kind's half-life to `None`, but hard constraints such as allergies remain an open product question.
+- A fact is stale when expired or when its decayed confidence falls below 0.5.
+  The caller receives stale facts explicitly, and the prompt rendering tells the model to ask for confirmation before relying on them.
+- The initial retrieval gate is deterministic and skips only empty messages and messages made entirely of greetings, thanks, or acknowledgements.
+  It uses a protocol so a provider-backed small model can replace the rule later.
+- Memory lookup is performed by `recall_for_turn` before the core loop, and the loop can write facts through the existing `remember_fact` tool interface.
+  There is no standalone read-memory tool, keeping retrieval behind the gate.
+- The content schema, confidence half-lives, stale threshold, prompt wording, and rule-gate behavior are initial settings to tune with usage and evals.
 
 ## Graph workflows
 

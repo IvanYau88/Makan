@@ -5,6 +5,12 @@ from typing import Any
 from makan.places import Place
 from makan.tools import Tool
 
+MIGRATIONS = Path(__file__).resolve().parent.parent / "migrations"
+
+
+def migration_files() -> list[Path]:
+    return sorted(MIGRATIONS.glob("*.sql"))
+
 
 def _echo(arguments: dict[str, Any]) -> str:
     return str(arguments["text"])

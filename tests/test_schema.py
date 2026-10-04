@@ -8,7 +8,6 @@ The checks in the second half run the migrations on a real Postgres and skip unl
 from __future__ import annotations
 
 import dataclasses
-import os
 import types
 import typing
 from collections.abc import Iterator
@@ -31,8 +30,7 @@ from makan.models import (
     User,
 )
 from makan.trace import JsonlSink, TraceEvent, read_jsonl
-
-MIGRATIONS = Path(__file__).resolve().parent.parent / "migrations"
+from tests.helpers import migration_files
 
 TABLE_MODELS: dict[str, type] = {
     "users": User,
@@ -52,10 +50,6 @@ SQL_TO_PYTHON: dict[str, type] = {
     "smallint": int,
     "double precision": float,
 }
-
-
-def migration_files() -> list[Path]:
-    return sorted(MIGRATIONS.glob("*.sql"))
 
 
 def python_type(hint: Any) -> tuple[Any, bool]:
@@ -122,26 +116,6 @@ def test_jsonl_trace_lines_load_as_rows(tmp_path: Path) -> None:
 
 
 # Live Postgres checks. These skip unless MAKAN_TEST_DATABASE_URL is set.
-
-
-@pytest.fixture
-def db() -> Iterator[Any]:
-    url = os.environ.get("MAKAN_TEST_DATABASE_URL", "").strip()
-    if not url:
-        pytest.skip("MAKAN_TEST_DATABASE_URL is not set")
-    psycopg = pytest.importorskip("psycopg")
-    schema = f"makan_test_{uuid4().hex[:8]}"
-    conn = psycopg.connect(url, autocommit=True)
-    try:
-        conn.execute(f"create schema {schema}")
-        conn.execute(f"set search_path to {schema}")
-        for path in migration_files():
-            conn.execute(path.read_text(encoding="utf-8"))
-        yield conn
-    finally:
-        conn.execute("reset role")
-        conn.execute(f"drop schema {schema} cascade")
-        conn.close()
 
 
 @pytest.fixture
