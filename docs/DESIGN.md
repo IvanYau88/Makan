@@ -4,7 +4,7 @@
 
 Makan recommends food based on where you are, what you like, and, when you eat with others, what your group needs.
 It is a first-class experience for one person and for a group.
-A solo user never needs to create or share a session link.
+Every request is a session with one or more participants, and a solo user never needs to share a session link.
 Group use is an addition on top of the same core, not a separate product.
 It is a personal portfolio project and a hands-on study of modern AI engineering: agent loops, graph workflows, memory, and harness engineering.
 The food app is the vehicle.
@@ -29,10 +29,10 @@ The harness is the point.
 | Provider adapter | nothing | One interface over swappable LLM providers |
 | Trace events | core loop | Structured record of every step, emitted from the start |
 | Tool interface and places tool | core loop | Typed tools, starting with nearby place search |
-| Data schema | nothing | Users, sessions, participants, memory, trace, with sessions and participants optional for solo use |
+| Data schema | nothing | Users, sessions, participants, memory, trace, where every request is a session with one or more participants |
 | Memory and retrieval gate | core loop, schema | Timestamped, confidence-tagged facts with gated lookup |
 | Graph workflow engine | core loop, tools | Parallel fan-out and merge steps |
-| Solo recommendation | graph engine, tools, schema | Single-user research workflow as a complete product path, with no session link |
+| Solo recommendation | graph engine, tools, schema | Single-user research workflow as a complete product path, run as a one-participant session that is never shared |
 | Group session and consensus | solo recommendation, graph engine, schema | Shared link, constraints, scoring, explanation |
 | Web channel | core loop, solo recommendation | Primary interface, works in any browser for solo and group use |
 | Auth and profiles | schema, web channel | Optional accounts that make Makan remember you |
@@ -84,7 +84,7 @@ Independent steps run in parallel and a merge step combines the results.
 ### Single-user research
 
 This is the complete path for a solo user.
-It needs no session, no link, and no account.
+It needs no account and no shared link, and it runs as a session with a single participant.
 The same workflow is the building block that group consensus reuses for each participant.
 
 1. Classify the request with a small model.
@@ -105,15 +105,15 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 ## Solo use
 
 - "Locate me" runs the single-user research workflow directly.
-  No session link is created or shared.
-- A guest gets a recommendation with no account, using only what they enter in that request.
+  It runs as a session with one participant, and no link is created or shared.
+- A guest gets a recommendation with no account, using only what they enter in that request, and the guest's solo session expires like any other session.
 - A signed-in user gets recommendations shaped by their stored memory and profile.
-- A solo request is internally a one-participant request, so the schema and the workflow need no special case for it.
-- A solo user can turn a request into a group session at any point by choosing to share a link.
+- Every request, solo or group, is a session with one or more participants, so the schema and the workflow need no special case for solo use.
+- A solo user can turn a session into a group session at any point by choosing to share its link, which lets others join as participants.
 
 ## Group sessions
 
-- A user opts in to a group by sharing a session link, and "locate me" on its own does not create one.
+- A user opts in to a group by sharing a session link, and "locate me" on its own never produces one.
 - Friends open the link in a browser with no account and enter their own preferences.
 - The link carries an Open Graph preview card so it looks right in iMessage, SMS, RCS, and other chat apps.
 - The web app can be added to the home screen so it feels like an app.
@@ -124,7 +124,7 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - Supabase Auth provides email magic links and Google sign-in.
   Sign in with Apple is skipped because it needs a paid Apple developer account.
 - Accounts are additive.
-  Guests are fully supported through session links, so `user_id` is optional throughout the schema.
+  Guests are fully supported, both solo and through session links, so `user_id` is optional throughout the schema.
 - A profile holds a display name, hard constraints, cuisine likes and dislikes, and places tried with ratings.
   Every preference carries a timestamp and a confidence value.
 - Row-level security means each user can only read their own data.
@@ -135,7 +135,7 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 ## Channels
 
 - **Web app:** the primary channel.
-  It works the same on iPhone, Android, and desktop through a shared link.
+  It works the same on iPhone, Android, and desktop, directly for a solo request or through a shared link for a group.
 - **Telegram:** a secondary channel for solo use through a bot.
 - **Rejected for groups:**
   - An iMessage bot has no public Apple bot API, and bridges need an always-on Mac signed into a personal Apple ID.
@@ -189,7 +189,6 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - Which fair tie-breaking rule to use in group consensus, such as least misery, average score, or rotating who gets priority.
 - Whether hard constraints such as allergies should be exempt from confidence decay.
 - The web frontend framework, and how Python runs alongside it on Vercel.
-- How long group session data is kept before it expires.
-- Whether a guest's solo request is kept at all, and for how long, since there is no session to expire it.
+- How long session data is kept before it expires, and whether a guest's solo session uses the same period as a group session.
 - Whether turning a solo request into a group session carries over the original requester's inputs automatically or asks them to confirm what to share.
 - Whether local development uses a local database or the hosted Supabase project.
