@@ -21,6 +21,8 @@ class Config:
     model: str
     openrouter_api_key: str = field(default="", repr=False)
     limits: Limits = field(default_factory=Limits)
+    overture_release: str = ""  # empty means the latest release
+    places_cache_ttl_seconds: int = 86_400
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -35,6 +37,10 @@ class Config:
             limits=Limits(
                 max_iterations=_int(env, "MAKAN_MAX_ITERATIONS", defaults.max_iterations),
                 token_budget=_int(env, "MAKAN_TOKEN_BUDGET", defaults.token_budget),
+            ),
+            overture_release=env.get("MAKAN_OVERTURE_RELEASE", "").strip(),
+            places_cache_ttl_seconds=_int(
+                env, "MAKAN_PLACES_CACHE_TTL_SECONDS", cls.places_cache_ttl_seconds
             ),
         )
 

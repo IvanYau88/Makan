@@ -6,7 +6,7 @@ It learns your taste and picks a spot that suits you, or that your whole group a
 
 > Work in progress.
 > The design is written down in [docs/DESIGN.md](docs/DESIGN.md).
-> Only the agent loop, the provider adapter, and trace events exist so far, and there is no app to run yet.
+> Only the agent loop, the provider adapter, trace events, and the nearby places tool exist so far, and there is no app to run yet.
 
 ## What it does
 
@@ -66,8 +66,12 @@ ruff format .   # format
 mypy            # types
 ```
 
+The `dev` extra includes DuckDB, which the Overture places provider needs.
+For a runtime install, add it with `pip install ".[overture]"`.
+
 ## Status
 
 The design is in place and the harness is being built component by component.
 The core loop, the OpenRouter provider adapter with a fake provider for tests, and trace events are built.
+The `search_nearby_places` tool is built too, backed by free Overture Maps data behind a provider interface and an in-memory cache.
 Run instructions arrive with the first runnable version.

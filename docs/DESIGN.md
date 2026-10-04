@@ -43,7 +43,8 @@ The harness is the point.
 ## Project tooling
 
 - Python 3.12 or newer, with a `src/makan` package layout and `pyproject.toml` as the single config file.
-- Build backend is `hatchling`, and the only runtime dependency is `httpx`.
+- Build backend is `hatchling`, and the only required runtime dependency is `httpx`.
+  DuckDB is an optional runtime dependency in the `overture` extra, and the `dev` extra includes it.
 - Dev tools are `pytest` for tests, `ruff` for lint and format, and `mypy` in strict mode for types.
   They install through the `dev` extra: `pip install -e ".[dev]"`.
 - Settings come from environment variables through `makan.config.Config.from_env`.
@@ -83,6 +84,7 @@ Known failure modes to design against from the start:
 - A tool is a name, a description, a JSON Schema for its arguments, and a function from the parsed arguments to a string.
   Tool names must be unique and `finish` is reserved.
   The loop only checks that required arguments are present, and each tool validates the rest.
+  `makan.tools` has small readers (`number_arg`, `int_arg`, `text_arg`) for that, which raise `ValueError` with a message the model can act on.
 - Not done yet: trimming or summarizing old turns and truncating large tool output, which the context-rot failure mode above calls for.
 
 ## Provider adapter decisions
@@ -111,6 +113,55 @@ Known failure modes to design against from the start:
   The trace viewer will read the JSON Lines files through `read_jsonl`.
 - Events do not carry a session or user id yet.
   They gain an optional one when the data schema exists.
+
+## Places tool decisions
+
+- Code lives in the `makan.places` package.
+  `Place` and `PlaceQuery` are provider-neutral dataclasses, and `PlacesProvider` is a protocol with a `name` and a `search_nearby(query)` method.
+  The `name` identifies the data source and version, such as `overture:2026-09-23.1`.
+  A provider returns places within the radius that match the filters, nearest first, each with `distance_m`, or raises `PlacesError`.
+  `rank_nearby` does the radius, filter, sort, and limit work, so providers only have to produce candidates.
+- `search_nearby_places` is the one tool the model gets.
+  It takes `latitude`, `longitude`, and optional `radius_m` (100 to 5,000, default 1,000), `cuisine`, `category`, and `limit` (1 to 20, default 10).
+  Bad arguments are `ValueError`s that the loop returns to the model as tool errors.
+  A provider failure is a `PlacesError`, which the loop also returns as a tool error.
+- Results are one line of compact JSON: the search as it ran, a count, and per place an id, name, category, distance in meters, and address when known.
+  Opening hours, ratings, prices, and menus are not in Overture, and the tool description says so.
+  Those need their own tools later, so the places tool stays small.
+- `cuisine` and `category` use the same match: every word of the filter must appear in one of a place's category labels, so "thai" finds `thai_restaurant` and "fast food" finds `fast_food_restaurant`.
+  Both filters apply when both are given.
+  The two names exist so the model can say what it means, and the matching does not treat them differently.
+- The first provider is Overture Maps, in `makan.places.overture`.
+  It reads the monthly GeoParquet release straight from the public S3 bucket with DuckDB, filtered by bounding box, so it needs no API key and downloads no data up front.
+  A real query for a 1 km search in a dense city takes 5 to 8 seconds on the first call in a process, because DuckDB installs its S3 extension and opens the files, and about 1 second after that.
+  That is practical for an agent step and slow for a web request, so the follow-up for latency is a local extract of one region, which `DuckDbSource` already supports through its `path` argument.
+- Overture decisions:
+  - A place counts as food if its taxonomy hierarchy contains `food_and_drink`, which includes bars and bakeries.
+  - Places with a confidence under 0.5, with no name, or that are not open (permanently or temporarily closed) are dropped in the query.
+  - A place is a point, so its bounding box is its location and the spatial extension is not needed.
+  - The query uses the `taxonomy` columns that replaced `categories`, so a pinned release must be recent enough to have them.
+  - With no pinned release, the latest one is read from the STAC catalog on first use, because old releases are removed from S3 after a couple of months.
+    `MAKAN_OVERTURE_RELEASE` pins one.
+  - The box does not wrap at the antimeridian.
+  - Overture data is licensed CDLA Permissive 2.0 for places.
+    The test fixture is a small sample of real rows, and attribution to Overture Maps Foundation applies if results are shown to users.
+- DuckDB is an optional extra because it is large and the harness works without it.
+  A provider that is not importable fails with a message that names the extra.
+- The Google Places upgrade is another `PlacesProvider`, chosen in `makan.places.factory`.
+  Nothing in the tool, the cache, or the loop changes.
+  Its terms restrict caching, so that provider may need to opt out of `CachedPlacesProvider`.
+- `CachedPlacesProvider` wraps any provider with an in-memory cache.
+  The key is the provider `name` plus the whole query, so a new data release never serves old results.
+  Entries expire after `MAKAN_PLACES_CACHE_TTL_SECONDS` (default one day), the oldest entry goes when 256 are held, and failures are not cached.
+  It is thread safe because graph workflows will search from several threads.
+- Location privacy:
+  - The tool rounds latitude and longitude to three decimals, about 110 meters, before anything else sees them, so providers and the cache only ever hold the rounded point.
+    The trace still records the arguments exactly as the model wrote them, so a channel should hand the model an already approximate location.
+  - The cache lives in memory only and is never written to disk, so no history of where anyone searched is kept.
+    A shared or persistent cache needs the data schema and a user opt-in first.
+- Fakes and fixtures: `FakePlacesProvider` serves a fixed list through the real ranking and records queries.
+  `tests/fixtures/overture_kl.json` holds 30 real Overture rows from central Kuala Lumpur in the shape the query returns.
+  A test also writes a small Parquet file with Overture's schema and runs the real SQL over it, so the query is tested with no network.
 
 ## Memory
 
@@ -218,9 +269,11 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 
 ## Places data
 
-- Leaning toward Overture Maps or Open Places data first, since it is free and cacheable.
+- Overture Maps is the first provider, since it is free and cacheable.
+  See "Places tool decisions" for how it is read.
 - Google Places has the best coverage but is costly at scale and restricts caching, so it is the paid upgrade path.
 - Foursquare is another option with a small free allowance.
+- Overture has no opening hours, ratings, or prices, so recommendations that need them depend on a later tool or provider.
 
 ## Evals and trace viewer
 
