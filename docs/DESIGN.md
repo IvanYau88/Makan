@@ -307,10 +307,9 @@ Independent steps run in parallel and a merge step combines the results.
 - `tool_step` calls a tool directly with fixed arguments, or with arguments built from the context, and the tool's output text is the step value.
   `agent_step` runs the core loop with a prompt built from the context, and the answer is the step value.
   A run that ends with no answer fails the step.
-- `tests/test_graph_research.py` is a generic workflow in the shape of the research path: classify, fan out to three tool steps, merge, rank.
-  It runs on `FakeProvider` and `FakePlacesProvider`, and it is not the real single-user workflow.
+- `tests/test_solo.py` exercises the real single-user workflow using `FakeProvider` and `FakePlacesProvider`, including parallel searches, partial failures, memory, and guest sessions.
 
-Not done yet: the real single-user and group workflows, a retry policy for a failed step, a per-run time limit for the whole graph, and reading `graph_*` and `step_*` events in the trace viewer.
+Not done yet: the group workflow, a retry policy for a failed step, a per-run time limit for the whole graph, and reading `graph_*` and `step_*` events in the trace viewer.
 
 ### Single-user research
 
@@ -318,9 +317,45 @@ This is the complete path for a solo user.
 It needs no account, and it runs as a session with a single participant whose link is never shared.
 
 1. Classify the request with a small model.
-2. Fan out in parallel: reviews, menus, hours, and distance.
-3. Merge the results.
-4. Rank, then explain the pick.
+2. Fan out in parallel to the available places searches and optional gated memory lookup.
+3. Merge the candidates and report unavailable evidence.
+4. Rank, then explain the pick and show runners-up.
+
+### Single-user workflow decisions
+
+- `makan.solo.recommend` accepts a location and request, creates the existing `Session` and one host `Participant`, and returns those rows with the graph result and recommendation.
+  The session is unshared, `user_id` remains optional, and location is rounded before session context, tracing, or searches see it.
+  The caller chooses `expires_at`; no retention period is invented here.
+  These are in-memory rows for a later channel/persistence adapter, not a new storage abstraction or schema special case.
+- `build_solo_graph` exposes the reusable graph for async callers through `run_graph_async` as well as the synchronous convenience API.
+  Classification uses `agent_step` with the existing provider protocol, `Config.model`, and loop limits.
+  Its finish answer must be a JSON object with nullable cuisine and category search terms and a list of additional requirements.
+  A validation step rejects malformed classification before any places query.
+  Every later step is deterministic for the same input and retrieved facts.
+- Two `tool_step` searches run concurrently: one applies the current request's cuisine and category filters, and the other finds nearby alternatives within the same radius.
+  Each requests up to the tool's maximum of 20 results.
+  With no filters they make identical queries, which the existing provider cache can serve; graph topology stays fixed.
+  No hours, menus, price, or review lookup is fabricated.
+  A merge deduplicates by provider-local place id in declared branch order, preserving the filtered search's match evidence even when the tool's compact primary category omits a matching taxonomy label.
+- Ranking sorts by the count of matched request filters, then optional memory score, then distance, name, and id for stable ties.
+  This puts the current request ahead of stored taste and labels unmatched candidates as nearby alternatives.
+  Without stored taste, only category fit and distance are used.
+  Open status contributes nothing because the current tool carries none; Overture's operational-status filtering does not prove a place is open now.
+- Signed-in callers may supply `Memory` and a retrieval gate, defaulting to the existing `RuleGate`.
+  Guests never retrieve stored facts, and user retrieval is scoped to that user's id.
+  Non-stale cuisine likes/dislikes contribute positive/negative decayed confidence when the primary category matches.
+  A user's stored place rating contributes `(rating - 3) / 2 * confidence` for a matching provider-local id.
+  Stale facts are returned explicitly for confirmation and never scored.
+  Constraints and additional request requirements that places data cannot establish are reported as unverified, never inferred from a cuisine label.
+  No memory is written or reconfirmed automatically.
+- Explanation is a deterministic rendering of the winner's reasons and up to three runners-up, with data limitations and stale-fact warnings visible to the caller.
+  The result identifies the places provider and includes Overture Maps Foundation attribution when that source is used.
+  Empty successful searches yield a valid no-pick recommendation.
+  A single failed or timed-out search can yield a partial recommendation with warnings, while the graph stays failed and retains its trace evidence.
+  Both searches failing, or failed classification, yield no recommendation.
+  A memory failure falls back to request-only ranking with a warning and failed graph evidence.
+- No new environment variables are needed; existing model, loop, and graph settings apply.
+  Follow-ups are additional evidence tools, session/participant persistence and expiry enforcement at the channel boundary, provider-qualified stored place ratings when multiple places sources are used, and the already planned retry policy, channels, auth, and group workflow.
 
 ### Group consensus
 
