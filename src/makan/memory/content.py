@@ -32,6 +32,12 @@ class Claim:
     value: str | float | bool
     content: dict[str, Any]  # the normalized content, which is what gets stored
 
+    def says_same_as(self, other: Claim) -> bool:
+        """Equal values, where a boolean never equals a number (`True == 1` in Python)."""
+        return isinstance(self.value, bool) == isinstance(other.value, bool) and (
+            self.value == other.value
+        )
+
 
 def claim(kind: str, content: Any) -> Claim:
     """Check `content` for `kind` and normalize it. Raises `ValueError` the model can act on."""

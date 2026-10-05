@@ -87,7 +87,7 @@ class Memory:
             old = _claim(fact)
             if old is None or old.subject != new.subject:
                 continue
-            if old.value == new.value and not _expired(fact, now):
+            if old.says_same_as(new) and not _expired(fact, now):
                 return Remembered("confirmed", self._reconfirm(fact, source, now))
             related.append(fact)
         created = MemoryFact(

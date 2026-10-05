@@ -53,7 +53,10 @@ class MemoryStore(Protocol):
         ...
 
     def reconfirm(self, fact_id: UUID, *, confidence: float, at: datetime) -> MemoryFact | None:
-        """Set the confidence and `last_confirmed_at` of a fact. None if there is no such fact."""
+        """Set the confidence and `last_confirmed_at` of a fact in force.
+
+        None if there is no such fact or something has superseded it.
+        """
         ...
 
 
@@ -100,7 +103,7 @@ class InMemoryStore:
     def reconfirm(self, fact_id: UUID, *, confidence: float, at: datetime) -> MemoryFact | None:
         with self._lock:
             fact = self._facts.get(fact_id)
-            if fact is None:
+            if fact is None or fact.superseded_by is not None:
                 return None
             updated = dataclasses.replace(fact, confidence=confidence, last_confirmed_at=at)
             self._facts[fact_id] = updated

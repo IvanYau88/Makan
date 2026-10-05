@@ -87,6 +87,40 @@ def test_new_contradiction_supersedes_and_links_the_old_fact() -> None:
     assert [r.fact.id for r in memory.recall(owner)] == [newer.fact.id]
 
 
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [(True, 1), (1, True), (False, 0), (0, False), (True, 1.0)],
+)
+def test_boolean_and_number_constraints_are_different_values(first: Any, second: Any) -> None:
+    memory, store, _, owner = make_memory()
+    old = memory.remember(owner, "constraint", {"key": "allergy_peanut", "value": first}).fact
+    newer = memory.remember(owner, "constraint", {"key": "allergy_peanut", "value": second})
+
+    assert newer.outcome == "superseded"
+    assert type(newer.fact.content["value"]) is type(second)
+    assert store.get(old.id).superseded_by == newer.fact.id  # type: ignore[union-attr]
+
+
+def test_equal_number_constraints_still_reconfirm() -> None:
+    memory, _, _, owner = make_memory()
+    memory.remember(owner, "constraint", {"key": "budget_max", "value": 20})
+
+    again = memory.remember(owner, "constraint", {"key": "budget_max", "value": 20.0})
+
+    assert again.outcome == "confirmed"
+
+
+def test_in_memory_store_reconfirm_refuses_superseded_facts() -> None:
+    memory, store, _, owner = make_memory()
+    old = memory.remember(owner, "cuisine_like", {"cuisine": "thai"}).fact
+    memory.remember(owner, "cuisine_dislike", {"cuisine": "thai"})
+
+    assert store.reconfirm(old.id, confidence=0.9, at=NOW) is None
+    assert store.get(old.id).confidence == old.confidence  # type: ignore[union-attr]
+    with pytest.raises(ValueError):
+        memory.confirm(old.id)
+
+
 def test_stale_expired_facts_are_returned_as_stale() -> None:
     memory, _, clock, owner = make_memory()
     memory.remember(
@@ -178,6 +212,8 @@ def test_postgres_store_round_trip_and_atomic_supersession(db: Any) -> None:
     assert store.active(owner)[0].content == {"cuisine": "thai"}
     confirmed = store.reconfirm(second.id, confidence=0.8, at=NOW)
     assert confirmed is not None and confirmed.confidence == 0.8
+    assert store.reconfirm(first.id, confidence=0.9, at=NOW) is None
+    assert store.get(first.id) == superseded
 
 
 def test_postgres_store_respects_session_owner(db: Any) -> None:

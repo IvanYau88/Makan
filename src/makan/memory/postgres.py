@@ -91,7 +91,7 @@ class PostgresMemoryStore:
     def reconfirm(self, fact_id: UUID, *, confidence: float, at: datetime) -> MemoryFact | None:
         row = self._conn.execute(
             "update memory_facts set confidence = %s, last_confirmed_at = %s "
-            f"where id = %s returning {_COLUMNS}",
+            f"where id = %s and superseded_by is null returning {_COLUMNS}",
             (confidence, at, fact_id),
         ).fetchone()
         return None if row is None else _fact(row)
