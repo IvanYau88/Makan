@@ -21,7 +21,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from makan.config import Config, ConfigError
@@ -48,7 +48,9 @@ class RecommendBody(BaseModel):
 
     latitude: Annotated[float, Field(ge=-90, le=90)]
     longitude: Annotated[float, Field(ge=-180, le=180)]
-    request: Annotated[str, Field(min_length=1, max_length=MAX_REQUEST_CHARS)]
+    request: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_REQUEST_CHARS)
+    ]
     radius_m: Annotated[int, Field(ge=MIN_RADIUS_M, le=MAX_RADIUS_M)] = 1000
 
 
@@ -82,7 +84,7 @@ def create_app(
 
     @app.post("/api/recommendations")
     async def recommendations(body: RecommendBody) -> JSONResponse:
-        request = SoloRequest(body.latitude, body.longitude, body.request.strip(), body.radius_m)
+        request = SoloRequest(body.latitude, body.longitude, body.request, body.radius_m)
         # The workflow is synchronous and runs its own event loop, so it must leave ours.
         try:
             result = await run_in_threadpool(

@@ -88,6 +88,7 @@ def test_no_results_is_a_successful_empty_answer() -> None:
         {"latitude": "north"},
         {"longitude": -181},
         {"request": ""},
+        {"request": "   \n\t"},
         {"request": "x" * 501},
         {"radius_m": 50},
         {"radius_m": 5001},
