@@ -1,8 +1,11 @@
+from uuid import uuid4
+
 import pytest
 
 from makan.config import Config, ConfigError
 from makan.graph import GraphLimits
 from makan.loop import Limits
+from tests.helpers import synthetic_database_url
 
 
 def test_model_is_required() -> None:
@@ -73,3 +76,27 @@ def test_graph_limits_have_defaults_and_overrides() -> None:
 def test_a_bad_graph_limit_is_rejected() -> None:
     with pytest.raises(ConfigError, match="MAKAN_GRAPH_STEP_TIMEOUT_SECONDS"):
         Config.from_env({"MAKAN_MODEL": "m", "MAKAN_GRAPH_STEP_TIMEOUT_SECONDS": "0"})
+
+
+def test_group_session_settings_have_defaults_and_overrides() -> None:
+    default = Config.from_env({"MAKAN_MODEL": "m"})
+    assert (default.session_retention_hours, default.database_url) == (24, "")
+
+    password = "throwaway-" + uuid4().hex
+    url = synthetic_database_url(password)
+    config = Config.from_env(
+        {
+            "MAKAN_MODEL": "m",
+            "MAKAN_SESSION_RETENTION_HOURS": "6",
+            "MAKAN_DATABASE_URL": f" {url} ",
+        }
+    )
+    assert config.session_retention_hours == 6
+    assert config.database_url == url
+    assert password not in repr(config)
+
+
+def test_a_bad_session_retention_is_rejected() -> None:
+    for value in ("a day", "0", "-1"):
+        with pytest.raises(ConfigError, match="MAKAN_SESSION_RETENTION_HOURS"):
+            Config.from_env({"MAKAN_MODEL": "m", "MAKAN_SESSION_RETENTION_HOURS": value})

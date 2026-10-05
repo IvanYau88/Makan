@@ -146,9 +146,13 @@ Supabase can run the same files through its own migration tooling.
 - Session expiry is an `expires_at` column with no default.
   Null means no expiry is scheduled, so the retention period stays an open question and the app sets the field.
   Expiry is enforced by a purge of rows past `expires_at`, not by row-level security, so whatever reads a session through the link must check the field too.
-  The purge job is not built yet.
-- Participants hold the `constraints` and `preferences` the person chose to share in that session, as JSON whose shape the group component defines.
+  `makan.sessions` does both: it checks `expires_at` on every call, and `purge_expired_sessions` deletes the rows, though nothing schedules the purge yet.
+- Participants hold the `constraints` and `preferences` the person chose to share in that session, as JSON whose shape `makan.consensus` defines (see "Group consensus decisions").
   A session has at most one host, and a signed-in user joins a session at most once.
+- A session has a nullable `closed_at`, added in migration `0002_session_closed.sql`.
+  Closing is the host ending the session, which is a different fact from expiry, so it is a column and not a flag inside `context` or an early `expires_at`.
+  That keeps `context` for request inputs only, and lets the link tell a person "the host closed this" from "this expired".
+  It is the one schema change group sessions needed.
 - A memory fact has every field the Memory section lists.
   `kind` is one of `cuisine_like`, `cuisine_dislike`, `constraint`, or `place_rating`, and `source` is `stated` or `observed`.
   Both are check constraints mirrored by the model, so a new kind is a migration.
@@ -176,7 +180,7 @@ Supabase can run the same files through its own migration tooling.
   They create and drop their own schema and role, and they use the `psycopg` dev dependency.
   Nothing in the test suite touches the network.
 
-Not done yet: the migration runner, the expired-session purge, the shape of participant constraints, and an adapter that writes trace events to the table.
+Not done yet: the migration runner, scheduling the expired-session purge, and an adapter that writes trace events to the table.
 
 ## Places tool decisions
 
@@ -323,7 +327,7 @@ Independent steps run in parallel and a merge step combines the results.
   A run that ends with no answer fails the step.
 - `tests/test_solo.py` exercises the real single-user workflow using `FakeProvider` and `FakePlacesProvider`, including parallel searches, partial failures, memory, and guest sessions.
 
-Not done yet: the group workflow, a retry policy for a failed step, a per-run time limit for the whole graph, and reading `graph_*` and `step_*` events in the trace viewer.
+Not done yet: a retry policy for a failed step, a per-run time limit for the whole graph, and reading `graph_*` and `step_*` events in the trace viewer.
 
 ### Single-user research
 
@@ -369,7 +373,7 @@ It needs no account, and it runs as a session with a single participant whose li
   Both searches failing, or failed classification, yield no recommendation.
   A memory failure falls back to request-only ranking with a warning and failed graph evidence.
 - No new environment variables are needed; existing model, loop, and graph settings apply.
-  Follow-ups are additional evidence tools, session/participant persistence and expiry enforcement at the channel boundary, provider-qualified stored place ratings when multiple places sources are used, and the already planned retry policy, channels, auth, and group workflow.
+  Follow-ups are additional evidence tools, provider-qualified stored place ratings when multiple places sources are used, and the already planned retry policy, channels, and auth.
 
 ### Group consensus
 
@@ -389,6 +393,74 @@ It could be added later for signed-in friend groups.
 
 This merge step is the strongest demonstration of graph-workflow logic in the project.
 
+### Group consensus decisions
+
+- **Layout:** `makan.consensus` holds the pure logic, `makan.group` is the graph workflow, `makan.sessions` stores and guards the sessions, and `makan.web.groups` is the HTTP layer.
+  The logic takes plain values and returns plain values with no I/O, so the scoring and the pick are tested without a graph.
+- **Reuse of research:** `makan.solo.research_steps` is the solo graph's classify, intent, parallel searches, memory, and merge steps, pulled out so both workflows build on them.
+  The solo graph is the same graph as before, with the same step names.
+  The group graph runs them on the session's request and location, and adds `participants`, `constraints`, `score`, `pick`, and `explain` after the merge.
+  Those five are the numbered steps above, and `participants` runs beside the classification because it needs nothing from it.
+  Group graphs pass no memory, so no stored fact is read: a group session uses only what each person chose to share in it, never their history.
+- **What a person shares:** `constraints` has `refuses`, `allergies`, `diets`, and `budget`, and `preferences` has `likes` and `dislikes`.
+  `refuses`, `likes`, and `dislikes` are category or cuisine terms matched the way the places tool matches them, so "thai" matches `thai_restaurant`.
+  The others are free text.
+  An unknown key is an error and is never ignored, so a misspelled "allergy" cannot silently drop a constraint.
+  A category term with a control or other non-printable character is rejected before it is split into words, because one hidden inside a word would make a refusal match nothing.
+  Lists hold up to 20 entries and are lowercased and deduplicated for terms.
+  A participant who has shared nothing is stored as empty objects, and anyone who has shared is stored with every key present, so the two are never confused.
+- **Honest constraints:** the places data has no menus, ingredients, or prices, so it cannot verify an allergy, a diet, or a budget.
+  Only `refuses` can hard-exclude an option, because it is the one constraint the data can check.
+  It is checked against the place's primary category, since that is all the tool carries, and the result says so whenever anyone refuses something.
+  Every allergy, diet, and budget is a warning, one per person and item, against the pick and against each runner-up, and it is also in the explanation.
+  Nothing in the code or the output says an option is safe, and a test fails if the word appears.
+  The request's own requirements that the data cannot check stay visible too, as in the solo flow.
+- **Score:** each person who shared a taste scores each remaining option from 0 to 1 as `0.70 * taste + 0.25 * request + 0.05 * proximity`.
+  Taste is 1 for a liked category, 0 for a disliked one, and 0.5 for neither or both.
+  Request is the share of the requested filters the option matches, so it is 0 when the request named no cuisine or category.
+  Proximity is 1 at the search point and 0 at the edge of the radius.
+  Request and proximity are the same for everyone, so they nudge the pick without taking a side.
+  The weights are chosen so that one step of taste (0.35) is worth more than the request and proximity together (0.30), which means the typed request can never outweigh what someone likes or dislikes, and that even half the request outweighs all of proximity.
+  A test asserts those inequalities, and the weights and `NEUTRAL_TASTE` are named constants in `makan.consensus`.
+- **The request is part of the score, not a tier:** the least-misery pick is made over every option left after hard constraints, so an option that matches the request cannot win just by matching it.
+  Matching the request raises everyone's score for that option by the same amount, and a person who dislikes it still scores it low.
+  An earlier version ranked options that matched the request ahead of the score, which let a requested category beat an alternative that made one person far happier, and it was removed.
+  A test has the host like thai and a friend dislike it, with "thai please" as the request, and the alternative wins.
+- **People with no taste are neutral:** a participant who shared no likes or dislikes, whether they have not submitted or submitted an empty form, has no opinion to count.
+  They are left out of every score, so they can neither cap the lowest score nor lower an average with a number that is only about distance.
+  Their hard constraints still apply, they still count as a participant, and the result lists them in `uncounted`, and in `pending` as well when they have shared nothing yet.
+  A person who shared any taste is counted even for an option their taste says nothing about, where they score it neutral.
+- **The pick:** the best lowest score is found over all options, and every option whose lowest score is within `CLOSE_SCORE_MARGIN` of it is a contender.
+  The contender with the best average wins, and ties on the average go to the nearer place, then the name, then the id.
+  `CLOSE_SCORE_MARGIN` is 0.05 on the 0 to 1 scale and the margin is inclusive, and it equals the weight of proximity, so a small walk alone never beats a better average.
+  Setting it to 0 gives a strict least-misery pick that uses the average only on an exact tie.
+  The margin is measured from the best lowest score and not between pairs of options, because "close to" is not transitive, and a pairwise comparison could rank A over B, B over C, and C over A.
+  The runners-up come from repeating the same selection on what is left, so the whole order follows one rule.
+  Scores are rounded to 9 decimals and averaged with `math.fsum` in a fixed order, so float noise never decides a tie and the result does not depend on the order of the options or the people.
+  If nobody shared a taste there are no scores, and the order is the solo ranking: the best match for the request, then the nearest place, then the name, then the id.
+- **A group of one** who shared no taste gets the solo ranking exactly, because that is the fallback above, and a test runs both workflows on the same places and compares the order.
+  With a taste, their own likes and dislikes come first, then the request, then distance, and their lowest score and their average are the same number.
+  This differs from the solo ranking only where a person's own stated taste conflicts with what they typed, and then the taste wins.
+- **Nothing left:** if hard constraints exclude every option, the result has no pick.
+  It says that no place is left after hard constraints, how many nearby places there were, and which refusal excluded each one.
+  It never picks something arbitrary.
+  No places found at all is the solo flow's valid empty answer, with its own message.
+- **Names:** each person is labelled by their display name, or "Guest" and their place in the join order.
+  The host is always first, and a repeated name gets a count after it, so every score belongs to one distinct label.
+- **Explanation:** it is a deterministic rendering with no model call beyond the classification the solo flow already makes.
+  It names the pick with its reasons, says who is least happy with it and that nobody scored it below the stated score, gives the group average, lists up to three runners-up with their lowest scores, lists up to five excluded places and who refuses what, says who was not counted in the scores, and ends with the warnings.
+  When nobody shared a taste there is no score to state, so it says that, and that the pick is the best match for the request and then the nearest place.
+  The stated lowest score is rounded down to 2 decimals, so "nobody scored it below X" is true of the number shown, and everyone tied at the lowest score is named.
+  Likes and dislikes appear only as counts, such as "liked by 2 of 3".
+- **Who sees what:** the result is for the host only, and it names a person next to a constraint they chose to share, because it must warn about the ones it cannot verify and say who refuses what.
+  Anyone with the link sees who is in the session and whether each person has shared, and never what they shared.
+  Everyone sees their own inputs when they send their participant token.
+  `GroupInput` leaves participant ids out of its repr, so trace events never hold one.
+  Step outputs in the trace do hold the inputs people shared, which stay tied to the session and go with it when it is purged.
+- **No new environment variables** for the logic itself.
+  Model, loop, and graph settings apply as in the solo flow, and the session settings are under "Group session decisions".
+- **Follow-ups:** a way for participants to read the host's result, per-person weights, opening hours and menu data to verify more constraints, refusals checked against a place's full category taxonomy, stored memory for signed-in members with their consent, and the group page and its Open Graph card.
+
 ## Solo use
 
 - "Locate me" runs the single-user research workflow directly.
@@ -404,6 +476,61 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - The link carries an Open Graph preview card so it looks right in iMessage, SMS, RCS, and other chat apps.
 - The web app can be added to the home screen so it feels like an app.
 - Session data expires after a set period.
+
+### Group session decisions
+
+- **Rules over stores:** `GroupSessions` in `makan.sessions.service` holds the rules, and a `SessionStore` only keeps and finds rows, so every store behaves the same, as the memory component does.
+  There is an in-memory store for tests and a `PostgresSessionStore` over the existing `sessions` and `participants` tables.
+  The Postgres store takes an open connection and does not manage it, and it must be the backend's privileged connection, since a guest has no user id for row-level security.
+  One lock serializes use of the connection across threads.
+  A session and its host are created in one transaction.
+- **Tests:** one suite of store and rule tests runs against both stores, and the Postgres runs skip without `MAKAN_TEST_DATABASE_URL`, which CI sets.
+- **Links and credentials:** the link token is a random UUID, separate from the session id, so the link could change without changing the session.
+  Joining through it needs no account and makes a guest participant.
+  A participant token is the participant's own id, a random UUID that is returned only to that person on create or join, and sent as `Authorization: Bearer <token>`.
+  No endpoint ever lists another participant's id.
+  Reusing the id avoided a new column and is as unguessable as the link, and the cost is that the credential cannot be rotated, which is acceptable until accounts exist.
+- **Sharing:** creating a group session sets `shared_at`, because creating it is sharing its link.
+- **Expiry:** the service rejects every call on a session whose `expires_at` has passed, even before the purge runs, with the session reported as expired.
+  A null `expires_at` never expires.
+  `MAKAN_SESSION_RETENTION_HOURS` sets how long a new session lives from its creation, and the default is 24 hours, since a meal decision does not need to outlive the day.
+  It is a fixed lifetime and not extended by activity.
+  `purge_expired_sessions(store, now)` deletes expired sessions, and the database cascades to their participants, guest memory facts, and trace events.
+  It is a plain function and nothing schedules it.
+- **Closing:** only the host can close, and closing twice keeps the first time.
+  A closed session still reads, and the host can still get its result, because closing freezes the inputs.
+  Nobody can join it or change their inputs.
+- **Closing and expiry are atomic with the writes they guard:** the service checks the session first for a quick, clear error, but the store checks it again as part of each write, so a close or an expiry that lands in between cannot let a join or an update through.
+  `add_participant`, `update_participant`, and `close` each take a `now` and raise `SessionExpired` or `SessionClosed` themselves.
+  In memory that is one lock, and in Postgres each is a transaction that first locks the session row with `for update`, which serializes it with every other write to that session, on any connection or process.
+  A participant update joins to the session row to lock it, so it cannot slip past a close that is already waiting.
+  The check is shared as `makan.sessions.errors.require_open`, and expiry at exactly `expires_at` counts as expired.
+  Tests force the interleaving on both stores through a store wrapper, and on Postgres they hold the row lock from one connection while another connection's write waits and then fails.
+- **Size:** a session holds at most 20 people, counted under the same lock so people joining at once cannot pass it.
+- **Guests only for now:** the service accepts an optional `user_id`, but the API takes no user id, as in the solo endpoint.
+  A signed-in user joining twice gets the same participant back, even when the session is full, because the store looks the user up and inserts under the same lock, so simultaneous joins on separate connections still give one row.
+- **Storage setting:** `MAKAN_DATABASE_URL` is the Postgres connection URL, opened once at startup so a wrong one fails then, with a message that never echoes the URL.
+  It needs the `postgres` extra.
+  When it is blank, sessions live in memory and a warning says they are lost on restart, and demo mode always keeps them in memory.
+  Apply the files in `migrations/` first, since there is no migration runner.
+  A connection pool and reconnecting after a dropped connection are follow-ups.
+- **Endpoints**, under `/api/groups`, with the same error shape as the rest of the API:
+  - `POST /api/groups` takes `latitude`, `longitude`, `request`, optional `radius_m` and `display_name`, and returns the `link_token`, the host's `participant_token`, the session, and `you`.
+  - `GET /api/groups/{link_token}` returns the session with who is in and whether each has shared, and `you` when a token is sent.
+    A closed session reads with `closed` set.
+  - `POST /api/groups/{link_token}/participants` joins as a guest with an optional `display_name`, and returns the new `participant_token`.
+  - `PUT /api/groups/{link_token}/me` replaces the caller's `constraints`, `preferences`, and optionally `display_name`, and rejects unknown fields.
+  - `POST /api/groups/{link_token}/close` and `POST /api/groups/{link_token}/result` are for the host.
+    The result runs the workflow and is a POST because each call costs a model call.
+    It holds `pick` and `runners_up` with `lowest_score`, `lowest_scorers`, `average_score`, and `warnings` for each, plus `excluded`, `explanation`, `warnings`, `participant_count`, `pending`, `uncounted`, `data_source`, `attribution`, `partial`, and `mode`.
+  - An unknown or malformed link is 404 `session_not_found`, an expired session is 410 `session_expired`, a closed one is 409 `session_closed`, and a full one is 409 `session_full`.
+    A missing token is 401 `participant_required`, a token that is not in this session is 403 `not_a_participant`, and a guest asking for a host action is 403 `host_only`.
+    Bad input is 422 `invalid_request`, and workflow failures map as they do for the solo endpoint.
+    A score is null when nobody shared a taste.
+  - Every group route is wrapped so that anything it does not answer for itself, such as a store whose connection dropped, is logged with its traceback and returned as 500 `server_error` in the same JSON shape, with no exception text.
+    Session rule failures and bad input keep their own errors.
+  - The shared error helpers moved to `makan.web.errors`, and the routes are plain functions that FastAPI runs in its thread pool, since the stores and the workflow are synchronous.
+- **Follow-ups:** the group page, the Open Graph preview card, a read endpoint for the host's result, scheduling the purge, and a connection pool.
 
 ## Profiles and auth
 
@@ -524,7 +651,7 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   Colors follow the system light or dark setting and meet WCAG AA contrast.
   After a search, focus moves to the result or error heading and a hidden live region announces progress.
   An empty request becomes "something good to eat", and an empty result offers a search over the next larger radius.
-- **Follow-ups:** a geocoder for typed addresses, sign-in, the shared group link, persisting sessions, streaming progress, request rate limits and daily caps, a configurable port for the one command start, retrying a rate limited model call, the trace viewer, and a CORS allow-list once hosting is chosen.
+- **Follow-ups:** a geocoder for typed addresses, sign-in, the group page for the shared link, streaming progress, request rate limits and daily caps, a configurable port for the one command start, retrying a rate limited model call, the trace viewer, and a CORS allow-list once hosting is chosen.
 
 ## Hosting
 
@@ -547,5 +674,6 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - Whether hard constraints such as allergies should be exempt from confidence decay.
 - Where the long-running FastAPI backend is hosted.
   One recommendation can fan out into many model calls, so it may not suit short-lived serverless functions.
-- How long session data is kept before it expires.
+- Whether a day is the right retention for session data.
+  It defaults to 24 hours and is set by `MAKAN_SESSION_RETENTION_HOURS`.
 - Whether local development uses a local database or the hosted Supabase project.

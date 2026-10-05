@@ -25,6 +25,8 @@ class Config:
     graph_limits: GraphLimits = field(default_factory=GraphLimits)
     overture_release: str = ""  # empty means the latest release
     places_cache_ttl_seconds: int = 86_400
+    session_retention_hours: int = 24  # how long a group session lives after it is created
+    database_url: str = field(default="", repr=False)  # empty keeps group sessions in memory
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -53,6 +55,10 @@ class Config:
             places_cache_ttl_seconds=_int(
                 env, "MAKAN_PLACES_CACHE_TTL_SECONDS", cls.places_cache_ttl_seconds
             ),
+            session_retention_hours=_int(
+                env, "MAKAN_SESSION_RETENTION_HOURS", cls.session_retention_hours
+            ),
+            database_url=env.get("MAKAN_DATABASE_URL", "").strip(),
         )
 
 

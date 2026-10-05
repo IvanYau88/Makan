@@ -6,8 +6,8 @@ It learns your taste and picks a spot that suits you, or that your whole group a
 
 > Work in progress.
 > The design is written down in [docs/DESIGN.md](docs/DESIGN.md).
-> The agent loop, the provider adapter, trace events, the nearby places tool, the data schema, memory, the graph workflow engine, the single-user recommendation, and a first web channel for solo use exist so far.
-> Groups, accounts, and Telegram are not built yet.
+> The agent loop, the provider adapter, trace events, the nearby places tool, the data schema, memory, the graph workflow engine, the single-user recommendation, and the group consensus backend, and a first web channel for solo use exist so far.
+> The group web page, accounts, and Telegram are not built yet.
 
 ## What it does
 
@@ -151,3 +151,5 @@ The `search_nearby_places` tool is built too, backed by free Overture Maps data 
 Memory with a confidence-aware retrieval gate is built as well, with in-memory and Postgres stores.
 The single-user recommendation workflow is available through `makan.solo`, with offline end-to-end tests.
 The web channel serves it over HTTP and in a mobile first React page, for guests with no account.
+The group consensus workflow and saved, expiring group sessions with shared links are built too, served over `/api/groups`; the group web page is a follow-up.
+See [the group decisions](docs/DESIGN.md#group-consensus-decisions).
