@@ -1,13 +1,21 @@
 import type { Mode, Recommendation, RecommendRequest } from "./types";
 
-/** A failure the UI can show as is: the message is already written for a person. */
+/** The backend's stable error code for a rate limited or overloaded language model. */
+export const MODEL_BUSY = "model_busy";
+
+/**
+ * A failure the UI can show as is: the message is already written for a person.
+ * `code` is the backend's stable error code when it sent one, which the page can key on.
+ */
 export class ApiError extends Error {
   readonly kind: "network" | "invalid" | "server";
+  readonly code: string | null;
 
-  constructor(kind: ApiError["kind"], message: string) {
+  constructor(kind: ApiError["kind"], message: string, code: string | null = null) {
     super(message);
     this.name = "ApiError";
     this.kind = kind;
+    this.code = code;
   }
 }
 
@@ -41,17 +49,20 @@ export async function recommend(
     throw new ApiError("network", "Can't reach Makan. Check your connection and try again.");
   }
   if (response.ok) return (await response.json()) as Recommendation;
-  throw new ApiError(response.status === 422 ? "invalid" : "server", await errorMessage(response));
+  const { message, code } = await errorDetails(response);
+  throw new ApiError(response.status === 422 ? "invalid" : "server", message, code);
 }
 
-async function errorMessage(response: Response): Promise<string> {
+async function errorDetails(response: Response): Promise<{ message: string; code: string | null }> {
   // A proxy or gateway in front of the API can answer with HTML, so never trust the shape.
   try {
     const body: unknown = await response.json();
-    const message = (body as { error?: { message?: unknown } }).error?.message;
-    if (typeof message === "string" && message) return message;
+    const error = (body as { error?: { message?: unknown; code?: unknown } }).error;
+    if (typeof error?.message === "string" && error.message) {
+      return { message: error.message, code: typeof error.code === "string" ? error.code : null };
+    }
   } catch {
     // fall through to the generic message
   }
-  return GENERIC;
+  return { message: GENERIC, code: null };
 }

@@ -189,6 +189,8 @@ def test_a_failed_branch_is_an_explicit_result_for_the_merge_step() -> None:
     assert not result.ok
     assert result.results["merge"].value == {"good": "ok", "bad": "error"}
     bad = result.results["bad"]
+    assert isinstance(bad.exception, RuntimeError)
+    assert result.results["good"].exception is None
     assert (bad.status, bad.value, bad.error) == (
         "error",
         None,

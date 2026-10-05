@@ -1,6 +1,7 @@
 """The HTTP API, exercised through FastAPI's test client with fakes and no network."""
 
 import json
+import os
 import threading
 from collections.abc import Iterator
 from pathlib import Path
@@ -11,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from makan.config import Config, ConfigError
 from makan.places import FakePlacesProvider, Place, PlacesError
-from makan.providers import FakeProvider, ProviderError, ToolCall
+from makan.providers import FakeProvider, ProviderBusy, ProviderError, ToolCall
 from makan.providers.fake import call
 from makan.web import create_app, create_app_from_env
 from tests.helpers import KLCC, place
@@ -120,6 +121,28 @@ def test_a_model_failure_is_a_502() -> None:
     error = response.json()["error"]
     assert error["code"] == "provider_error"
     assert "secret" not in error["message"]
+    assert "could not read" not in error["message"]
+    assert "Retry-After" not in response.headers
+
+
+def test_a_rate_limited_model_is_a_503_that_says_it_is_busy() -> None:
+    provider = FakeProvider([ProviderBusy("OpenRouter returned 429: secret upstream details")])
+    response = client(provider=provider).post("/api/recommendations", json=BODY)
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "60"
+    error = response.json()["error"]
+    assert error["code"] == "model_busy"
+    assert error["message"] == "The language model is busy right now. Try again in a minute."
+    assert "secret" not in response.text
+
+
+def test_an_unusable_model_answer_is_a_provider_error_that_blames_the_answer() -> None:
+    bad = FakeProvider([call(ToolCall.of("finish", answer="not json"))])
+    response = client(provider=bad).post("/api/recommendations", json=BODY)
+    assert response.status_code == 502
+    error = response.json()["error"]
+    assert error["code"] == "provider_error"
+    assert "answer Makan could not use" in error["message"]
 
 
 def test_places_failure_is_a_502_and_one_failed_search_is_still_a_partial_answer() -> None:
@@ -236,3 +259,27 @@ def test_live_mode_fails_at_startup_and_points_at_demo_mode(
 ) -> None:
     with pytest.raises(ConfigError, match=f"{missing}.*MAKAN_DEMO=1"):
         create_app_from_env(env)
+
+
+def test_the_uvicorn_factory_loads_dot_env_from_the_current_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".env").write_bytes(
+        b"MAKAN_DEMO=1\r\nMAKAN_WEB_DIST=" + str(tmp_path / "none").encode() + b"\r\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(os, "environ", {})  # the factory writes here, so keep it off the real one
+    app = TestClient(create_app_from_env())
+    assert app.get("/api/health").json()["mode"] == "demo"
+
+
+def test_a_variable_in_the_real_environment_beats_dot_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".env").write_text("MAKAN_DEMO=1\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("MAKAN_DEMO", "0")
+    monkeypatch.setenv("MAKAN_WEB_DIST", str(tmp_path / "none"))
+    monkeypatch.delenv("MAKAN_MODEL", raising=False)
+    with pytest.raises(ConfigError, match="MAKAN_MODEL"):
+        create_app_from_env()

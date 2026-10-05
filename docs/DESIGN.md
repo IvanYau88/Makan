@@ -102,6 +102,8 @@ Known failure modes to design against from the start:
 - `OpenRouterProvider` talks to the chat-completions endpoint with `httpx`.
   The API key is passed in by the caller, who reads it from `OPENROUTER_API_KEY`.
   HTTP errors, error bodies returned with a 200, and malformed responses all become `ProviderError`.
+  A rate limit (HTTP 429) or a server side failure (5xx), whether as the HTTP status or as the `code` in a 200 error body, becomes `ProviderBusy`, a subclass that says a retry later may work.
+  Callers that only care that the provider failed keep catching `ProviderError`, and a caller that wants to tell the user to wait catches `ProviderBusy` first.
   There are no retries yet, which matters once free-tier rate limits bite.
 - `FakeProvider` replays a scripted list of completions and records every request.
   It ships in the package so later evals can use it too.
@@ -207,6 +209,12 @@ Not done yet: the migration runner, the expired-session purge, the shape of part
   - The box does not wrap at the antimeridian.
   - Overture data is licensed CDLA Permissive 2.0 for places.
     The test fixture is a small sample of real rows, and attribution to Overture Maps Foundation applies if results are shown to users.
+- The S3 reads are always anonymous, whatever AWS settings the machine has.
+  Left alone, DuckDB signs S3 requests with `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` from the environment (and a profile or credentials file), and S3 answers 403 `InvalidAccessKeyId` to a bad or placeholder key even for a public bucket.
+  That is how a real Windows machine with placeholder AWS variables broke the search, while a machine with no AWS credentials worked.
+  `DuckDbSource` therefore creates an S3 secret with an empty key pair and the bucket's region when it opens the connection.
+  A configured secret outranks the environment, a profile, and the credentials file, and an empty key pair makes DuckDB send unsigned requests.
+  It is checked live against a placeholder key, a placeholder profile, and a credentials file, and tested offline on the statement and on DuckDB's secret choice.
 - DuckDB is an optional extra because it is large and the harness works without it.
   A provider that is not importable fails with a message that names the extra.
 - The Google Places upgrade is another `PlacesProvider`, chosen in `makan.places.factory`.
@@ -288,6 +296,7 @@ Independent steps run in parallel and a merge step combines the results.
 - A step receives a `StepContext` with the graph input, the `StepResult` of each step it comes after, and the trace sink.
   The results are in the order of `after`, never the order they finished, so a merge step is deterministic.
 - A failure is a result, not an exception.
+  The exception object stays on the result as `exception`, next to the `error` text, so a caller can tell failures apart by type instead of by parsing text.
   An exception becomes a `StepResult` with status `error`, and a step that outlives its timeout becomes one with status `timeout`.
   Steps after it still run and see that result, and the merge step decides what a missing branch means.
   A step that cannot go on without a branch calls `unwrap` on its result, which fails that step in turn.
@@ -474,7 +483,10 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   - `GET /api/health` reports `{"status": "ok", "mode": "demo" | "live"}`, which the page uses to show the demo banner.
   - Every error uses `{"error": {"code", "message"}}` with a message safe to show.
     Bad input is 422 `invalid_request`.
-    A failed classification is 502 `provider_error`.
+    A rate limited or temporarily unavailable model (HTTP 429 or 5xx from the provider) is 503 `model_busy`, with a `Retry-After: 60` header, and says the model is busy and to try again in a minute.
+    Any other model failure is 502 `provider_error`: a provider error says the model failed to answer, and an answer Makan could not use says so.
+    The page never says the model could not read the request unless that is what happened.
+    The page keys on the `model_busy` code, not on the status or the text, and shows "The model is busy" for it.
     Both places searches failing is 502 `places_error`, or 504 when both timed out.
     Anything unexpected is 500 `server_error`.
     A single failed search still gives a 200 with `partial` set.
@@ -487,6 +499,22 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   Without `MAKAN_DEMO`, the app is live: it needs `MAKAN_MODEL` and `OPENROUTER_API_KEY` and uses OpenRouter and the cached Overture provider.
   A missing setting fails at startup with a message that points at demo mode, never on the first request.
   `MAKAN_WEB_DIST` overrides the front end build directory, and `MAKAN_API_URL` is read only by the Vite dev server.
+- **Environment file:** the uvicorn factory (`create_app_from_env` with no argument) loads `.env` itself with a small parser in `makan.env`, so starting the app takes no shell script and no `set -a`.
+  It reads `.env` in the current directory, or the file named by `MAKAN_ENV_FILE` in the real environment, and a named file that is missing is an error.
+  Line endings may be LF or CRLF, and the file may be UTF-8 with or without a byte order mark, or UTF-16, which Windows PowerShell writes.
+  Quotes, `export`, and comments are handled, and a variable that is already set in the environment, even to an empty value, is never overridden.
+  It is a few dozen lines, so `python-dotenv` was not added.
+  Calling the factory with an explicit mapping, as the tests do, never touches `.env`.
+- **One command:** the repository root has a `package.json` with no dependencies, and `scripts/run.mjs` behind `npm run dev` and `npm start`.
+  `npm run dev` runs uvicorn with reload on `src/` next to the Vite dev server, and `npm start` builds the page and runs only uvicorn, which serves it at http://localhost:8000.
+  `-- --demo` sets `MAKAN_DEMO=1`, so demo mode needs no shell specific syntax.
+  The script is plain Node with no shell syntax, so it is the same in cmd, PowerShell, macOS, and Linux.
+  Python was the alternative, but every user already needs Node for the front end, and `npm run` gives the same command on every platform.
+  It finds `.venv`, then `venv`, then the active virtual environment, and checks that the Python packages and `web/node_modules` are installed before it starts anything, printing the command that fixes what is missing.
+  If one process ends, it stops the other and exits with the same code, and on POSIX each process leads its own group so npm, Vite, and uvicorn's reload worker all stop.
+  On Windows it ends the tree with `taskkill`, and it starts npm through the shell because npm is a `.cmd` file there.
+  Node's built-in test runner covers the pure parts (`npm test` at the root), and CI runs it.
+  It has not been run on Windows by its author, so that path is unverified.
 - **Location:** "locate me" asks the browser once per tap, with a 10 second timeout, and rounds the result to about 100 m before it leaves the page.
   If the browser refuses, is unsupported, or is on an insecure origin, the page says why, opens manual latitude and longitude fields, and moves focus to them.
   Typed coordinates are validated in the page before any request.
@@ -496,7 +524,7 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   Colors follow the system light or dark setting and meet WCAG AA contrast.
   After a search, focus moves to the result or error heading and a hidden live region announces progress.
   An empty request becomes "something good to eat", and an empty result offers a search over the next larger radius.
-- **Follow-ups:** a geocoder for typed addresses, sign-in, the shared group link, persisting sessions, streaming progress, request rate limits and daily caps, the trace viewer, and a CORS allow-list once hosting is chosen.
+- **Follow-ups:** a geocoder for typed addresses, sign-in, the shared group link, persisting sessions, streaming progress, request rate limits and daily caps, a configurable port for the one command start, retrying a rate limited model call, the trace viewer, and a CORS allow-list once hosting is chosen.
 
 ## Hosting
 

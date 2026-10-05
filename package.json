@@ -1,0 +1,15 @@
+{
+  "name": "makan",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Runs Makan: the Python backend and the React front end in web/.",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/run.mjs dev",
+    "start": "node scripts/run.mjs start",
+    "test": "node --test scripts/run.test.mjs"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}

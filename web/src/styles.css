@@ -98,6 +98,7 @@ ol {
   margin-top: 0.375rem;
   color: var(--muted);
   max-width: 32rem;
+  text-wrap: balance;
 }
 
 main {

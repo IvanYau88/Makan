@@ -74,6 +74,8 @@ class StepResult:
     value: Any = None  # what the step returned, when status is `ok`
     error: str | None = None  # "ExceptionType: message", or the timeout, otherwise
     duration_ms: int = 0
+    exception: BaseException | None = field(default=None, repr=False, compare=False)
+    # the exception behind an `error` status, so a caller can tell failures apart by type
 
     @property
     def ok(self) -> bool:
@@ -228,6 +230,7 @@ class _Execution:
 
         value: Any = None
         error: str | None = None
+        failure: BaseException | None = None
         status: StepStatus = "ok"
         work = asyncio.get_running_loop().run_in_executor(self._pool, step.run, ctx)
         done, _ = await asyncio.wait({work}, timeout=timeout)
@@ -235,7 +238,7 @@ class _Execution:
             work.cancel()  # does nothing to a thread that already started
             status, error = "timeout", f"TimeoutError: step took longer than {timeout}s"
         elif (exc := work.exception()) is not None:
-            status, error = "error", f"{type(exc).__name__}: {exc}"
+            status, error, failure = "error", f"{type(exc).__name__}: {exc}", exc
         else:
             value = work.result()
 
@@ -252,7 +255,7 @@ class _Execution:
             self._emit("step_finish", output=_jsonable(value), **data)
         else:
             self._emit("step_error", error=error, **data)
-        return StepResult(step.name, status, value, error, duration_ms)
+        return StepResult(step.name, status, value, error, duration_ms, failure)
 
 
 def _dependency_order(steps: Sequence[Step]) -> tuple[Step, ...]:

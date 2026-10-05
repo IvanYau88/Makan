@@ -225,6 +225,41 @@ describe("App", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("says the model is busy when the backend reports a rate limit", async () => {
+    stubApi(() =>
+      json(
+        {
+          error: {
+            code: "model_busy",
+            message: "The language model is busy right now. Try again in a minute.",
+          },
+        },
+        503,
+      ),
+    );
+    stubLocation("ok");
+    render(<App />);
+    await userEvent.click(locateButton());
+
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByRole("heading", { name: "The model is busy" })).toBeInTheDocument();
+    expect(alert).toHaveTextContent("The language model is busy right now. Try again in a minute.");
+    expect(within(alert).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
+  it("keeps the generic heading for other failures, even a 503 with no model_busy code", async () => {
+    stubApi(() =>
+      json({ error: { code: "provider_error", message: "The language model failed." } }, 503),
+    );
+    stubLocation("ok");
+    render(<App />);
+    await userEvent.click(locateButton());
+
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByRole("heading", { name: "That did not work" })).toBeInTheDocument();
+    expect(within(alert).queryByText("The model is busy")).not.toBeInTheDocument();
+  });
+
   it("falls back to a generic message when the error is not JSON", async () => {
     stubApi(() => new Response("<html>Bad gateway</html>", { status: 502 }));
     stubLocation("ok");

@@ -21,6 +21,7 @@ Read `docs/DESIGN.md` before making architectural decisions.
 Setup and the check commands (`pytest`, `ruff check .`, `ruff format .`, `mypy`) are in the README under Development.
 Run all four before committing.
 When you change `web/`, also run `npm run lint`, `npm test`, and `npm run build` there.
+When you change `scripts/` (the `npm run dev` and `npm start` launcher), run `npm test` at the root.
 Tests must never make real network calls, so use `FakeProvider` or an `httpx` mock transport.
 
 ## Maintaining this file

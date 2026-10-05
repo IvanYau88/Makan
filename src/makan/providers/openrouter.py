@@ -10,6 +10,7 @@ import httpx
 from makan.providers.base import (
     Completion,
     Message,
+    ProviderBusy,
     ProviderError,
     ToolCall,
     ToolSpec,
@@ -43,13 +44,19 @@ class OpenRouterProvider:
         except httpx.HTTPError as exc:
             raise ProviderError(f"OpenRouter request failed: {type(exc).__name__}") from exc
         if response.status_code >= 400:
-            raise ProviderError(
-                f"OpenRouter returned {response.status_code}: {response.text[:300]}"
-            )
+            message = f"OpenRouter returned {response.status_code}: {response.text[:300]}"
+            raise (ProviderBusy if _is_busy(response.status_code) else ProviderError)(message)
         try:
             return _parse(response.json())
         except (ValueError, KeyError, IndexError, TypeError) as exc:
             raise ProviderError(f"OpenRouter response was malformed: {exc!r}") from exc
+
+
+def _is_busy(code: object) -> bool:
+    """A rate limit (429) or a server side failure (5xx) is temporary, so a retry can work."""
+    if isinstance(code, str) and code.isdecimal():
+        code = int(code)
+    return isinstance(code, int) and (code == 429 or code >= 500)
 
 
 def _wire_tool(tool: ToolSpec) -> dict[str, Any]:
@@ -88,7 +95,9 @@ def _arguments(function: dict[str, Any]) -> str:
 def _parse(data: dict[str, Any]) -> Completion:
     # OpenRouter can answer 200 with an error object, for example when an upstream model fails.
     if "error" in data:
-        raise ProviderError(f"OpenRouter error: {str(data['error'])[:300]}")
+        error = data["error"]
+        busy = isinstance(error, dict) and _is_busy(error.get("code"))
+        raise (ProviderBusy if busy else ProviderError)(f"OpenRouter error: {str(error)[:300]}")
     raw = data["choices"][0]["message"]
     calls = tuple(
         ToolCall(id=c["id"], name=c["function"]["name"], arguments=_arguments(c["function"]))

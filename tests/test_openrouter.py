@@ -7,7 +7,15 @@ import httpx
 import pytest
 
 from makan.loop import run
-from makan.providers import Message, OpenRouterProvider, ProviderError, ToolCall, ToolSpec, Usage
+from makan.providers import (
+    Message,
+    OpenRouterProvider,
+    ProviderBusy,
+    ProviderError,
+    ToolCall,
+    ToolSpec,
+    Usage,
+)
 from makan.trace import ListSink
 from tests.helpers import ECHO
 
@@ -146,6 +154,38 @@ def test_tools_are_omitted_when_there_are_none() -> None:
 def test_failures_become_provider_errors(response: httpx.Response) -> None:
     with pytest.raises(ProviderError):
         provider_with(lambda request: response).complete(model="m", messages=[], tools=[])
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(429, text="rate limited upstream"),
+        httpx.Response(500, text="oops"),
+        httpx.Response(503, text="overloaded"),
+        httpx.Response(200, json={"error": {"code": 429, "message": "rate limited"}}),
+        httpx.Response(200, json={"error": {"code": "502", "message": "upstream down"}}),
+    ],
+)
+def test_a_rate_limit_or_server_failure_is_a_busy_provider(response: httpx.Response) -> None:
+    with pytest.raises(ProviderBusy):
+        provider_with(lambda request: response).complete(model="m", messages=[], tools=[])
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(400, text="bad request"),
+        httpx.Response(401, text="no such key"),
+        httpx.Response(404, text="no such model"),
+        httpx.Response(200, json={"error": {"code": 400, "message": "bad"}}),
+        httpx.Response(200, json={"error": "plain text"}),
+        httpx.Response(200, json={"choices": []}),
+    ],
+)
+def test_other_failures_are_not_busy(response: httpx.Response) -> None:
+    with pytest.raises(ProviderError) as caught:
+        provider_with(lambda request: response).complete(model="m", messages=[], tools=[])
+    assert not isinstance(caught.value, ProviderBusy)
 
 
 def test_network_failure_becomes_a_provider_error() -> None:

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, fetchMode, recommend } from "./api";
+import { ApiError, MODEL_BUSY, fetchMode, recommend } from "./api";
 import { LocationError, locate, parseCoordinates } from "./location";
 import type { CoordinateErrors } from "./location";
 import { RADII, REQUEST_PLACEHOLDER, SearchForm } from "./SearchForm";
@@ -11,7 +11,7 @@ type Status =
   | { kind: "idle" }
   | { kind: "working"; phase: "locating" | "searching" }
   | { kind: "done"; result: Recommendation; radiusM: number }
-  | { kind: "failed"; message: string };
+  | { kind: "failed"; message: string; busy: boolean };
 
 const PHASE_TEXT = {
   locating: "Getting your location…",
@@ -89,6 +89,7 @@ export function App() {
       setStatus({
         kind: "failed",
         message: error instanceof ApiError ? error.message : "Something went wrong. Try again.",
+        busy: error instanceof ApiError && error.code === MODEL_BUSY,
       });
     }
   }, []);
@@ -151,7 +152,7 @@ export function App() {
                   tabIndex={-1}
                   className="section-title"
                 >
-                  That did not work
+                  {status.busy ? "The model is busy" : "That did not work"}
                 </h2>
                 <p>{status.message}</p>
                 <button

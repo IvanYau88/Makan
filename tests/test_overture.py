@@ -7,7 +7,13 @@ import httpx
 import pytest
 
 from makan.places import OvertureProvider, PlaceQuery, PlacesError
-from makan.places.overture import Bounds, DuckDbSource, Row
+from makan.places.overture import (
+    ANONYMOUS_S3_SECRET,
+    PLACES_PATH,
+    Bounds,
+    DuckDbSource,
+    Row,
+)
 from tests.helpers import KLCC, overture_rows
 
 RELEASE = "2026-09-23.1"
@@ -249,3 +255,58 @@ def test_the_release_is_substituted_into_the_path(tmp_path: Path) -> None:
     source = DuckDbSource(str(tmp_path / "{release}.parquet"))
     with pytest.raises(PlacesError, match=RELEASE):
         source.fetch(RELEASE, Bounds.around(*KLCC, 1000))
+
+
+class RecordingDuckDb:
+    """Stands in for the `duckdb` module and records every statement run on its connection."""
+
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+
+    def connect(self) -> "RecordingDuckDb":
+        return self
+
+    def execute(self, statement: str) -> None:
+        self.statements.append(statement)
+
+
+def test_the_s3_connection_is_anonymous_whatever_aws_credentials_the_machine_has(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A placeholder key in the environment made S3 answer 403 for this public bucket.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "YOUR_KEY_ID")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "YOUR_SECRET")
+    monkeypatch.setenv("AWS_PROFILE", "placeholder")
+    duckdb = RecordingDuckDb()
+    DuckDbSource()._connect(duckdb, PLACES_PATH.format(release=RELEASE))
+    assert duckdb.statements[-1] == ANONYMOUS_S3_SECRET
+    assert "KEY_ID ''" in ANONYMOUS_S3_SECRET and "SECRET ''" in ANONYMOUS_S3_SECRET
+    assert "credential_chain" not in ANONYMOUS_S3_SECRET.lower()
+    assert "us-west-2" in ANONYMOUS_S3_SECRET
+
+
+def test_a_local_file_needs_no_s3_setup(tmp_path: Path) -> None:
+    duckdb = RecordingDuckDb()
+    DuckDbSource()._connect(duckdb, str(tmp_path / "places.parquet"))
+    assert duckdb.statements == []
+
+
+def test_duckdb_picks_the_anonymous_secret_over_aws_environment_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    duckdb = pytest.importorskip("duckdb")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "YOUR_KEY_ID")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "YOUR_SECRET")
+    connection = duckdb.connect()
+    try:
+        connection.execute("LOAD httpfs")  # no INSTALL: that would download it
+    except duckdb.Error:
+        pytest.skip("the DuckDB httpfs extension is not installed here")
+    connection.execute(ANONYMOUS_S3_SECRET)
+    path = PLACES_PATH.format(release=RELEASE)
+    chosen = connection.execute("SELECT name FROM which_secret(?, 's3')", [path]).fetchone()
+    assert chosen == ("makan_overture",)
+    secret = connection.execute(
+        "SELECT secret_string FROM duckdb_secrets() WHERE name = 'makan_overture'"
+    ).fetchone()
+    assert secret is not None and "key_id=;" in secret[0]
