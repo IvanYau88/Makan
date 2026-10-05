@@ -25,10 +25,11 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from makan.config import Config, ConfigError
+from makan.env import load_dotenv
 from makan.graph import GraphResult
 from makan.places.base import MAX_RADIUS_M, MIN_RADIUS_M, PlacesProvider
 from makan.places.factory import places_provider
-from makan.providers.base import Provider
+from makan.providers.base import Provider, ProviderBusy
 from makan.providers.openrouter import OpenRouterProvider
 from makan.solo import RankedCandidate, Recommendation, SoloRequest, recommend
 from makan.web.demo import DemoPlaces, DemoProvider
@@ -37,6 +38,7 @@ log = logging.getLogger("makan.web")
 
 Mode = Literal["demo", "live"]
 MAX_REQUEST_CHARS = 500
+MODEL_BUSY_RETRY_SECONDS = 60
 _FAILED_STEP = re.compile(r"^(requested_places|nearby_places|Memory) (error|timeout):")
 DEFAULT_WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
@@ -108,7 +110,10 @@ def create_app_from_env(env: Mapping[str, str] | None = None) -> FastAPI:
 
     Demo mode needs no key and makes no network call. Live mode needs `MAKAN_MODEL` and
     `OPENROUTER_API_KEY`, and fails at startup, not on the first request, when either is missing.
+    Called with no `env`, it first loads `.env` (see `makan.env`) into the real environment.
     """
+    if env is None:
+        load_dotenv()
     env = os.environ if env is None else env
     dist = Path(env.get("MAKAN_WEB_DIST", "").strip() or DEFAULT_WEB_DIST)
     if env.get("MAKAN_DEMO", "").strip().lower() in ("1", "true", "yes", "on"):
@@ -137,8 +142,14 @@ def create_app_from_env(env: Mapping[str, str] | None = None) -> FastAPI:
     )
 
 
-def _error(status: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse({"error": {"code": code, "message": message}}, status_code=status)
+def _error(
+    status: int, code: str, message: str, headers: Mapping[str, str] | None = None
+) -> JSONResponse:
+    return JSONResponse(
+        {"error": {"code": code, "message": message}},
+        status_code=status,
+        headers=dict(headers or {}),
+    )
 
 
 def _workflow_failure(graph: GraphResult) -> JSONResponse:
@@ -146,9 +157,22 @@ def _workflow_failure(graph: GraphResult) -> JSONResponse:
     failed = {name: step for name, step in graph.results.items() if not step.ok}
     for name, step in failed.items():
         log.warning("step %s %s: %s", name, step.status, step.error)
-    if {"classify", "intent"} & failed.keys():
+    if any(isinstance(step.exception, ProviderBusy) for step in failed.values()):
         return _error(
-            502, "provider_error", "The language model could not read your request. Try again."
+            503,
+            "model_busy",
+            "The language model is busy right now. Try again in a minute.",
+            {"Retry-After": str(MODEL_BUSY_RETRY_SECONDS)},
+        )
+    if "classify" in failed:
+        return _error(
+            502, "provider_error", "The language model failed to answer. Try again in a moment."
+        )
+    if "intent" in failed:
+        return _error(
+            502,
+            "provider_error",
+            "The language model gave an answer Makan could not use. Try again.",
         )
     if {"requested_places", "nearby_places"} <= failed.keys():
         timed_out = all(

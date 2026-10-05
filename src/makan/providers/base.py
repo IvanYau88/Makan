@@ -17,6 +17,10 @@ class ProviderError(Exception):
     """The provider could not produce a completion."""
 
 
+class ProviderBusy(ProviderError):
+    """The provider is rate limited or temporarily unavailable, so trying again later may work."""
+
+
 @dataclass(frozen=True)
 class ToolCall:
     id: str

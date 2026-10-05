@@ -23,6 +23,14 @@ from makan.places.base import Place, PlaceQuery, PlacesError, rank_nearby
 STAC_CATALOG = "https://stac.overturemaps.org/catalog.json"
 PLACES_PATH = "s3://overturemaps-us-west-2/release/{release}/theme=places/type=place/*"
 S3_REGION = "us-west-2"
+# The bucket is public, so reads must be anonymous. With no secret, DuckDB signs requests with
+# whatever AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_PROFILE, or credentials file the machine
+# has, and S3 rejects a bad key with a 403 even on a public bucket. A config secret with an empty
+# key pair takes precedence over all of them and sends unsigned requests.
+ANONYMOUS_S3_SECRET = (
+    "CREATE OR REPLACE SECRET makan_overture "
+    f"(TYPE s3, PROVIDER config, KEY_ID '', SECRET '', REGION '{S3_REGION}')"
+)
 FOOD_ROOT = "food_and_drink"  # the top of Overture's category taxonomy for places to eat or drink
 MIN_CONFIDENCE = 0.5  # Overture's own score that a place exists; lower scores are mostly junk
 METERS_PER_DEGREE = 111_320
@@ -102,7 +110,7 @@ class DuckDbSource:
                 if path.startswith("s3://"):
                     connection.execute("INSTALL httpfs")
                     connection.execute("LOAD httpfs")
-                    connection.execute(f"SET s3_region = '{S3_REGION}'")
+                    connection.execute(ANONYMOUS_S3_SECRET)
                 self._connection = connection
             return self._connection
 
