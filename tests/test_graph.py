@@ -80,33 +80,38 @@ def test_a_step_runs_only_after_the_steps_it_comes_after_have_ended() -> None:
 
 
 def test_merge_inputs_are_in_the_declared_order_not_the_finishing_order() -> None:
-    c_done, b_done = threading.Event(), threading.Event()
+    sink = ListSink()
+
+    def finished_steps() -> list[str]:
+        return [e.data["step"] for e in events(sink, "step_finish")]
+
+    def wait_until_finished(step: str) -> None:
+        deadline = time.monotonic() + 2
+        while step not in finished_steps():
+            assert time.monotonic() < deadline
+            time.sleep(0.005)
 
     def a(ctx: StepContext) -> str:
-        assert b_done.wait(2)
+        wait_until_finished("b")
         return "a"
 
     def b(ctx: StepContext) -> str:
-        assert c_done.wait(2)
-        b_done.set()
+        wait_until_finished("c")
         return "b"
 
     def c(ctx: StepContext) -> str:
-        c_done.set()
         return "c"
 
     def merge(ctx: StepContext) -> list[str]:
         return list(ctx.inputs)
 
-    sink = ListSink()
     graph = Graph(
         "g",
         [Step("a", a), Step("b", b), Step("c", c), Step("merge", merge, after=("c", "a", "b"))],
     )
     result = run_graph(graph, sink=sink)
     assert result.results["merge"].value == ["c", "a", "b"]
-    finished = [e.data["step"] for e in events(sink, "step_finish")]
-    assert finished == ["c", "b", "a", "merge"]  # they really did finish in the other order
+    assert finished_steps() == ["c", "b", "a", "merge"]  # they really did finish in the other order
 
 
 # Parallelism and bounds
