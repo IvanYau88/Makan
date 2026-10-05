@@ -47,6 +47,10 @@ The harness is the point.
   DuckDB is an optional runtime dependency in the `overture` extra, and the `dev` extra includes it.
 - Dev tools are `pytest` for tests, `ruff` for lint and format, and `mypy` in strict mode for types.
   They install through the `dev` extra: `pip install -e ".[dev]"`.
+- GitHub Actions runs these checks on pull requests and pushes to `main`, with Python 3.12 and a health-checked Postgres 16 service.
+  `MAKAN_TEST_DATABASE_URL` enables the schema and Postgres memory store tests, using the service's privileged test user so schema and role creation work.
+  The throwaway CI service uses trust authentication and a passwordless URL, so no database credentials are committed.
+  Formatting is checked without changing files.
 - Settings come from environment variables through `makan.config.Config.from_env`.
   The model name has no default in code, and a missing `MAKAN_MODEL` is an error.
 

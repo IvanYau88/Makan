@@ -70,8 +70,10 @@ mypy            # types
 The `dev` extra includes DuckDB, which the Overture places provider needs.
 For a runtime install, add it with `pip install ".[overture]"`.
 The database schema is plain SQL in `migrations/`, applied in file name order to any Postgres 13 or newer.
-The schema tests run on a live Postgres when `MAKAN_TEST_DATABASE_URL` is set, and are skipped otherwise.
+The schema and Postgres memory store tests run on a live Postgres when `MAKAN_TEST_DATABASE_URL` is set, and are skipped otherwise.
 They create and drop their own schema, so a throwaway database is enough.
+GitHub Actions runs the development checks on pull requests and pushes to `main`, using Python 3.12 and a throwaway Postgres service so the database tests run too.
+CI checks formatting with `ruff format --check .`.
 
 ## Status
 
