@@ -6,7 +6,8 @@ It learns your taste and picks a spot that suits you, or that your whole group a
 
 > Work in progress.
 > The design is written down in [docs/DESIGN.md](docs/DESIGN.md).
-> Only the agent loop, the provider adapter, trace events, the nearby places tool, the data schema, and the graph workflow engine exist so far, and there is no app to run yet.
+> The agent loop, the provider adapter, trace events, the nearby places tool, the data schema, memory, the graph workflow engine, the single-user recommendation, and a first web channel for solo use exist so far.
+> Groups, accounts, and Telegram are not built yet.
 
 ## What it does
 
@@ -74,6 +75,44 @@ The schema and Postgres memory store tests run on a live Postgres when `MAKAN_TE
 They create and drop their own schema, so a throwaway database is enough.
 GitHub Actions runs the development checks on pull requests and pushes to `main`, using Python 3.12 and a throwaway Postgres service so the database tests run too.
 CI checks formatting with `ruff format --check .`.
+A second CI job lints, tests, and builds the front end.
+
+### Web app
+
+The web channel is a FastAPI backend (`src/makan/web`) and a React front end (`web/`, Vite and TypeScript).
+You need Node 22.12 or newer for the front end.
+
+The `dev` extra already includes FastAPI and uvicorn.
+Run it with sample data, which needs no API key and no network:
+
+```sh
+(cd web && npm ci && npm run build)
+MAKAN_DEMO=1 uvicorn --factory makan.web:create_app_from_env
+```
+
+Open http://127.0.0.1:8000.
+The backend serves the built front end next to the API, so this is the whole app.
+Demo mode shows a banner and invents sample places around any location you give it.
+Latitude 90 or -90 finds nothing, which shows the no-results state.
+
+Run it with real providers by setting `MAKAN_MODEL` and `OPENROUTER_API_KEY` in `.env` (or the environment) and installing the extras with `pip install -e ".[web,overture]"`.
+Leave `MAKAN_DEMO` blank.
+The app refuses to start, and says what is missing, if either setting is absent.
+Load `.env` into the environment first, for example with `set -a; . ./.env; set +a`.
+
+For front end work, run the backend as above and the Vite dev server beside it.
+Vite proxies `/api` to `http://127.0.0.1:8000`, or to `MAKAN_API_URL` if you set it:
+
+```sh
+cd web
+npm run dev     # http://localhost:5173
+npm run lint    # eslint and prettier --check
+npm test        # vitest, with no network calls
+npm run build   # type check and production build into web/dist
+```
+
+Browsers only share a location on `localhost` or over HTTPS.
+On any other address, "locate me" fails with a message and the page falls back to typed coordinates.
 
 ## Single-user recommendation
 
@@ -115,3 +154,4 @@ The core loop, the OpenRouter provider adapter with a fake provider for tests, t
 The `search_nearby_places` tool is built too, backed by free Overture Maps data behind a provider interface and an in-memory cache.
 Memory with a confidence-aware retrieval gate is built as well, with in-memory and Postgres stores.
 The single-user recommendation workflow is available through `makan.solo`, with offline end-to-end tests.
+The web channel serves it over HTTP and in a mobile first React page, for guests with no account.

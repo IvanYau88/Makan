@@ -48,3 +48,27 @@ jobs:
         run: mypy
       - name: Run tests including Postgres
         run: pytest
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install front end dependencies
+        run: npm ci
+      - name: Lint and check formatting
+        run: npm run lint
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
