@@ -250,6 +250,8 @@ Implementation decisions:
   The Postgres adapter takes a caller-owned psycopg connection, so connection pooling and row-level security stay with the application.
 - Fact content is validated and normalized by kind in `makan.memory.content`; facts with the same subject and different values contradict one another, including a cuisine like and dislike.
   A repeated value reconfirms the active fact, while a changed value links the old row to its replacement.
+  Values are compared by type as well as value, so a boolean never equals a number, while `20` and `20.0` are equal.
+  Reconfirming refuses a superseded row in both stores.
 - Confidence is read-time exponential decay with a configurable half-life per kind: 180 days for cuisine preferences, 365 for constraints, and 90 for place ratings.
   Every kind decays by default; the policy can set a kind's half-life to `None`, but hard constraints such as allergies remain an open product question.
 - A fact is stale when expired or when its decayed confidence falls below 0.5.
