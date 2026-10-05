@@ -78,4 +78,5 @@ They create and drop their own schema, so a throwaway database is enough.
 The design is in place and the harness is being built component by component.
 The core loop, the OpenRouter provider adapter with a fake provider for tests, trace events, the data schema, and the graph workflow engine are built.
 The `search_nearby_places` tool is built too, backed by free Overture Maps data behind a provider interface and an in-memory cache.
+Memory with a confidence-aware retrieval gate is built as well, with in-memory and Postgres stores.
 Run instructions arrive with the first runnable version.
