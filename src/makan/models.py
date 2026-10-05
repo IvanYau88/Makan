@@ -51,6 +51,7 @@ class Session:
     user_id: UUID | None = None
     shared_at: datetime | None = None
     expires_at: datetime | None = None
+    closed_at: datetime | None = None
 
 
 @dataclass(frozen=True)

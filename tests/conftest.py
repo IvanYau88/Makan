@@ -37,3 +37,15 @@ def db() -> Iterator[Any]:
         conn.execute("reset role")
         conn.execute(f"drop schema {schema} cascade")
         conn.close()
+
+
+@pytest.fixture(params=["memory", "postgres"])
+def store(request: pytest.FixtureRequest) -> Any:
+    """A group session store: in memory, and on Postgres when `MAKAN_TEST_DATABASE_URL` is set."""
+    if request.param == "memory":
+        from makan.sessions import InMemorySessionStore
+
+        return InMemorySessionStore()
+    from makan.sessions.postgres import PostgresSessionStore
+
+    return PostgresSessionStore(request.getfixturevalue("db"))  # skips without a database

@@ -7,6 +7,7 @@ run the graph, and return its recommendation and failure evidence together.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
@@ -127,25 +128,28 @@ def _intent(answer: str) -> Intent:
     )
 
 
-def build_solo_graph(
+def research_steps(
     *,
     provider: Provider,
     places: PlacesProvider,
     config: Config,
     memory: Memory | None = None,
     gate: RetrievalGate | None = None,
-) -> Graph:
-    """Classify, search in parallel, merge, rank, and explain.
+    session_of: Callable[[StepContext], Session] = lambda ctx: ctx.input,
+) -> list[Step]:
+    """The candidate research steps: classify, intent, two parallel searches, memory, merge.
 
+    The last step, `merge`, has a `Research` value: the candidate options and what could not be
+    verified. The solo workflow ranks it, and the group workflow filters and scores it. `session_of`
+    says where the graph input keeps the session whose context holds the location and request.
     The places provider must support concurrent searches (the built-in providers do).
-    Input is a Session made by `recommend`; guests never read stored memory.
     """
     tool = search_nearby_places(places)
     retrieval_gate = gate or RuleGate()
 
     def arguments(ctx: StepContext, *, filtered: bool) -> dict[str, Any]:
         intent: Intent = ctx.inputs["intent"].unwrap()
-        session: Session = ctx.input
+        session = session_of(ctx)
         args = {k: session.context[k] for k in ("latitude", "longitude", "radius_m")}
         args["limit"] = MAX_LIMIT
         if filtered:
@@ -156,7 +160,7 @@ def build_solo_graph(
         return args
 
     def recall(ctx: StepContext) -> TurnMemory:
-        session: Session = ctx.input
+        session = session_of(ctx)
         if memory is None or session.user_id is None:
             return TurnMemory(GateDecision(False, "no user memory"))
         return recall_for_turn(
@@ -203,6 +207,44 @@ def build_solo_graph(
             elif r.fact.kind == "constraint":
                 warnings.append(f"Cannot verify stored constraint: {r.fact.content}.")
         return Research(intent, tuple(candidates.values()), turn, tuple(warnings))
+
+    return [
+        agent_step(
+            "classify",
+            provider=provider,
+            model=config.model,
+            limits=config.limits,
+            system_prompt=_CLASSIFY,
+            prompt=lambda ctx: session_of(ctx).context["request"],
+        ),
+        Step("intent", lambda ctx: _intent(ctx.inputs["classify"].unwrap()), after=("classify",)),
+        tool_step(
+            "requested_places",
+            tool,
+            lambda ctx: arguments(ctx, filtered=True),
+            after=("intent",),
+        ),
+        tool_step(
+            "nearby_places", tool, lambda ctx: arguments(ctx, filtered=False), after=("intent",)
+        ),
+        Step("memory", recall, after=("intent",)),
+        Step("merge", merge, after=("intent", "requested_places", "nearby_places", "memory")),
+    ]
+
+
+def build_solo_graph(
+    *,
+    provider: Provider,
+    places: PlacesProvider,
+    config: Config,
+    memory: Memory | None = None,
+    gate: RetrievalGate | None = None,
+) -> Graph:
+    """Classify, search in parallel, merge, rank, and explain.
+
+    The places provider must support concurrent searches (the built-in providers do).
+    Input is a Session made by `recommend`; guests never read stored memory.
+    """
 
     def rank(ctx: StepContext) -> tuple[Research, tuple[RankedCandidate, ...]]:
         research: Research = ctx.inputs["merge"].unwrap()
@@ -273,28 +315,9 @@ def build_solo_graph(
     return Graph(
         "solo_recommendation",
         [
-            agent_step(
-                "classify",
-                provider=provider,
-                model=config.model,
-                limits=config.limits,
-                system_prompt=_CLASSIFY,
-                prompt=lambda ctx: ctx.input.context["request"],
+            *research_steps(
+                provider=provider, places=places, config=config, memory=memory, gate=gate
             ),
-            Step(
-                "intent", lambda ctx: _intent(ctx.inputs["classify"].unwrap()), after=("classify",)
-            ),
-            tool_step(
-                "requested_places",
-                tool,
-                lambda ctx: arguments(ctx, filtered=True),
-                after=("intent",),
-            ),
-            tool_step(
-                "nearby_places", tool, lambda ctx: arguments(ctx, filtered=False), after=("intent",)
-            ),
-            Step("memory", recall, after=("intent",)),
-            Step("merge", merge, after=("intent", "requested_places", "nearby_places", "memory")),
             Step("rank", rank, after=("merge",)),
             Step("explain", explain, after=("rank",)),
         ],

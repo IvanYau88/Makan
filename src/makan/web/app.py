@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 from collections.abc import Mapping
+from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -26,20 +26,20 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from makan.config import Config, ConfigError
 from makan.env import load_dotenv
-from makan.graph import GraphResult
 from makan.places.base import MAX_RADIUS_M, MIN_RADIUS_M, PlacesProvider
 from makan.places.factory import places_provider
-from makan.providers.base import Provider, ProviderBusy
+from makan.providers.base import Provider
 from makan.providers.openrouter import OpenRouterProvider
+from makan.sessions import GroupSessions, InMemorySessionStore
+from makan.sessions.service import MAX_REQUEST_CHARS
 from makan.solo import RankedCandidate, Recommendation, SoloRequest, recommend
 from makan.web.demo import DemoPlaces, DemoProvider
+from makan.web.errors import error, public_warnings, workflow_failure
+from makan.web.groups import register_group_routes
 
 log = logging.getLogger("makan.web")
 
 Mode = Literal["demo", "live"]
-MAX_REQUEST_CHARS = 500
-MODEL_BUSY_RETRY_SECONDS = 60
-_FAILED_STEP = re.compile(r"^(requested_places|nearby_places|Memory) (error|timeout):")
 DEFAULT_WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 
@@ -63,8 +63,12 @@ def create_app(
     config: Config,
     mode: Mode = "live",
     static_dir: Path | None = None,
+    sessions: GroupSessions | None = None,
 ) -> FastAPI:
-    """Build the app around ready providers. Tests pass fakes, and the CLI passes real ones."""
+    """Build the app around ready providers. Tests pass fakes, and the CLI passes real ones.
+
+    Group sessions are kept in `sessions`, or in memory for the life of the process when it is None.
+    """
     app = FastAPI(
         title="Makan", docs_url="/api/docs", redoc_url=None, openapi_url="/api/openapi.json"
     )
@@ -74,11 +78,11 @@ def create_app(
         fields = ", ".join(
             ".".join(str(part) for part in e["loc"][1:]) or "body" for e in exc.errors()
         )
-        return _error(422, "invalid_request", f"Check these fields: {fields}.")
+        return error(422, "invalid_request", f"Check these fields: {fields}.")
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
-        return _error(exc.status_code, "http_error", str(exc.detail))
+        return error(exc.status_code, "http_error", str(exc.detail))
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:
@@ -94,10 +98,19 @@ def create_app(
             )
         except Exception:
             log.exception("recommendation crashed")
-            return _error(500, "server_error", "Something went wrong on our side. Try again.")
+            return error(500, "server_error", "Something went wrong on our side. Try again.")
         if result.recommendation is None:
-            return _workflow_failure(result.graph)
+            return workflow_failure(result.graph)
         return JSONResponse(_recommendation_json(result.recommendation, result.graph.ok, mode))
+
+    register_group_routes(
+        app,
+        _default_sessions(config) if sessions is None else sessions,
+        provider=provider,
+        places=places,
+        config=config,
+        mode=mode,
+    )
 
     if static_dir is not None and static_dir.is_dir():
         # Registered last so the API routes win. `html=True` serves index.html at "/".
@@ -124,6 +137,7 @@ def create_app_from_env(env: Mapping[str, str] | None = None) -> FastAPI:
             config=config,
             mode="demo",
             static_dir=dist,
+            sessions=_default_sessions(config),  # demo mode never needs a database
         )
     try:
         config = Config.from_env(env)
@@ -139,51 +153,42 @@ def create_app_from_env(env: Mapping[str, str] | None = None) -> FastAPI:
         config=config,
         mode="live",
         static_dir=dist,
+        sessions=_group_sessions(config),
     )
 
 
-def _error(
-    status: int, code: str, message: str, headers: Mapping[str, str] | None = None
-) -> JSONResponse:
-    return JSONResponse(
-        {"error": {"code": code, "message": message}},
-        status_code=status,
-        headers=dict(headers or {}),
+def _default_sessions(config: Config) -> GroupSessions:
+    return GroupSessions(
+        InMemorySessionStore(), retention=timedelta(hours=config.session_retention_hours)
     )
 
 
-def _workflow_failure(graph: GraphResult) -> JSONResponse:
-    """Map a graph that produced no recommendation to the part that failed."""
-    failed = {name: step for name, step in graph.results.items() if not step.ok}
-    for name, step in failed.items():
-        log.warning("step %s %s: %s", name, step.status, step.error)
-    if any(isinstance(step.exception, ProviderBusy) for step in failed.values()):
-        return _error(
-            503,
-            "model_busy",
-            "The language model is busy right now. Try again in a minute.",
-            {"Retry-After": str(MODEL_BUSY_RETRY_SECONDS)},
-        )
-    if "classify" in failed:
-        return _error(
-            502, "provider_error", "The language model failed to answer. Try again in a moment."
-        )
-    if "intent" in failed:
-        return _error(
-            502,
-            "provider_error",
-            "The language model gave an answer Makan could not use. Try again.",
-        )
-    if {"requested_places", "nearby_places"} <= failed.keys():
-        timed_out = all(
-            failed[n].status == "timeout" for n in ("requested_places", "nearby_places")
-        )
-        return _error(
-            504 if timed_out else 502,
-            "places_error",
-            "Nearby places data is unavailable right now. Try again in a moment.",
-        )
-    return _error(500, "server_error", "Something went wrong on our side. Try again.")
+def _group_sessions(config: Config) -> GroupSessions:
+    """Group sessions in Postgres when `MAKAN_DATABASE_URL` is set, otherwise in memory.
+
+    The Postgres connection is opened once here, so a wrong URL fails at startup.
+    """
+    if not config.database_url:
+        log.warning("MAKAN_DATABASE_URL is not set, so group sessions are lost on restart")
+        return _default_sessions(config)
+    try:
+        import psycopg
+
+        from makan.sessions.postgres import PostgresSessionStore
+    except ImportError as exc:
+        raise ConfigError(
+            'MAKAN_DATABASE_URL is set but psycopg is not installed; run: pip install ".[postgres]"'
+        ) from exc
+    try:
+        conn = psycopg.connect(config.database_url, autocommit=True)
+    except psycopg.Error as exc:
+        # The message can echo the URL, so only the error type is reported.
+        raise ConfigError(
+            f"could not connect to MAKAN_DATABASE_URL ({type(exc).__name__})"
+        ) from None
+    return GroupSessions(
+        PostgresSessionStore(conn), retention=timedelta(hours=config.session_retention_hours)
+    )
 
 
 def _place_json(ranked: RankedCandidate) -> dict[str, Any]:
@@ -198,23 +203,13 @@ def _place_json(ranked: RankedCandidate) -> dict[str, Any]:
     }
 
 
-def _public(warning: str) -> str:
-    """Hide the internal step and exception text the workflow puts in some warnings."""
-    if _FAILED_STEP.match(warning):
-        return "Part of the search failed, so these results may be incomplete."
-    return warning
-
-
 def _recommendation_json(rec: Recommendation, graph_ok: bool, mode: Mode) -> dict[str, Any]:
-    warnings = [_public(w) for w in rec.warnings]
-    explanation = rec.explanation
-    for raw, public in zip(rec.warnings, warnings, strict=True):
-        explanation = explanation.replace(raw, public)
+    warnings, explanation = public_warnings(rec.warnings, rec.explanation)
     return {
         "pick": _place_json(rec.pick) if rec.pick else None,
         "runners_up": [_place_json(r) for r in rec.runners_up],
         "explanation": explanation,
-        "warnings": list(dict.fromkeys(warnings)),
+        "warnings": warnings,
         "stale_facts": [
             {
                 "id": str(r.fact.id),
