@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -36,6 +37,7 @@ log = logging.getLogger("makan.web")
 
 Mode = Literal["demo", "live"]
 MAX_REQUEST_CHARS = 500
+_FAILED_STEP = re.compile(r"^(requested_places|nearby_places|Memory) (error|timeout):")
 DEFAULT_WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 
@@ -170,12 +172,23 @@ def _place_json(ranked: RankedCandidate) -> dict[str, Any]:
     }
 
 
+def _public(warning: str) -> str:
+    """Hide the internal step and exception text the workflow puts in some warnings."""
+    if _FAILED_STEP.match(warning):
+        return "Part of the search failed, so these results may be incomplete."
+    return warning
+
+
 def _recommendation_json(rec: Recommendation, graph_ok: bool, mode: Mode) -> dict[str, Any]:
+    warnings = [_public(w) for w in rec.warnings]
+    explanation = rec.explanation
+    for raw, public in zip(rec.warnings, warnings, strict=True):
+        explanation = explanation.replace(raw, public)
     return {
         "pick": _place_json(rec.pick) if rec.pick else None,
         "runners_up": [_place_json(r) for r in rec.runners_up],
-        "explanation": rec.explanation,
-        "warnings": list(rec.warnings),
+        "explanation": explanation,
+        "warnings": list(dict.fromkeys(warnings)),
         "stale_facts": [
             {
                 "id": str(r.fact.id),

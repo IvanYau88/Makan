@@ -44,7 +44,8 @@ The harness is the point.
 
 - Python 3.12 or newer, with a `src/makan` package layout and `pyproject.toml` as the single config file.
 - Build backend is `hatchling`, and the only required runtime dependency is `httpx`.
-  DuckDB is an optional runtime dependency in the `overture` extra, and the `dev` extra includes it.
+  DuckDB is an optional runtime dependency in the `overture` extra, and FastAPI and uvicorn are in the `web` extra.
+  The `dev` extra includes all of them, plus `httpx2`, which Starlette's test client prefers over `httpx`.
 - Dev tools are `pytest` for tests, `ruff` for lint and format, and `mypy` in strict mode for types.
   They install through the `dev` extra: `pip install -e ".[dev]"`.
 - GitHub Actions runs these checks on pull requests and pushes to `main`, with Python 3.12 and a health-checked Postgres 16 service.
@@ -450,6 +451,52 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 
 - The web frontend is React.
 - The Python backend is FastAPI.
+
+### Web channel decisions
+
+- **Layout:** the backend is the `makan.web` package (`app.py` for routes and error mapping, `demo.py` for the offline stand-ins), and the front end is a Vite, React, and TypeScript project in `web/`.
+  The backend stays a thin adapter: it validates input, calls `makan.solo.recommend`, and shapes JSON.
+  Nothing about ranking or research lives in it.
+- **Tooling:** the front end uses npm, Vitest with Testing Library and jsdom, and ESLint with typescript-eslint and the React hooks rules.
+  Prettier checks formatting, in the same `npm run lint`.
+  It has no UI library and no router, and styling is one plain CSS file.
+  CI runs the front end lint, test, and build in a second job, so Python and Node failures show up separately.
+- **One origin:** in production-style runs FastAPI serves the built `web/dist` next to the API, so the app is one process with no CORS.
+  In development Vite proxies `/api` to the backend.
+  Where the deployed backend and static files are hosted is still the open hosting question, and a split deployment would add a CORS allow-list then.
+- **API shape:**
+  - `POST /api/recommendations` takes `latitude`, `longitude`, `request` (1 to 500 characters), and optional `radius_m` (100 to 5000, default 1000), and rejects unknown fields.
+    There is deliberately no `user_id`: signing in is a later change, and trusting a client-supplied user id would let anyone read another user's memory.
+    Every call is a guest request, and its one-participant session is built and dropped inside the call, never shared or stored.
+  - A 200 response holds `pick` (null when nothing was found), `runners_up`, `explanation`, `warnings`, `stale_facts`, `data_source`, `attribution`, `partial` (the graph did not finish cleanly, so the list may be incomplete), and `mode`.
+    A place has `id`, `name`, `category`, `distance_m`, `address`, and `reasons`.
+    No places found is a successful empty answer, not an error.
+  - `GET /api/health` reports `{"status": "ok", "mode": "demo" | "live"}`, which the page uses to show the demo banner.
+  - Every error uses `{"error": {"code", "message"}}` with a message safe to show.
+    Bad input is 422 `invalid_request`.
+    A failed classification is 502 `provider_error`.
+    Both places searches failing is 502 `places_error`, or 504 when both timed out.
+    Anything unexpected is 500 `server_error`.
+    A single failed search still gives a 200 with `partial` set.
+    Exception text and internal step names stay in the server log and out of responses and warnings.
+- **Blocking work:** `recommend` is synchronous and runs its own event loop, so the route awaits it through a thread pool.
+  The providers are built once at startup and shared across requests, which the built-in providers support.
+- **Run modes:** `MAKAN_DEMO=1` runs with `DemoProvider` and `DemoPlaces`, which need no key and make no network call.
+  `DemoProvider` classifies by keyword, and `DemoPlaces` places a fixed set of clearly labelled sample venues around any point, with nothing at latitudes beyond 89 degrees so the no-results state can be reached.
+  Demo responses carry `mode: "demo"` and the page says the venues are not real.
+  Without `MAKAN_DEMO`, the app is live: it needs `MAKAN_MODEL` and `OPENROUTER_API_KEY` and uses OpenRouter and the cached Overture provider.
+  A missing setting fails at startup with a message that points at demo mode, never on the first request.
+  `MAKAN_WEB_DIST` overrides the front end build directory, and `MAKAN_API_URL` is read only by the Vite dev server.
+- **Location:** "locate me" asks the browser once per tap, with a 10 second timeout, and rounds the result to about 100 m before it leaves the page.
+  If the browser refuses, is unsupported, or is on an insecure origin, the page says why, opens manual latitude and longitude fields, and moves focus to them.
+  Typed coordinates are validated in the page before any request.
+  Nothing is stored in the browser or on the server.
+- **UI:** mobile first, with one column on phones and a sticky form beside the results from 56rem.
+  Controls are at least 44 px tall and 16 px text, so iOS does not zoom on focus.
+  Colors follow the system light or dark setting and meet WCAG AA contrast.
+  After a search, focus moves to the result or error heading and a hidden live region announces progress.
+  An empty request becomes "something good to eat", and an empty result offers a search over the next larger radius.
+- **Follow-ups:** a geocoder for typed addresses, sign-in, the shared group link, persisting sessions, streaming progress, request rate limits and daily caps, the trace viewer, and a CORS allow-list once hosting is chosen.
 
 ## Hosting
 
