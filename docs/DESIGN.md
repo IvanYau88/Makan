@@ -784,7 +784,7 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   Nothing is stored in the browser or on the server.
 - **UI:** mobile first, with one column on phones and a sticky form beside the results from 56rem.
   Controls are at least 44 px tall and 16 px text, so iOS does not zoom on focus.
-  Colors follow the system light or dark setting and meet WCAG AA contrast.
+  Colors follow the system light or dark setting and meet WCAG AA contrast, and that includes placeholder text, which is drawn at the full muted color because any extra opacity dropped it to 3.75:1 on white.
   After a search, focus moves to the result or error heading and a hidden live region announces progress.
   An empty request becomes "something good to eat", and an empty result offers a search over the next larger radius.
 - **Follow-ups:** a geocoder for typed addresses, sign-in, the group page for the shared link, request rate limits and daily caps, a configurable port for the one command start, retrying a rate limited model call, durable and authorized run history, and a CORS allow-list once hosting is chosen.
@@ -795,6 +795,8 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   Both stay mounted and the inactive one is hidden, so the map keeps its position and the history survives a tab switch.
   A phone shows the map or the list, chosen by a Map and List toggle, and a place opens as a bottom sheet over the map or inline in its list row.
   The place sheet does not depend on a drag: it has Show more, Show less, and Close buttons.
+  Closing a place with Escape or Close returns focus to the control that opened it, or to its row when a pin opened it, since pins are not in the tab order.
+  When neither can take focus (the list is hidden behind the map on a phone), focus goes to the current view's toggle, so it never drops to the page body.
 - **Outcomes never sit in a hidden pane:** on a phone, the search progress and live region, a failure with Try again, the result heading, the partial warning, and the empty state render above the Map and List panes, so the Map view cannot hide them and the heading that takes focus is always visible.
   Beside the map they head the results column instead.
   A failed search focuses its own failure heading, not the heading of the previous result.
@@ -832,6 +834,7 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - **Execution view:** it shows the eight real stages of the solo graph, `classify`, `intent`, `requested_places`, `nearby_places`, `memory`, `merge`, `rank`, and `explain`, with the dependencies the graph really has.
   The dependency picture is hidden from assistive technology, and the stage list beside it is the accessible way to pick a stage and doubles as a timeline whose bars show the two searches overlapping.
   A stage is waiting (a stage before it has not ended), queued (its inputs are ready and it waits for a concurrency slot), running, ok, error, or timeout.
+  On a phone (under 30rem, which grows with enlarged text) a stage row moves its status under the name, and the name column may shrink and wrap, so the rows fit down to a 320 px screen.
   The page says timed out, never cancelled, because the work cannot be stopped.
   The graph's status and the product outcome are separate facts: a failed graph can still carry a usable recommendation (partial), and an ok graph can find nothing (no result).
   Memory says it is not used for guests rather than claiming personalization.

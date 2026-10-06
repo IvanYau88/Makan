@@ -100,6 +100,37 @@ export function DiscoverView(props: Props) {
     document.addEventListener("keydown", close);
     return () => document.removeEventListener("keydown", close);
   }, [selected, onSelect]);
+  // Closing the detail unmounts it, and focus inside it would drop to the page body. Remember
+  // what had focus when the place opened and hand focus back once the detail is gone.
+  const selectedKey = selected?.id ?? null;
+  const rootRef = useRef<HTMLDivElement>(null);
+  const invoker = useRef<{ id: string; element: HTMLElement | null } | null>(null);
+  useEffect(() => {
+    const active = document.activeElement;
+    if (selectedKey) {
+      invoker.current = {
+        id: selectedKey,
+        element: active instanceof HTMLElement && active !== document.body ? active : null,
+      };
+      return;
+    }
+    const opened = invoker.current;
+    invoker.current = null;
+    if (!opened || (active && active !== document.body)) return;
+    const row = Array.from(
+      rootRef.current?.querySelectorAll<HTMLElement>(".row-button") ?? [],
+    ).find((button) => button.dataset.placeId === opened.id);
+    const toggle = rootRef.current?.querySelector<HTMLElement>(
+      ".view-toggle [aria-pressed='true']",
+    );
+    // The invoking control first, unless it is a map pin, which the keyboard cannot reach, so
+    // then its row comes first. A control on a hidden pane cannot take focus, so each candidate
+    // must be rendered, and the control for the current view is the last resort.
+    const fromMap = !!opened.element?.closest(".map-pane");
+    const candidates = fromMap ? [row, opened.element, toggle] : [opened.element, row, toggle];
+    const target = candidates.find((element) => element && canFocus(element));
+    target?.focus();
+  }, [selectedKey]);
   const detail = (inline: boolean) =>
     selected && result ? (
       <PlaceDetail
@@ -184,7 +215,7 @@ export function DiscoverView(props: Props) {
   const hasOutcome = working || status.kind === "failed" || result !== null;
 
   return (
-    <div className="discover" data-view={view}>
+    <div className="discover" data-view={view} ref={rootRef}>
       <SearchBar
         values={form}
         onChange={props.onForm}
@@ -325,6 +356,10 @@ export function DiscoverView(props: Props) {
       </div>
     </div>
   );
+}
+
+function canFocus(element: HTMLElement): boolean {
+  return element.isConnected && (element.checkVisibility?.() ?? true);
 }
 
 function ResultsHeader({

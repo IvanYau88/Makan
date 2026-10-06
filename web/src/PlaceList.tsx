@@ -45,6 +45,7 @@ export function PlaceList({
             <button
               type="button"
               className="row-button"
+              data-place-id={place.id}
               aria-current={isSelected ? "true" : undefined}
               aria-label={rowLabel(place, place.id === pickId, hasTerms)}
               onClick={() => onSelect(place.id)}

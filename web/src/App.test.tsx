@@ -159,6 +159,27 @@ describe("Discover", () => {
     expect(screen.queryByRole("heading", { name: "Mid Thai", level: 3 })).not.toBeInTheDocument();
   });
 
+  it("returns focus to the invoking row when the detail is closed with Escape or Close", async () => {
+    const { user } = await searched();
+    const first = row(/^1\. Mid Thai/);
+    await user.click(first);
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(first).toHaveFocus();
+
+    await user.click(first);
+    screen.getByRole("button", { name: "Close" }).focus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("heading", { name: "Mid Thai", level: 3 })).not.toBeInTheDocument();
+    expect(first).toHaveFocus();
+  });
+
+  it("returns focus to the row of a place opened from its pin", async () => {
+    const { user } = await searched();
+    await user.click(pin(2, "Far Thai"));
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(row(/^2\. Far Thai/)).toHaveFocus();
+  });
+
   it("previews a hovered or focused row on its pin without selecting it", async () => {
     const { user } = await searched();
     await user.hover(row(/^2\. Far Thai/));
