@@ -22,6 +22,27 @@ class ConfigError(Exception):
 DEFAULT_MAP_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 DEFAULT_MAP_ATTRIBUTION = "© OpenStreetMap contributors"
 DEFAULT_MAP_ATTRIBUTION_URL = "https://www.openstreetmap.org/copyright"
+SCORER_BACKENDS = ("none", "logprob", "structured", "jev", "fake")
+# These call a hosted model, so they need a configured model name and an API key.
+HOSTED_SCORER_BACKENDS = ("logprob", "structured", "jev")
+
+
+@dataclass(frozen=True)
+class ScorerConfig:
+    """Which fixed-answer scorer backs the soft decision points. `none` leaves them off."""
+
+    backend: str = "none"
+    model: str = ""  # a hosted backend's model, such as a logprob-capable chat model or Jev
+    timeout_s: float = 15.0
+
+    def __post_init__(self) -> None:
+        if self.backend not in SCORER_BACKENDS:
+            raise ConfigError(
+                f"MAKAN_SCORER_BACKEND must be one of {', '.join(SCORER_BACKENDS)}, "
+                f"got {self.backend!r}"
+            )
+        if self.backend in HOSTED_SCORER_BACKENDS and not self.model:
+            raise ConfigError(f"MAKAN_SCORER_MODEL is not set for the {self.backend} scorer")
 
 
 @dataclass(frozen=True)
@@ -37,6 +58,7 @@ class Config:
     map_tile_url: str = DEFAULT_MAP_TILE_URL  # a raster tile template with {z}, {x} and {y}
     map_attribution: str = DEFAULT_MAP_ATTRIBUTION  # shown beside the map whenever it is
     map_attribution_url: str = DEFAULT_MAP_ATTRIBUTION_URL  # where that attribution links, or ""
+    scorer: ScorerConfig = field(default_factory=ScorerConfig)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -84,6 +106,11 @@ class Config:
             map_tile_url=tile_url,
             map_attribution=attribution,
             map_attribution_url=attribution_url,
+            scorer=ScorerConfig(
+                backend=env.get("MAKAN_SCORER_BACKEND", "").strip().lower() or "none",
+                model=env.get("MAKAN_SCORER_MODEL", "").strip(),
+                timeout_s=float(_int(env, "MAKAN_SCORER_TIMEOUT_SECONDS", 15)),
+            ),
         )
 
 

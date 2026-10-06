@@ -32,6 +32,7 @@ from makan.places.base import MAX_RADIUS_M, MIN_RADIUS_M, PlaceQuery, PlacesProv
 from makan.places.factory import places_provider
 from makan.providers.base import Provider
 from makan.providers.openrouter import OpenRouterProvider
+from makan.providers.scoring import Scorer, build_scorer
 from makan.sessions import GroupSessions, InMemorySessionStore
 from makan.sessions.service import MAX_REQUEST_CHARS
 from makan.solo import RankedCandidate, Recommendation, SoloRequest, SoloResult, recommend
@@ -67,8 +68,11 @@ def create_app(
     mode: Mode = "live",
     static_dir: Path | None = None,
     sessions: GroupSessions | None = None,
+    scorer: Scorer | None = None,
 ) -> FastAPI:
     """Build the app around ready providers. Tests pass fakes, and the CLI passes real ones.
+
+    A `scorer` adds soft request signals to solo recommendations. Without one there are none.
 
     Group sessions are kept in `sessions`, or in memory for the life of the process when it is None.
     """
@@ -120,7 +124,14 @@ def create_app(
             data_source=places.name,
             on_update=on_update,
         )
-        result = recommend(request, provider=provider, places=places, config=config, sink=recorder)
+        result = recommend(
+            request,
+            provider=provider,
+            places=places,
+            config=config,
+            sink=recorder,
+            scorer=scorer,
+        )
         recorder.finish(_outcome(result))
         return result, recorder
 
@@ -257,6 +268,7 @@ def create_app_from_env(env: Mapping[str, str] | None = None) -> FastAPI:
         provider=OpenRouterProvider(config.openrouter_api_key),
         places=places_provider(config),
         config=config,
+        scorer=build_scorer(config.scorer, openrouter_api_key=config.openrouter_api_key),
         mode="live",
         static_dir=dist,
         sessions=_group_sessions(config),

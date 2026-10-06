@@ -2,7 +2,7 @@ from uuid import uuid4
 
 import pytest
 
-from makan.config import Config, ConfigError
+from makan.config import Config, ConfigError, ScorerConfig
 from makan.graph import GraphLimits
 from makan.loop import Limits
 from tests.helpers import synthetic_database_url
@@ -118,3 +118,22 @@ def test_a_custom_tile_provider_must_be_a_template_and_credit_itself() -> None:
     assert config.map_attribution_url == ""
     with pytest.raises(ConfigError, match=r"\{z\}"):
         Config.from_env({**env, "MAKAN_MAP_TILE_URL": "https://tiles.example/map.png"})
+
+
+def test_scorer_is_off_by_default_and_read_from_the_environment() -> None:
+    assert Config.from_env({"MAKAN_MODEL": "m"}).scorer == ScorerConfig("none", "", 15.0)
+
+    config = Config.from_env(
+        {
+            "MAKAN_MODEL": "m",
+            "MAKAN_SCORER_BACKEND": " Logprob ",
+            "MAKAN_SCORER_MODEL": "vendor/model",
+            "MAKAN_SCORER_TIMEOUT_SECONDS": "5",
+        }
+    )
+    assert config.scorer == ScorerConfig("logprob", "vendor/model", 5.0)
+
+
+def test_a_hosted_scorer_without_a_model_is_a_config_error() -> None:
+    with pytest.raises(ConfigError, match="MAKAN_SCORER_MODEL"):
+        Config.from_env({"MAKAN_MODEL": "m", "MAKAN_SCORER_BACKEND": "jev"})

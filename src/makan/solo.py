@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -24,6 +24,8 @@ from makan.models import Participant, Session
 from makan.places.base import MAX_LIMIT, Place, PlaceQuery, PlacesProvider
 from makan.places.tool import search_nearby_places
 from makan.providers.base import Provider
+from makan.providers.scoring import Scorer
+from makan.signals import SoftSignals, read_signals
 from makan.steps import agent_step, tool_step
 from makan.trace import TraceSink
 
@@ -90,6 +92,8 @@ class Research:
     warnings: tuple[str, ...]
     truncated: bool = False  # a search returned its limit, so more places may lie in the radius
 
+    signals: SoftSignals = field(default_factory=SoftSignals)
+
     def trace_summary(self) -> dict[str, Any]:
         return {
             "intent": self.intent.trace_summary(),
@@ -128,6 +132,8 @@ class Recommendation:
     ranked: tuple[RankedCandidate, ...] = ()  # every candidate in rank order, pick included
     truncated: bool = False
     intent: Intent | None = None  # what the request was read as
+
+    soft_signals: SoftSignals = field(default_factory=SoftSignals)
 
     def trace_summary(self) -> dict[str, Any]:
         return {
@@ -186,9 +192,14 @@ def research_steps(
     config: Config,
     memory: Memory | None = None,
     gate: RetrievalGate | None = None,
+    scorer: Scorer | None = None,
     session_of: Callable[[StepContext], Session] = lambda ctx: ctx.input,
 ) -> list[Step]:
     """The candidate research steps: classify, intent, two parallel searches, memory, merge.
+
+    With a `scorer`, a `signals` step also reads soft request signals beside the classification.
+    They are shown as estimates and never change the ranking or the warnings. Without one, the
+    graph has no such step.
 
     The last step, `merge`, has a `Research` value: the candidate options and what could not be
     verified. The solo workflow ranks it, and the group workflow filters and scores it. `session_of`
@@ -267,8 +278,28 @@ def research_steps(
                 warnings.append(f"Confirm stale memory {r.fact.id}: {r.fact.kind} {r.fact.content}")
             elif r.fact.kind == "constraint":
                 warnings.append(f"Cannot verify stored constraint: {r.fact.content}.")
-        return Research(intent, tuple(candidates.values()), turn, tuple(warnings), truncated)
+        signals = SoftSignals()
+        if scorer is not None:
+            read = ctx.inputs["signals"]
+            if read.ok:
+                signals = read.unwrap()
+            else:
+                warnings.append("Soft request signals were unavailable.")
+        return Research(
+            intent, tuple(candidates.values()), turn, tuple(warnings), truncated, signals
+        )
 
+    after_merge = ("intent", "requested_places", "nearby_places", "memory")
+    signal_steps = (
+        [
+            Step(
+                "signals",
+                lambda ctx: read_signals(scorer, session_of(ctx).context["request"]),
+            )
+        ]
+        if scorer is not None
+        else []
+    )
     return [
         agent_step(
             "classify",
@@ -289,7 +320,8 @@ def research_steps(
             "nearby_places", tool, lambda ctx: arguments(ctx, filtered=False), after=("intent",)
         ),
         Step("memory", recall, after=("intent",)),
-        Step("merge", merge, after=("intent", "requested_places", "nearby_places", "memory")),
+        *signal_steps,
+        Step("merge", merge, after=(*after_merge, *(("signals",) if scorer is not None else ()))),
     ]
 
 
@@ -300,6 +332,7 @@ def build_solo_graph(
     config: Config,
     memory: Memory | None = None,
     gate: RetrievalGate | None = None,
+    scorer: Scorer | None = None,
 ) -> Graph:
     """Classify, search in parallel, merge, rank, and explain.
 
@@ -365,6 +398,8 @@ def build_solo_graph(
             )
         if research.warnings:
             explanation += " " + " ".join(research.warnings)
+        if note := research.signals.describe():
+            explanation += " " + note
         source = places.name
         if source.startswith("overture:"):
             explanation += " Places data: Overture Maps Foundation (CDLA Permissive 2.0)."
@@ -378,13 +413,19 @@ def build_solo_graph(
             ranked,
             research.truncated,
             research.intent,
+            research.signals,
         )
 
     return Graph(
         "solo_recommendation",
         [
             *research_steps(
-                provider=provider, places=places, config=config, memory=memory, gate=gate
+                provider=provider,
+                places=places,
+                config=config,
+                memory=memory,
+                gate=gate,
+                scorer=scorer,
             ),
             Step("rank", rank, after=("merge",)),
             Step("explain", explain, after=("rank",)),
@@ -400,6 +441,7 @@ def recommend(
     config: Config,
     memory: Memory | None = None,
     gate: RetrievalGate | None = None,
+    scorer: Scorer | None = None,
     sink: TraceSink | None = None,
 ) -> SoloResult:
     """Create an unshared session with one host and run the solo graph.
@@ -433,7 +475,14 @@ def recommend(
         user_id=request.user_id,
     )
     graph = run_graph(
-        build_solo_graph(provider=provider, places=places, config=config, memory=memory, gate=gate),
+        build_solo_graph(
+            provider=provider,
+            places=places,
+            config=config,
+            memory=memory,
+            gate=gate,
+            scorer=scorer,
+        ),
         session,
         limits=config.graph_limits,
         sink=sink,

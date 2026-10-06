@@ -27,6 +27,7 @@ The harness is the point.
 | --- | --- | --- |
 | Core loop | nothing | Reason, call tools, observe, repeat, stop safely |
 | Provider adapter | nothing | One interface over swappable LLM providers |
+| Fixed-answer scorer | provider adapter | Pick one of a fixed list of answers, with a probability for each where the backend can give one |
 | Trace events | core loop | Structured record of every step, emitted from the start |
 | Tool interface and places tool | core loop | Typed tools, starting with nearby place search |
 | Data schema | nothing | Users, sessions, participants, memory, trace, where every request is a session with one or more participants |
@@ -37,7 +38,7 @@ The harness is the point.
 | Web channel | core loop, solo recommendation | Primary interface, works in any browser for solo and group use |
 | Auth and profiles | schema, web channel | Optional accounts that make Makan remember you |
 | Telegram channel | core loop, solo recommendation | Secondary channel for solo use |
-| Evals | core loop, tools | Deterministic tests and model-graded quality checks |
+| Evals | core loop, tools, fixed-answer scorer | Deterministic tests, labelled scorer eval sets, and model-graded quality checks |
 | Trace viewer | trace events | Human-readable view of a run |
 
 ## Project tooling
@@ -108,6 +109,81 @@ Known failure modes to design against from the start:
 - `FakeProvider` replays a scripted list of completions and records every request.
   It ships in the package so later evals can use it too.
   Tests never make a network call, and the OpenRouter adapter is tested against an `httpx` mock transport.
+
+## Fixed-answer scorer decisions
+
+A scorer takes a question and a list of valid answers and picks one.
+The goal is a decision with a confidence the app can act on, for the soft judgments where a model helps and a wrong answer is cheap.
+It is not a framework and it does not run the tool loop.
+
+- **Layout:** the interface and backends are in `makan.providers.scoring`, next to the provider adapter, and `Provider.complete` is unchanged.
+  Scoring needs request fields chat completions lacks, such as logprobs, a JSON schema, and a different endpoint for Jev, so it has its own small `JsonTransport` over OpenRouter.
+  `makan.decisions` holds the decision points, `makan.signals` the soft request signals, `makan.memory.scorer_gate` the gate, and `makan.evals` the offline evals.
+- **The question and the result:** a `Question` has a decision name, a version, instructions, the text to decide about, and options with stable ids and descriptions.
+  A `ScoreResult` has a status, the chosen option id, and the evidence kind, plus the backend and model, usage and billed cost when known, and latency.
+  Only a complete distribution has a `Distribution`, and only then are the top option, the runner-up, and the margin computed, by one function that validates the distribution first.
+  A tie goes to the earlier option with margin 0.
+- **Four statuses:** `ok` is a choice with a full distribution, or the only option there was.
+  `degraded` is a choice without a distribution, so there is no runner-up or margin.
+  `unsupported` is a backend or model that cannot answer the question, and `error` is a failed or unusable request with a kind (busy, timeout, transport, refused, malformed, low label mass, or budget).
+  Backend failures are results and never raises, so a decision point always decides what to do about them.
+  An invalid question is a `ValueError`, since that is a bug.
+  `confident_choice(min_margin)` returns the choice only for an `ok` result whose margin reaches the threshold, and it is the one way a caller acts on a score.
+- **One option needs no model:** a single option is chosen deterministically with no request, and an empty list is an error.
+- **Evidence kinds are not interchangeable:** token logprobs, a sampled label, a verbalized confidence, Jev probabilities, a deterministic rule, and a fake each say so on the result.
+  The confidence Jev returns for a Choice is `(p_max - 1/n) / (1 - 1/n)`, which is not the margin, so Makan computes its margin from the probabilities and does not store Jev's number.
+  A model's self-rating is kept as `self_confidence`, never as a probability.
+- **Backends, chosen by `MAKAN_SCORER_BACKEND`:** `none` (the default, which leaves scoring off), `logprob`, `structured`, `jev`, and `fake`.
+  The model name is `MAKAN_SCORER_MODEL` and is never in code, so a hosted backend with no model is a config error at startup.
+  Only the chosen backend is built, and there is no fallback chain.
+  A failed request is not retried on another backend, which is also how paid Jev can never be reached implicitly.
+  `MAKAN_SCORER_TIMEOUT_SECONDS` bounds one request, because a timed-out graph step does not stop its thread.
+- **Logprob scorer:** each option gets a one-letter label from A to J, and the model is asked for one letter with `max_tokens` 1, temperature 0, `logprobs`, 20 `top_logprobs`, and `require_parameters` so a route that ignores logprobs fails instead of being used silently.
+  The probabilities are read from the alternatives at that first answer position, matching tokens after trimming whitespace, so " A" and "A" add up.
+  Whole-option likelihood is never used, because one completion exposes only one generated prefix, and options that share a first token could not be told apart.
+  A label missing from the alternatives is unknown and not zero, so a distribution is given only when every label is covered.
+  With a label missing the result is `degraded` when the sampled token is a valid label, and `unsupported` when it is not.
+  More than ten options are `unsupported`, since top 20 cannot be relied on to cover more.
+  The label mass before normalizing is kept on the result, and below 0.5 the result is an error, because normalizing 0.06 and 0.04 to 0.6 and 0.4 would hide that the model did not answer in the format.
+  The tokenizer assumptions are checked at run time by that coverage test, per model, and not assumed.
+- **Structured fallback:** a JSON schema with an enum of option ids and a bounded confidence number, validated strictly, so a refusal, a truncated answer, a value outside the enum, a missing or extra key, and a non-finite confidence are each an error.
+  The result is always `degraded`, labelled as a verbalized confidence, with no distribution or margin.
+  It never spreads leftover probability evenly, never reports a one-hot vector, and never invents a runner-up.
+  It is also not an independent availability fallback for an overloaded service.
+- **Jev:** off unless named, and it uses the separate Decisions API (`/api/alpha/decisions`) with a `state` and a Choice question, not chat completions.
+  The parser accepts only a complete answer whose probabilities have exactly the option ids and sum to one, and calls anything else malformed.
+  The request and response shapes follow OpenRouter's public Jev tutorial and have not been checked against a live response, because no paid call has been made.
+  They must be revalidated before the first real use.
+  Jev has known option-order bias, so any use needs order-permutation evals first.
+- **Fake:** `FakeScorer` takes a policy, defaults to a deterministic word-overlap distribution, and records the questions it was asked, as `FakeProvider` does.
+  `FakeScorer.scripted` replays fixed results and `oracle` answers each decision with a fixed option.
+  `BoundedScorer` caps the requests of any scorer, and a call past the cap is a budget error that never reaches the backend, which evals use as a hard ceiling.
+- **What is scored:** only soft semantic decisions.
+  Allergies, diets, budget ceilings, and every other hard constraint stay in plain code and are never decided, inferred, or weakened by a score, and no scored decision has an option about them.
+  The classifier still extracts every stated requirement as it did, and each is still an unverified warning.
+  Generic fixed-answer onboarding questions remain plain form fields.
+- **Decision points, each its own bounded question with a version:**
+  - `retrieval_gate` asks whether a message is about eating, with options `personalize` and `skip`, and it is used by `ScorerGate`.
+    The rule gate runs first, so a message it already skips never costs a request, and the scorer can only turn a lookup into a skip.
+    It skips only on a full distribution where `skip` leads by at least 0.8, and any other answer, including a degraded, unsupported, or failed one, is a lookup.
+    The web API is guest-only today, so the gate has no caller there yet.
+  - `budget_band` has the options `cheap`, `moderate`, `splurge`, and `not_stated`, and `meal_period` has `breakfast`, `lunch`, `dinner`, `late_night`, and `not_stated`.
+    They are soft attributes of the request, so a request that says nothing is not forced into a band, and a stated ceiling such as "under RM20" stays a hard requirement in plain code.
+    Preferred diet style is not a soft attribute here, because it is too close to a strict diet.
+  - Each is a separate request, so a request makes at most two scoring calls, plus one for the gate when a signed-in user's memory is used.
+    That fixed count is the bound and no per-run cap setting was added.
+- **Signals are ephemeral:** `read_signals` accepts an answer only from a full distribution whose margin is at least 0.5 and whose choice is not `not_stated`.
+  The accepted signals appear on the recommendation and in its explanation as an estimate, such as "budget band: cheap".
+  They do not change the ranking, remove a place, satisfy or weaken a requirement, or get written to memory.
+  The solo graph has a `signals` step only when a scorer is given, so the graph is unchanged without one, and a scorer that fails or crashes leaves the recommendation as it was.
+  The group workflow does not use a scorer.
+- **Thresholds are provisional:** 0.5 for signals and 0.8 for the gate are starting settings.
+  They belong to one decision version, backend, and prompt, and must be tuned on the calibration split and frozen before the held-out split is read.
+- **Privacy:** the only text sent to a scorer is the request text the classifier already receives.
+  Results carry no request text, so the trace holds the decision, backend, model, status, choice, margin, latency, and usage only.
+- **Not done, on purpose:** group fit scoring, verified hours, menu and price filtering, writing a scorer confidence into memory, a clarification flow, local SGLang, and any live or paid call.
+  Hours, menus, and prices stay the unverified warnings they are today.
+  Persisting an inferred fact needs a provenance and reliability policy first, because a raw token confidence is not a memory confidence and would reconfirm a fact on every repeat.
 
 ## Trace event decisions
 
@@ -269,8 +345,8 @@ Rules:
 - Confidence decays with age unless the user reconfirms the fact.
 - A newer fact that contradicts an older one supersedes it and keeps the link.
 - Stale facts are flagged to the user instead of being used silently.
-- A retrieval gate decides whether a turn needs a memory lookup at all.
-  A small, cheap model or a simple rule makes that call.
+- A retrieval gate decides whether a turn needs a lookup of soft memory such as tastes.
+  A small, cheap model or a simple rule makes that call, and it never decides about stored constraints, which are always recalled.
 
 Implementation decisions:
 
@@ -285,7 +361,13 @@ Implementation decisions:
 - A fact is stale when expired or when its decayed confidence falls below 0.5.
   The caller receives stale facts explicitly, and the prompt rendering tells the model to ask for confirmation before relying on them.
 - The initial retrieval gate is deterministic and skips only empty messages and messages made entirely of greetings, thanks, or acknowledgements.
-  It uses a protocol so a provider-backed small model can replace the rule later.
+  It uses a protocol, and `ScorerGate` is the scorer-backed implementation (see "Fixed-answer scorer decisions").
+- A gate decides about soft memory only.
+  `recall_for_turn` recalls stored constraints, such as allergies, on every turn whatever the gate says, so no gate, rule or model, can hide one.
+  A gate that skips still gets constraints back, with their stale flags and the usual "cannot verify" warning, and only the rest of memory is left out.
+- The rule gate reads words in any script.
+  It used to match only ASCII letters, so a request such as "吃什么" had no words and was treated as empty, which skipped the lookup.
+  Any letters or digits now count as content, and only a message with none is empty.
 - Memory lookup is performed by `recall_for_turn` before the core loop, and the loop can write facts through the existing `remember_fact` tool interface.
   There is no standalone read-memory tool, keeping retrieval behind the gate.
 - The content schema, confidence half-lives, stale threshold, prompt wording, and rule-gate behavior are initial settings to tune with usage and evals.
@@ -389,7 +471,8 @@ It needs no account, and it runs as a session with a single participant whose li
 - A reason is words a person would say: "matches your request for thai", or "nearby alternative; your request is not confirmed for this place".
   The earlier "matches 1 requested category filter(s)" exposed the implementation.
   The counts and the filters stay in the trace for the execution view.
-- Apart from the map settings below, no new environment variables are needed; existing model, loop, and graph settings apply.
+- Apart from the map settings below and the optional scorer, no new environment variables are needed; existing model, loop, and graph settings apply.
+  An optional scorer adds a `signals` step beside the classification and the settings under "Fixed-answer scorer decisions", and the graph is unchanged without one.
   Follow-ups are additional evidence tools, provider-qualified stored place ratings when multiple places sources are used, and the already planned retry policy, channels, and auth.
 
 ### Group consensus
@@ -598,8 +681,30 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - Deterministic tests cover the loop, tools, memory rules, and the consensus logic.
 - Model-graded checks cover recommendation quality.
 - A release gate runs the evals before changes ship.
+  Ordinary CI stays offline, so for the scorer the gate is the fake scorer, mock transport contracts, fixed fixtures, and the invariants above.
+  A live model run in CI would break the rule against network calls and would be flaky, so live comparisons are separate, opt-in, and archived.
 - Every run emits structured trace events from the start, and the trace viewer renders them as a readable step-by-step view.
   The web app's Execution page is its first form, for the current tab's runs; see "Map and execution decisions".
+
+### Scorer eval decisions
+
+- **Sets:** one labelled JSONL set per decision point is in `src/makan/evals/sets/`, with `id`, `text`, `label`, `split`, and `tags`.
+  The annotation rules are in the docstring of `makan.evals.cases`.
+  A label is what the text says and never what a backend answered, and a text that spans two options or says nothing is the `not_stated` option.
+  For the retrieval gate the unsure label is `personalize`, because a skipped lookup is the costly mistake.
+- **Splits:** `dev` is for writing prompts, `calibration` for tuning thresholds, and `heldout` for the final comparison, and each has near-tie cases.
+  Near-tie cases are challenge cases and are reported apart, since they are not a sample of real traffic.
+  The sets cover paraphrases, negation, contradiction, Malay, Chinese, code-switching, hostile text, out-of-domain text, short text, and a stated ceiling that overlaps a hard constraint.
+  Tests check that each set has every option, every split, near-ties in each split, and those tags.
+- **Harness:** `run_eval(scorer, decision)` takes any scorer and reports accuracy, coverage, error rate among accepted answers, per-class precision, recall and F1, macro-F1, Brier score and log loss over full distributions only, status counts, near-tie accuracy and margin, p50 and p95 latency, tokens, and billed cost with a count of results that reported none.
+  A case with no choice counts as wrong, so a backend cannot look better by failing.
+  `compare` runs several scorers over the decisions, and `RuleBaseline` is the existing rule gate as a scorer to compare against.
+  It is degraded by construction, so it can never pass a margin policy.
+- **Offline only:** `python -m makan.evals` runs the `fake` and `rule` backends and offers no others.
+  Comparing live backends needs a key, a budget, and the captain's go-ahead, so it is not wired.
+  When it is, it should use `BoundedScorer`, repeated trials, an explicit model and route, and an archived report, and it should record outages and quota as availability results and not as regressions.
+- **Not yet in the sets:** option and label permutations, long labels, and shared-prefix labels, which matter for the logprob scorer and need a live model to be informative.
+  The fake scorer's accuracy is a plumbing check and says nothing about model quality.
 
 ## Web stack
 
@@ -646,6 +751,9 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
     A single failed search still gives a 200 with `partial` set.
     Exception text stays in the server log and out of responses and warnings.
     Stage names are public now, because the execution view names the stages it shows, but they never appear inside a warning or an explanation.
+- **Scorer:** `create_app` takes an optional `scorer`, and the live factory builds it from `MAKAN_SCORER_BACKEND`, so a bad scorer setting fails at startup.
+  Demo mode never builds one.
+  The response shape is unchanged, and soft signals appear only as a sentence in `explanation`.
 - **Blocking work:** `recommend` is synchronous and runs its own event loop, so the route awaits it through a thread pool.
   The providers are built once at startup and shared across requests, which the built-in providers support.
 - **Run modes:** `MAKAN_DEMO=1` runs with `DemoProvider` and `DemoPlaces`, which need no key and make no network call.
@@ -754,6 +862,13 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 ## Open questions
 
 - Whether hard constraints such as allergies should be exempt from confidence decay.
+- Which backend, if any, is accurate and calibrated enough on Makan's decisions, and what margins, coverage, clarification rate, latency, and cost are acceptable for each.
+  Nothing live has been measured, so the thresholds and every backend are unvalidated.
+- Whether the logprob scorer works on any free OpenRouter endpoint, which needs a key and a capped test run.
+  The catalog advertised a few candidates, but support, tokenizer behavior, and temporary zero pricing all change.
+- Whether paid Jev is worth its cost over a logprob model, and whether its request shape matches the documentation.
+- How soft facts a scorer infers would be stored, with what provenance and reliability, and how a low-confidence answer would ask the user one question and resume.
+  Both are deferred until their lifecycle rules exist.
 - Where the long-running FastAPI backend is hosted.
   One recommendation can fan out into many model calls, so it may not suit short-lived serverless functions.
 - Whether a day is the right retention for session data.

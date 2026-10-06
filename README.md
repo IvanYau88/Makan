@@ -29,6 +29,7 @@ Makan is a hands-on tour of modern AI engineering, and each piece is visible.
 - **Agent loop:** reason, call a tool, observe, repeat, with a hard iteration limit and a small readable core.
 - **Graph workflows:** reviews, menus, hours, and distance are researched in parallel, then merged.
 - **Memory:** a structured store where every fact carries a timestamp and a confidence, so stale tastes fade instead of silently skewing results, whether it holds one person's taste or a group's.
+- **Fixed-answer scorer:** one interface that picks from a fixed list of answers, with a probability for each when the backend can give one, and an honest degraded or error result when it cannot.
 - **Group consensus:** a merge step that handles constraints, per-person scoring, and a least-misery pick with average score as the tiebreaker.
 - **Trace view:** every step the agent takes can be inspected. The web app's Execution page shows the real eight-stage graph of each search made in the current tab.
 

@@ -30,14 +30,15 @@ _PLEASANTRIES = frozenset(
         *("yes", "yeah", "yep", "no", "nope"),
     }
 )
-_WORD = re.compile(r"[a-z']+")
+_WORD = re.compile(r"[\w']+")
 
 
 class RuleGate:
     """Look up memory on every turn except a bare greeting, thanks, or acknowledgement.
 
-    Skipping a lookup that mattered means ignoring an allergy, and an unneeded lookup costs a
-    short query, so the rule skips only when the message has no content to personalize.
+    An unneeded lookup costs a short query, so the rule skips only when the message has no content
+    to personalize. Words are any letters or digits in any script, so a request in another
+    language is content, never "empty".
     """
 
     def decide(self, message: str) -> GateDecision:

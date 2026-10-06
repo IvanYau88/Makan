@@ -13,6 +13,8 @@ Read `docs/DESIGN.md` before making architectural decisions.
   API keys come from the environment, and `.env.example` documents every variable.
 - Keep model names in config, never hardcoded in the loop.
 - Keep `user_id` optional throughout the schema so guest sessions keep working.
+- Allergies and other hard constraints stay in plain code, and a fixed-answer scorer never decides them.
+  Paid Jev is only ever used when `MAKAN_SCORER_BACKEND=jev` is set, never as a fallback.
 - Change the schema with a new numbered file in `migrations/`, and update `makan.models` in the same change.
 - Never send raw trace events to a client.
   They hold the session link token and exception text, so the web channel sends only the bounded view from `makan.web.runs`.
@@ -25,6 +27,7 @@ Setup and the check commands (`pytest`, `ruff check .`, `ruff format .`, `mypy`)
 Run all four before committing.
 When you change `web/`, also run `npm run lint`, `npm test`, and `npm run build` there.
 When you change `scripts/` (the `npm run dev` and `npm start` launcher), run `npm test` at the root.
+When you change a scorer decision point or its eval sets, run `python -m makan.evals`, which is offline.
 Tests must never make real network calls, so use `FakeProvider` or an `httpx` mock transport.
 
 ## Maintaining this file
