@@ -90,16 +90,23 @@ def test_creating_an_app_does_not_purge_until_it_starts() -> None:
     assert store.get_by_token(session.link_token) is not None
 
 
-def test_the_app_stops_purging_when_it_shuts_down() -> None:
-    clock = Clock()
-    store = InMemorySessionStore()
-    groups = GroupSessions(store, retention=timedelta(hours=1), clock=clock)
+def test_the_app_stops_purging_when_it_shuts_down(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Counting(InMemorySessionStore):
+        calls = 0
+
+        def purge_expired(self, now: datetime) -> int:
+            self.calls += 1
+            return super().purge_expired(now)
+
+    # The configured interval is whole minutes, so shorten it to watch the loop run.
+    monkeypatch.setattr("makan.web.app.purge_forever", lambda s, _: purge_forever(s, 0.01))
+    store = Counting()
+    groups = GroupSessions(store, retention=timedelta(hours=1), clock=Clock())
     with app_over(groups):
-        pass
-    session, _ = groups.create(latitude=3.1, longitude=101.6, request="dinner", host_name="Alex")
-    clock.now = T0 + timedelta(hours=2)
-    time.sleep(0.05)
-    assert store.get_by_token(session.link_token) is not None
+        assert eventually(lambda: store.calls >= 3)  # the loop repeats while the app runs
+    stopped_at = store.calls
+    time.sleep(0.1)
+    assert store.calls == stopped_at
 
 
 def test_the_purge_loop_keeps_removing_sessions_as_they_expire() -> None:
