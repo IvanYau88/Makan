@@ -533,6 +533,19 @@ input[aria-invalid="true"] {
   min-height: 22rem;
 }
 
+/* Search outcomes sit above the panes on a phone, so the Map view cannot hide them. */
+.outcome {
+  display: none;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.outcome[data-active="true"] {
+  display: grid;
+  align-content: start;
+  padding: 0.75rem max(1rem, env(safe-area-inset-right)) 0 max(1rem, env(safe-area-inset-left));
+}
+
 .discover[data-view="map"] .results-pane {
   display: none;
 }
@@ -579,6 +592,15 @@ input[aria-invalid="true"] {
 .map-shell {
   position: absolute;
   inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The map's own notices take a row above this, so panels over the map never cover them. */
+.map-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
 }
 
 .map {
@@ -615,17 +637,13 @@ input[aria-invalid="true"] {
 }
 
 .map-fallback {
-  position: absolute;
-  inset: auto 0.75rem 0.75rem;
-  z-index: 3;
+  flex: none;
   display: grid;
   gap: 0.5rem;
   justify-items: start;
   padding: 0.75rem 1rem;
-  border-radius: var(--radius);
   background: var(--warn-bg);
   color: var(--warn-text);
-  box-shadow: var(--shadow);
 }
 
 .map-detail {
@@ -635,6 +653,7 @@ input[aria-invalid="true"] {
   right: 0.5rem;
   bottom: 0.5rem;
   max-height: 70%;
+  scroll-margin-bottom: 0.5rem; /* keep a gap under the sheet when it is scrolled into view */
   overflow: auto;
   border-radius: var(--radius);
   background: var(--surface);
@@ -647,7 +666,7 @@ input[aria-invalid="true"] {
     right: auto;
     bottom: 0.75rem;
     width: min(25rem, calc(100% - 1.5rem));
-    max-height: calc(100% - 1.5rem);
+    max-height: calc(100% - 7rem); /* leaves the zoom buttons at the top left uncovered */
   }
 }
 

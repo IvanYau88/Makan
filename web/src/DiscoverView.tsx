@@ -112,7 +112,76 @@ export function DiscoverView(props: Props) {
       />
     ) : null;
   const inlineDetail = !wide && view === "list";
+  // On a phone the map is taller than the room left under the search form, so a sheet anchored to
+  // the map's bottom edge can start below the screen. Scroll it, and so the map above it, into view.
+  const detailRef = useRef<HTMLDivElement>(null);
+  const sheetShown = !inlineDetail && selected !== null;
+  const sheetKey = selected?.id;
+  useEffect(() => {
+    if (wide || !sheetShown) return;
+    detailRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [wide, sheetShown, sheetKey, props.sheetExpanded]);
   const hasTerms = !!(result?.intent?.cuisine || result?.intent?.category);
+
+  // What a search came to: progress, failure and recovery, the result heading, and the empty and
+  // partial states. On a phone it sits above the switched panes, so the Map view cannot hide it
+  // and focus always lands on rendered content. Beside the map it heads the results column.
+  const outcome = (
+    <>
+      <div className="sr-only" role="status" aria-live="polite">
+        {status.kind === "working" ? status.text : ""}
+      </div>
+      {working && (
+        <p className="progress" aria-hidden="true">
+          <span className="spinner" />
+          {status.text}
+        </p>
+      )}
+
+      {status.kind === "failed" && (
+        <section className="failure" role="alert" aria-labelledby="failure-heading">
+          <h2 id="failure-heading" ref={headingRef} tabIndex={-1} className="section-title">
+            {status.busy ? "The model is busy" : "That did not work"}
+          </h2>
+          <p>{status.message}</p>
+          {result && <p className="hint">The results below are from your previous search.</p>}
+          <button type="button" className="button button-secondary" onClick={props.onRetry}>
+            Try again
+          </button>
+        </section>
+      )}
+
+      {result && (
+        <ResultsHeader
+          result={result}
+          shown={visible.length}
+          filtered={isFiltered(filters)}
+          headingRef={status.kind === "failed" ? undefined : headingRef}
+        />
+      )}
+
+      {result && result.partial && (
+        <p className="notice notice-warn" role="status">
+          Part of the search failed, so this list may be missing places.
+        </p>
+      )}
+
+      {result && result.places.length === 0 && (
+        <div className="empty">
+          <p>
+            Makan found nothing to eat within {radiusLabel(result.query.radius_m)} of that spot.
+          </p>
+          <p className="hint">Try a wider search, or move the map and search another area.</p>
+          {props.onWiden && (
+            <button type="button" className="button button-secondary" onClick={props.onWiden}>
+              Search a wider area
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  );
+  const hasOutcome = working || status.kind === "failed" || result !== null;
 
   return (
     <div className="discover" data-view={view}>
@@ -142,30 +211,15 @@ export function DiscoverView(props: Props) {
         ))}
       </div>
 
+      {!wide && (
+        <div className="outcome" data-active={hasOutcome}>
+          {outcome}
+        </div>
+      )}
+
       <div className="panes">
         <section className="results-pane" aria-label="Results" data-stale={working && !!result}>
-          <div className="sr-only" role="status" aria-live="polite">
-            {status.kind === "working" ? status.text : ""}
-          </div>
-          {working && (
-            <p className="progress" aria-hidden="true">
-              <span className="spinner" />
-              {status.text}
-            </p>
-          )}
-
-          {status.kind === "failed" && (
-            <section className="failure" role="alert" aria-labelledby="failure-heading">
-              <h2 id="failure-heading" ref={headingRef} tabIndex={-1} className="section-title">
-                {status.busy ? "The model is busy" : "That did not work"}
-              </h2>
-              <p>{status.message}</p>
-              {result && <p className="hint">The results below are from your previous search.</p>}
-              <button type="button" className="button button-secondary" onClick={props.onRetry}>
-                Try again
-              </button>
-            </section>
-          )}
+          {wide && outcome}
 
           {!result && status.kind !== "failed" && !working && (
             <div className="intro">
@@ -183,21 +237,6 @@ export function DiscoverView(props: Props) {
               <span />
               <span />
             </div>
-          )}
-
-          {result && (
-            <ResultsHeader
-              result={result}
-              shown={visible.length}
-              filtered={isFiltered(filters)}
-              headingRef={headingRef}
-            />
-          )}
-
-          {result && result.partial && (
-            <p className="notice notice-warn" role="status">
-              Part of the search failed, so this list may be missing places.
-            </p>
           )}
 
           {result && result.places.length > 0 && (
@@ -234,20 +273,6 @@ export function DiscoverView(props: Props) {
             </>
           )}
 
-          {result && result.places.length === 0 && (
-            <div className="empty">
-              <p>
-                Makan found nothing to eat within {radiusLabel(result.query.radius_m)} of that spot.
-              </p>
-              <p className="hint">Try a wider search, or move the map and search another area.</p>
-              {props.onWiden && (
-                <button type="button" className="button button-secondary" onClick={props.onWiden}>
-                  Search a wider area
-                </button>
-              )}
-            </div>
-          )}
-
           {result && <ResultNotes result={result} />}
         </section>
 
@@ -267,17 +292,22 @@ export function DiscoverView(props: Props) {
               onSelect={props.onSelect}
               onHover={props.onHover}
               onCenterChange={props.onMapCenter}
-            />
-            {centerMoved && (
-              <button
-                type="button"
-                className="button button-primary map-search-area"
-                onClick={props.onSearchArea}
-              >
-                Search this area
-              </button>
-            )}
-            {!inlineDetail && selected && <div className="map-detail">{detail(false)}</div>}
+            >
+              {centerMoved && (
+                <button
+                  type="button"
+                  className="button button-primary map-search-area"
+                  onClick={props.onSearchArea}
+                >
+                  Search this area
+                </button>
+              )}
+              {!inlineDetail && selected && (
+                <div className="map-detail" ref={detailRef}>
+                  {detail(false)}
+                </div>
+              )}
+            </MapView>
           </div>
           <p className="map-attribution">
             Map tiles:{" "}
@@ -306,7 +336,7 @@ function ResultsHeader({
   result: Recommendation;
   shown: number;
   filtered: boolean;
-  headingRef: RefObject<HTMLHeadingElement | null>;
+  headingRef: RefObject<HTMLHeadingElement | null> | undefined;
 }) {
   const total = result.places.length;
   return (

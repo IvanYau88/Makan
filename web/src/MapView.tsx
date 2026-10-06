@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { categoryLabel, distanceLabel } from "./format";
@@ -37,6 +38,8 @@ interface Props {
   onHover: (id: string | null) => void;
   /** Called when the map settles after being moved, with its center. */
   onCenterChange: (center: Coordinates) => void;
+  /** Panels drawn over the map, such as a place sheet. The map's own notices get their own space. */
+  children?: ReactNode;
 }
 
 type Health = "ready" | "unavailable";
@@ -222,19 +225,6 @@ export function MapView(props: Props) {
   const unavailable = health === "unavailable";
   return (
     <div className="map-shell">
-      <div
-        key={attempt}
-        ref={attach}
-        className="map"
-        role="region"
-        aria-label="Map of nearby places"
-        aria-busy={busy}
-      />
-      {busy && (
-        <p className="map-busy" aria-hidden="true">
-          <span className="spinner" /> Updating…
-        </p>
-      )}
       {(unavailable || tilesFailed) && (
         <div className="map-fallback" role="alert">
           <p>
@@ -255,6 +245,22 @@ export function MapView(props: Props) {
           </button>
         </div>
       )}
+      <div className="map-stage">
+        <div
+          key={attempt}
+          ref={attach}
+          className="map"
+          role="region"
+          aria-label="Map of nearby places"
+          aria-busy={busy}
+        />
+        {busy && (
+          <p className="map-busy" aria-hidden="true">
+            <span className="spinner" /> Updating…
+          </p>
+        )}
+        {props.children}
+      </div>
     </div>
   );
 }
