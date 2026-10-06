@@ -1,8 +1,14 @@
 import { ApiError, fetchConfig, recommend } from "./api";
 import { RESULT, run } from "./test-fixtures";
-import type { Run } from "./types";
+import type { RecommendRequest, Run } from "./types";
 
-const BODY = { latitude: 3.148, longitude: 101.695, request: "thai", radius_m: 1000 };
+const BODY: RecommendRequest = {
+  mode: "recommend",
+  latitude: 3.148,
+  longitude: 101.695,
+  request: "thai",
+  radius_m: 1000,
+};
 
 /** A response whose body arrives in the given pieces, so lines can be split anywhere. */
 function chunked(...pieces: string[]): Response {

@@ -28,11 +28,13 @@ export function FlowGraph({ stages, selected, onSelect }: Props) {
             const from = point(dep);
             const to = point(stage.name);
             const midX = (from.x + to.x) * 50;
-            const failed = stages.find((s) => s.name === dep)?.status === "error";
+            const source = stages.find((s) => s.name === dep);
+            const failed = source?.status === "error";
+            const skipped = source?.status === "skipped" || stage.status === "skipped";
             return (
               <path
                 key={`${dep}-${stage.name}`}
-                className={`graph-edge${failed ? " graph-edge-failed" : ""}`}
+                className={`graph-edge${failed ? " graph-edge-failed" : ""}${skipped ? " graph-edge-skipped" : ""}`}
                 d={`M ${from.x * 100} ${from.y * 100} C ${midX} ${from.y * 100}, ${midX} ${to.y * 100}, ${to.x * 100} ${to.y * 100}`}
                 vectorEffect="non-scaling-stroke"
                 fill="none"

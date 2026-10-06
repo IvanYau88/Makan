@@ -12,8 +12,9 @@ import type { MapMove } from "./MapView";
 import { NO_FILTERS, visiblePlaces } from "./places";
 import type { PlaceFilters } from "./places";
 import { phaseText } from "./stages";
-import { DEFAULT_RADIUS_M, RADII, REQUEST_PLACEHOLDER } from "./SearchBar";
+import { DEFAULT_RADIUS_M, RADII } from "./SearchBar";
 import type { FormValues } from "./SearchBar";
+import { loadMode, saveMode } from "./searchMode";
 import type { AppConfig, Coordinates, Recommendation } from "./types";
 
 type Page = "discover" | "execution";
@@ -21,13 +22,16 @@ type Page = "discover" | "execution";
 export function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [page, setPage] = useState<Page>("discover");
-  const [form, setForm] = useState<FormValues>({
+  const [form, setForm] = useState<FormValues>(() => ({
+    mode: loadMode(),
     request: "",
     radiusM: DEFAULT_RADIUS_M,
     manual: false,
     latitude: "",
     longitude: "",
-  });
+  }));
+  // "Pick for me" was tried with nothing typed: the form asks about it and does not search.
+  const [requestError, setRequestError] = useState(false);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [result, setResult] = useState<Recommendation | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
@@ -60,6 +64,9 @@ export function App() {
   }, []);
 
   useEffect(() => () => inflight.current?.controller.abort(), []);
+
+  // The choice belongs to the device, so the next visit starts where this one left off.
+  useEffect(() => saveMode(form.mode), [form.mode]);
 
   // Start the map on the person's own location. If the browser cannot say, or they decline, it
   // stays on the view of the United States and says nothing: they never asked for a search.
@@ -110,8 +117,9 @@ export function App() {
       try {
         const answer = await recommend(
           {
+            mode: values.mode,
             ...where,
-            request: values.request.trim() || REQUEST_PLACEHOLDER,
+            ...(values.mode === "recommend" && { request: values.request.trim() }),
             radius_m: values.radiusM,
           },
           (run) => {
@@ -163,7 +171,22 @@ export function App() {
     setMoveTo({ center, radiusM, key: -++counter.current });
   };
 
+  const changeForm = (next: FormValues) => {
+    if (next.request !== form.request || next.mode !== form.mode) setRequestError(false);
+    setForm(next);
+  };
+
+  /** A "Pick for me" search needs something typed. Ask when there is not, rather than guess. */
+  const requestReady = (values: FormValues) => {
+    if (values.mode === "recommend" && values.request.trim() === "") {
+      setRequestError(true);
+      return false;
+    }
+    return true;
+  };
+
   const searchHere = () => {
+    if (!requestReady(form)) return;
     if (form.manual) {
       const parsed = parseCoordinates(form.latitude, form.longitude);
       if ("errors" in parsed) {
@@ -201,7 +224,16 @@ export function App() {
     await search(form, where, started);
   };
 
+  const locateHere = () => {
+    if (requestReady(form)) void locateAndSearch();
+  };
+
+  const searchArea = () => {
+    if (requestReady(form)) void search(form, roundCenter(mapCenter));
+  };
+
   const retry = () => {
+    if (!requestReady(form)) return;
     const where = result
       ? { latitude: result.query.latitude, longitude: result.query.longitude }
       : roundCenter(mapCenter);
@@ -210,7 +242,7 @@ export function App() {
 
   const wider = RADII.find((r) => r > (result?.query.radius_m ?? form.radiusM));
   const widen = () => {
-    if (wider === undefined || !result) return;
+    if (wider === undefined || !result || !requestReady(form)) return;
     const next = { ...form, radiusM: wider };
     setForm(next);
     void search(next, { latitude: result.query.latitude, longitude: result.query.longitude });
@@ -263,7 +295,8 @@ export function App() {
           <DiscoverView
             tiles={config?.map ?? null}
             form={form}
-            onForm={setForm}
+            onForm={changeForm}
+            requestError={requestError}
             locationError={locationError}
             coordinateErrors={coordinateErrors}
             status={status}
@@ -290,8 +323,8 @@ export function App() {
             sheetExpanded={sheetExpanded}
             onSheetToggle={() => setSheetExpanded((open) => !open)}
             onSearch={searchHere}
-            onSearchArea={() => void search(form, roundCenter(mapCenter))}
-            onLocate={() => void locateAndSearch()}
+            onSearchArea={searchArea}
+            onLocate={locateHere}
             onRetry={retry}
             onWiden={wider === undefined ? null : widen}
             focusSignal={focusHeading}

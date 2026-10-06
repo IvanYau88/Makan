@@ -26,7 +26,12 @@ STAGES = [
 ]
 THAI = place("Mid Thai", "thai_restaurant", 3.1485, 101.6951)
 NEAR = place("Near Ramen", "ramen_restaurant", 3.1481, 101.6951)
-BODY: dict[str, Any] = {"latitude": 3.14812, "longitude": 101.69498, "request": "thai please"}
+BODY: dict[str, Any] = {
+    "mode": "recommend",
+    "latitude": 3.14812,
+    "longitude": 101.69498,
+    "request": "thai please",
+}
 
 
 def classify(cuisine: str | None = "thai") -> FakeProvider:
@@ -60,6 +65,7 @@ class OneSearchFails(FakePlacesProvider):
 def test_places_keep_their_coordinates_rank_and_match_evidence() -> None:
     body = client().post("/api/recommendations", json=BODY).json()
     assert body["query"] == {
+        "mode": "recommend",
         "latitude": 3.148,
         "longitude": 101.695,
         "radius_m": 1000,
@@ -92,6 +98,7 @@ def test_the_run_has_the_eight_real_stages_and_their_evidence() -> None:
     assert (run["mode"], run["data_source"], run["model"]) == ("live", "fake", "test/classifier")
     assert run["center"] == {"latitude": 3.148, "longitude": 101.695}
     assert run["radius_m"] == 1000 and run["request"] == "thai please"
+    assert run["search_mode"] == "recommend"
     assert [s["name"] for s in run["stages"]] == STAGES
     by_name = stages(run)
     assert all(s["status"] == "ok" for s in run["stages"])

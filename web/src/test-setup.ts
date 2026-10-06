@@ -7,3 +7,6 @@ class FakeResizeObserver {
   disconnect() {}
 }
 globalThis.ResizeObserver ??= FakeResizeObserver;
+
+// The mode a device chose is kept in localStorage, so one test must not leak it into the next.
+afterEach(() => window.localStorage.clear());

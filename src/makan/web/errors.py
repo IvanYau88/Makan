@@ -52,10 +52,10 @@ def workflow_failure(graph: GraphResult) -> JSONResponse:
             "provider_error",
             "The language model gave an answer Makan could not use. Try again.",
         )
-    if {"requested_places", "nearby_places"} <= failed.keys():
-        timed_out = all(
-            failed[n].status == "timeout" for n in ("requested_places", "nearby_places")
-        )
+    searches = [n for n in ("requested_places", "nearby_places") if n in failed]
+    # Browsing nearby is the one search, so it failing alone leaves nothing to show.
+    if len(searches) == 2 or set(graph.results) == {"nearby_places"}:
+        timed_out = all(failed[n].status == "timeout" for n in searches)
         return error(
             504 if timed_out else 502,
             "places_error",

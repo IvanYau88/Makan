@@ -1,5 +1,12 @@
-import { STAGE_AFTER, STAGE_ORDER, blueprintStages, phaseText, runSummary } from "./stages";
-import { run, stage } from "./test-fixtures";
+import {
+  STAGE_AFTER,
+  STAGE_ORDER,
+  blueprintStages,
+  outcomeLabel,
+  phaseText,
+  runSummary,
+} from "./stages";
+import { browseRun, run, stage } from "./test-fixtures";
 
 describe("stages", () => {
   it("describes the eight real stages and how they depend on each other", () => {
@@ -40,5 +47,28 @@ describe("stages", () => {
         run({ status: "failed", outcome: "failed" }, [stage("classify", { status: "error" })]),
       ),
     ).toBe("Classify did not finish, so there was nothing to recommend.");
+  });
+
+  it("leaves skipped stages out of the count and the summary of a browse run", () => {
+    const running = browseRun({ status: "running", outcome: null });
+    running.stages[3] = stage("nearby_places", { status: "running" });
+    expect(phaseText(running)).toBe("Searching nearby places (0 of 1 stage done)");
+    expect(runSummary(browseRun())).toBe(
+      "Browse nearby ran only the places search. The other 7 stages were skipped, and no model was called.",
+    );
+    expect(runSummary(browseRun({ outcome: "no_result" }))).toContain(
+      "No place was within the radius.",
+    );
+    expect(runSummary(browseRun({ status: "failed", outcome: "failed" }))).toContain(
+      "so there was nothing to show",
+    );
+  });
+
+  it("calls a browse outcome a list, never a recommendation", () => {
+    expect(outcomeLabel(run({ outcome: "complete" }))).toBe("Complete recommendation");
+    expect(outcomeLabel(browseRun({ outcome: "complete" }))).toBe("Places listed");
+    expect(outcomeLabel(browseRun({ outcome: "no_result" }))).toBe("No places found");
+    expect(outcomeLabel(browseRun({ outcome: "failed" }))).toBe("No places listed");
+    expect(outcomeLabel(browseRun({ status: "running", outcome: null }))).toBe("In progress");
   });
 });

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { Filters } from "./Filters";
 import { MapView } from "./MapView";
+import { ModeChoice } from "./ModeChoice";
 import type { Circle, MapMove } from "./MapView";
 import { PlaceDetail } from "./PlaceDetail";
 import { PlaceList } from "./PlaceList";
@@ -27,6 +28,8 @@ interface Props {
   onForm: (form: FormValues) => void;
   locationError: string | null;
   coordinateErrors: CoordinateErrors;
+  /** A "Pick for me" search was tried with nothing typed. */
+  requestError: boolean;
   status: Status;
   result: Recommendation | null;
   /** The results after the filters, in the chosen order. */
@@ -81,6 +84,15 @@ export function DiscoverView(props: Props) {
     if (focusSignal > 0) headingRef.current?.focus();
   }, [focusSignal]);
   const working = status.kind === "working";
+  // What is on screen belongs to the search that made it, which may not be the mode chosen now.
+  const browsed = result?.query.mode === "browse";
+  const modeChoice = (
+    <ModeChoice
+      mode={form.mode}
+      onChange={(mode) => props.onForm({ ...form, mode })}
+      compact={!wide && result !== null}
+    />
+  );
   const applied: Circle | null = result
     ? {
         center: { latitude: result.query.latitude, longitude: result.query.longitude },
@@ -189,6 +201,7 @@ export function DiscoverView(props: Props) {
         <ResultsHeader
           result={result}
           shown={visible.length}
+          browsed={browsed}
           filtered={isFiltered(filters)}
           headingRef={status.kind === "failed" ? undefined : headingRef}
         />
@@ -219,6 +232,7 @@ export function DiscoverView(props: Props) {
 
   return (
     <div className="discover" data-view={view} ref={rootRef}>
+      {!wide && <div className="modebar">{modeChoice}</div>}
       <SearchBar
         values={form}
         onChange={props.onForm}
@@ -229,6 +243,7 @@ export function DiscoverView(props: Props) {
         placed={props.placed}
         locationError={props.locationError}
         coordinateErrors={props.coordinateErrors}
+        requestError={props.requestError}
         appliedRadiusM={applied?.radiusM ?? null}
       />
 
@@ -254,15 +269,24 @@ export function DiscoverView(props: Props) {
 
       <div className="panes">
         <section className="results-pane" aria-label="Results" data-stale={working && !!result}>
+          {wide && modeChoice}
           {wide && outcome}
 
           {!result && status.kind !== "failed" && !working && (
             <div className="intro">
               <h2 className="section-title">Find somewhere to eat</h2>
-              <p>
-                Move the map to where you want to eat, or use your location, then press Find food
-                here. Makan shows a bounded list of nearby options, not every restaurant.
-              </p>
+              {form.mode === "browse" ? (
+                <p>
+                  Move the map to where you want to look, or use your location, then press Browse
+                  here. Makan lists the places nearest first and does not suggest one. It shows a
+                  bounded list, not every restaurant.
+                </p>
+              ) : (
+                <p>
+                  Move the map to where you want to eat, or use your location, then press Find food
+                  here. Makan shows a bounded list of nearby options, not every restaurant.
+                </p>
+              )}
             </div>
           )}
 
@@ -281,6 +305,7 @@ export function DiscoverView(props: Props) {
                 filters={filters}
                 onChange={props.onFilters}
                 canMatch={hasTerms}
+                browsed={browsed}
               />
               {visible.length === 0 ? (
                 <div className="empty">
@@ -370,11 +395,13 @@ function canFocus(element: HTMLElement): boolean {
 function ResultsHeader({
   result,
   shown,
+  browsed,
   filtered,
   headingRef,
 }: {
   result: Recommendation;
   shown: number;
+  browsed: boolean;
   filtered: boolean;
   headingRef: RefObject<HTMLHeadingElement | null> | undefined;
 }) {
@@ -382,12 +409,13 @@ function ResultsHeader({
   return (
     <header className="results-head">
       <h2 id="result-heading" ref={headingRef} tabIndex={-1} className="section-title">
-        {total === 0 ? "No places found" : "Nearby options"}
+        {total === 0 ? "No places found" : browsed ? "Places nearby" : "Nearby options"}
       </h2>
       {total > 0 && (
         <p className="hint">
-          {filtered ? `${shown} of ${total} shown` : `${total} options`} · within{" "}
-          {radiusLabel(result.query.radius_m)} · straight-line distance
+          {filtered ? `${shown} of ${total} shown` : `${total} ${browsed ? "places" : "options"}`} ·
+          within {radiusLabel(result.query.radius_m)} · {browsed ? "nearest first · " : ""}
+          straight-line distance
           {result.truncated && ". Each search is capped at 20 places, so more may be nearby."}
         </p>
       )}

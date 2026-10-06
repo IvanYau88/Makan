@@ -9,9 +9,11 @@ interface Props {
   onChange: (filters: PlaceFilters) => void;
   /** Whether the request named a cuisine or venue type, so matching it means something. */
   canMatch: boolean;
+  /** The places came from browsing, so they are in distance order and no match is "best". */
+  browsed: boolean;
 }
 
-export function Filters({ places, filters, onChange, canMatch }: Props) {
+export function Filters({ places, filters, onChange, canMatch, browsed }: Props) {
   const set = (patch: Partial<PlaceFilters>) => onChange({ ...filters, ...patch });
   return (
     <div className="filters">
@@ -37,8 +39,17 @@ export function Filters({ places, filters, onChange, canMatch }: Props) {
           value={filters.sort}
           onChange={(e) => set({ sort: e.target.value as PlaceFilters["sort"] })}
         >
-          <option value="rank">Best match</option>
-          <option value="distance">Nearest</option>
+          {browsed ? (
+            <>
+              <option value="rank">Nearest first</option>
+              <option value="name">Name, A to Z</option>
+            </>
+          ) : (
+            <>
+              <option value="rank">Best match</option>
+              <option value="distance">Nearest</option>
+            </>
+          )}
         </select>
       </div>
       {canMatch && (

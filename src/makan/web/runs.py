@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Any, Literal
 
@@ -22,7 +22,9 @@ from makan.trace import TraceEvent
 from makan.web.errors import public_warnings
 
 Outcome = Literal["complete", "partial", "no_result", "failed"]
-StageStatus = Literal["waiting", "queued", "running", "ok", "error", "timeout"]
+StageStatus = Literal["waiting", "queued", "running", "ok", "error", "timeout", "skipped"]
+SearchMode = Literal["recommend", "browse"]
+Plan = Sequence[tuple[str, Sequence[str]]]  # every stage of the full graph, with what it follows
 
 MAX_TEXT = 300
 MAX_ITEMS = 5  # places previewed for a search stage
@@ -48,8 +50,10 @@ class RunRecorder:
         self,
         *,
         mode: str,
+        search_mode: SearchMode = "recommend",
+        plan: Plan | None = None,
         config: Config,
-        request: str,
+        request: str | None,
         latitude: float,
         longitude: float,
         radius_m: int,
@@ -58,6 +62,7 @@ class RunRecorder:
     ) -> None:
         self._meta = {
             "mode": mode,
+            "search_mode": search_mode,
             "model": config.model,
             "request": request,
             "center": {"latitude": latitude, "longitude": longitude},
@@ -70,6 +75,7 @@ class RunRecorder:
                 "token_budget": config.limits.token_budget,
             },
         }
+        self._plan = plan
         self._on_update = on_update
         self._lock = threading.Lock()
         self._events: list[TraceEvent] = []
@@ -91,11 +97,11 @@ class RunRecorder:
         with self._lock:
             events = list(self._events)
             outcome = self._outcome
-        return _snapshot(self._meta, events, outcome)
+        return _snapshot(self._meta, events, outcome, self._plan)
 
 
 def _snapshot(
-    meta: dict[str, Any], events: list[TraceEvent], outcome: Outcome | None
+    meta: dict[str, Any], events: list[TraceEvent], outcome: Outcome | None, plan: Plan | None
 ) -> dict[str, Any]:
     start = next((e for e in events if e.type == "graph_start"), None)
     if start is None:
@@ -141,6 +147,8 @@ def _snapshot(
             "calls": [c for events_ in children if (c := _call(events_))],
         }
         stages.append(stage)
+    if plan is not None:
+        stages = _with_skipped(stages, plan)
     _fill_inputs(stages, meta)
 
     ok = end.data["status"] == "ok" if end else None
@@ -156,6 +164,33 @@ def _snapshot(
         **meta,
         "stages": stages,
     }
+
+
+def _with_skipped(stages: list[dict[str, Any]], plan: Plan) -> list[dict[str, Any]]:
+    """The run's stages in the order of the full graph, each stage it did not run marked skipped.
+
+    A search that needs only part of the graph (browse nearby) still shows the whole picture, so a
+    stage that never ran reads as skipped and not as one that is waiting or failed.
+    """
+    ran = {s["name"]: s for s in stages}
+    return [
+        ran[name]
+        if name in ran
+        else {
+            "name": name,
+            "after": list(after),
+            "status": "skipped",
+            "timeout_s": 0,
+            "started_ms": None,
+            "duration_ms": None,
+            "parallel_with": [],
+            "input": None,
+            "output": None,
+            "error": None,
+            "calls": [],
+        }
+        for name, after in plan
+    ]
 
 
 def _find(events: list[TraceEvent], kind: str, step: str) -> TraceEvent | None:
@@ -287,6 +322,8 @@ def _fill_inputs(stages: list[dict[str, Any]], meta: dict[str, Any]) -> None:
     limits = meta["limits"]
     for stage in stages:
         name = stage["name"]
+        if stage["status"] == "skipped":
+            continue
         if name == "classify":
             stage["input"] = {
                 "request": _text(meta["request"]),
