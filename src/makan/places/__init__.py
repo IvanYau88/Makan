@@ -4,6 +4,7 @@ from makan.places.base import (
     PlaceQuery,
     PlacesError,
     PlacesProvider,
+    distance_label,
     distance_m,
     rank_nearby,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "PlaceQuery",
     "PlacesError",
     "PlacesProvider",
+    "distance_label",
     "distance_m",
     "places_provider",
     "rank_nearby",

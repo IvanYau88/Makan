@@ -1,3 +1,5 @@
+import { FEET_PER_METER, metersToMiles } from "./units";
+
 /** "thai_restaurant" becomes "Thai restaurant". */
 export function categoryLabel(category: string): string {
   const text = category.replace(/_/g, " ").trim();
@@ -6,12 +8,16 @@ export function categoryLabel(category: string): string {
 
 /** Distance is great-circle, so it is always approximate and never a walking time. */
 export function distanceLabel(meters: number): string {
-  if (meters < 1000) return `~${meters} m`;
-  return `~${(meters / 1000).toFixed(1)} km`;
+  const miles = metersToMiles(meters);
+  // Under a tenth of a mile, one decimal would say "0.0 mi", so use feet. Keep in step with
+  // `distance_label` in makan/places/base.py, which words the same distances for the API.
+  if (miles < 0.1) return `~${Math.round((meters * FEET_PER_METER) / 10) * 10} ft`;
+  return `~${miles.toFixed(1)} mi`;
 }
 
+/** A search radius: up to two decimals, so a quarter mile reads "0.25 mi" and a mile "1 mi". */
 export function radiusLabel(meters: number): string {
-  return meters < 1000 ? `${meters} m` : `${meters / 1000} km`;
+  return `${Number(metersToMiles(meters).toFixed(2))} mi`;
 }
 
 export function coordinateLabel(latitude: number, longitude: number): string {

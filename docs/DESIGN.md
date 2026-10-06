@@ -803,8 +803,19 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - **Map notices and the place sheet have separate space:** `MapView` draws its failure notice and Retry in a row above the map, and the map, the pins, the Search this area button, and the place sheet share the stage below it.
   The sheet therefore cannot cover Retry, and on desktop it stops short of the zoom buttons.
   On a phone, opening or expanding the sheet scrolls it into view, since the map is taller than the room under the search form, and the map and the selected pin stay visible above it.
+- **US units, meters underneath:** the owner lives in the United States, so everything a person reads or picks is in miles and feet.
+  Storage and the API stay in meters (`radius_m`, `distance_m`, and the 100 to 5000 limits), and the page converts at the edges with `web/src/units.ts`.
+  Radius choices are 0.25, 0.5, 1, 2, and 3 miles (402 to 4828 m, inside the limits), with 1 mile the default.
+  A distance reads in miles to one decimal, and in feet (to the nearest 10) under a tenth of a mile, since "0.0 mi" says nothing.
+  The same words come from `distance_label` in `makan/places/base.py` for the backend's "why this option" reasons, so the two must change together.
+  Tool text for the model stays in meters, because the model never shows it to anyone.
+- **The map starts on the person, not a country of ours:** on load the page asks the browser for the location once, and the map starts there at the zoom that fits the chosen radius.
+  When the browser cannot say or the person declines, nothing is shown as an error, and the map shows the contiguous United States instead, centered on its geographic middle (`US_CENTER` in `web/src/geo.ts`), which is a view and not a place to search.
+  While the map is in that state, "Find food here" asks for the person's location instead of searching the middle of Kansas, until they zoom in to town scale (zoom 10), use their location, or type coordinates.
+  A location that arrives after the person already grabbed the map or started a search never moves it.
+  Demo mode generates its sample places around whatever point is searched, so it works anywhere, but with no location it shows nothing until the person zooms in or types coordinates.
 - **One source of truth for where to search:** the map's center.
-  "Find food here" and "Search this area" search around it, "Use my location" and typed coordinates move it first, and the center is rounded to about 100 m before it leaves the page.
+  "Find food here" and "Search this area" search around it, "Use my location" and typed coordinates move it first, and the center is rounded to about 100 m (a tenth of a mile on the page) before it leaves the page.
   A pan or a radius change never searches by itself, because each search costs a model call.
   It draws a dashed circle for what would be searched and offers the button, and the solid circle always shows the search the list belongs to.
   A move under 120 m counts as the map settling, which is above the worst rounding error.

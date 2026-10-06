@@ -11,7 +11,10 @@ export function place(name: string, distance_m: number, extra: Partial<Place> = 
     lon: 101.695,
     rank: 1,
     matched: true,
-    reasons: [`${distance_m} m from your approximate location`, "matches your request for thai"],
+    reasons: [
+      `${(distance_m / 1609.344).toFixed(1)} mi from your approximate location`,
+      "matches your request for thai",
+    ],
     ...extra,
   };
 }
@@ -23,7 +26,7 @@ const NEAR = place("Near Ramen", 90, {
   category: "ramen_restaurant",
   matched: false,
   reasons: [
-    "90 m from your approximate location",
+    "0.1 mi from your approximate location",
     "nearby alternative; your request is not confirmed for this place",
   ],
 });
@@ -70,7 +73,7 @@ export function run(extra: Partial<Run> = {}, stages?: Stage[]): Run {
     model: "test/model",
     request: "thai please",
     center: { latitude: 3.148, longitude: 101.695 },
-    radius_m: 1000,
+    radius_m: 1609,
     data_source: "overture:2026-09-23.1",
     limits: { max_concurrency: 4, step_timeout_s: 30, max_iterations: 10, token_budget: 50000 },
     stages: stages ?? (Object.keys(STAGES) as StageName[]).map((name) => stage(name)),
@@ -79,7 +82,7 @@ export function run(extra: Partial<Run> = {}, stages?: Stage[]): Run {
 }
 
 export const RESULT: Recommendation = {
-  query: { latitude: 3.148, longitude: 101.695, radius_m: 1000, request: "thai please" },
+  query: { latitude: 3.148, longitude: 101.695, radius_m: 1609, request: "thai please" },
   intent: { cuisine: "thai", category: null },
   pick: MID,
   runners_up: [FAR, NEAR],

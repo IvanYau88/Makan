@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -217,6 +218,7 @@ def test_a_requested_category_cannot_override_what_makes_a_participant_unhappy()
     assert rec.pick.minimum - thai.minimum > CLOSE_SCORE_MARGIN  # far beyond the tie margin
     assert thai.least_happy == ("Sam",)
     assert "matches 1 requested category filter(s)" in thai.reasons
+    assert re.fullmatch(r"(\d+ ft|\d+\.\d mi) from the search point", thai.reasons[0])
     assert "Alex and Sam are least happy with it" in rec.explanation
     # With nobody disliking it, the request does count and the matching place wins.
     liking = [who(s, "Alex", host=True, likes=("thai",)), who(s, "Sam", likes=("thai",), minutes=1)]

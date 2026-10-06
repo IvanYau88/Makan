@@ -1,6 +1,6 @@
 import pytest
 
-from makan.places import COORD_DECIMALS, PlaceQuery, distance_m, rank_nearby
+from makan.places import COORD_DECIMALS, PlaceQuery, distance_label, distance_m, rank_nearby
 from tests.helpers import place
 
 # Three places on a line due east of the origin, about 111 m apart per 0.001 degree at the equator.
@@ -17,6 +17,23 @@ def test_distance_is_great_circle_meters() -> None:
     assert distance_m(0, 0, 0, 0) == 0
     assert distance_m(0, 0, 0, 0.001) == 111
     assert distance_m(3.148, 101.695, 3.158, 101.695) == pytest.approx(1112, abs=2)
+
+
+@pytest.mark.parametrize(
+    ("meters", "label"),
+    [
+        (0, "0 ft"),
+        (30, "100 ft"),
+        (160, "520 ft"),  # just under a tenth of a mile
+        (161, "0.1 mi"),
+        (482, "0.3 mi"),
+        (1609, "1.0 mi"),
+        (2000, "1.2 mi"),
+        (5000, "3.1 mi"),
+    ],
+)
+def test_distance_label_is_miles_or_feet(meters: int, label: str) -> None:
+    assert distance_label(meters) == label
 
 
 def test_results_are_nearest_first_with_distances() -> None:

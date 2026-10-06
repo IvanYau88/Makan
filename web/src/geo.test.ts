@@ -1,4 +1,4 @@
-import { PENDING_MOVE_M, distanceBetween, hasMoved, roundCenter } from "./geo";
+import { PENDING_MOVE_M, US_CENTER, distanceBetween, hasMoved, roundCenter, usZoom } from "./geo";
 
 const KLCC = { latitude: 3.148, longitude: 101.695 };
 
@@ -20,5 +20,12 @@ describe("geo", () => {
     expect(hasMoved(KLCC, { latitude: 3.1485, longitude: 101.6955 })).toBe(false);
     expect(hasMoved(KLCC, { latitude: 3.152, longitude: 101.695 })).toBe(true);
     expect(PENDING_MOVE_M).toBeGreaterThan(79); // above the worst rounding error
+  });
+
+  it("fits the United States across a phone or a desktop map, in the map's half steps", () => {
+    expect(usZoom(390)).toBe(3);
+    expect(usZoom(1000)).toBe(4.5);
+    expect(usZoom(0)).toBe(3); // a hidden map has no width yet
+    expect(US_CENTER.longitude).toBeLessThan(-90); // the middle of the US, not anywhere in Asia
   });
 });

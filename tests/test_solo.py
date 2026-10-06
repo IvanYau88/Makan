@@ -1,6 +1,7 @@
 """Exercise the actual solo product path with scripted classification and offline places."""
 
 import json
+import re
 import threading
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -326,6 +327,8 @@ def test_places_keep_coordinates_and_the_full_ranked_list_reaches_the_recommenda
     assert all(r.place.lat is not None and r.place.lon is not None for r in rec.ranked)
     assert rec.truncated is False
     assert "matches your request for thai" in rec.pick.reasons
+    distance = re.compile(r"^(\d+ ft|\d+\.\d mi) from your approximate location$")
+    assert distance.match(rec.pick.reasons[0]), rec.pick.reasons[0]  # miles, never meters
     assert (
         "nearby alternative; your request is not confirmed for this place" in rec.ranked[2].reasons
     )
