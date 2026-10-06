@@ -118,6 +118,7 @@ main > div {
 
 .topbar {
   display: flex;
+  flex-wrap: wrap; /* the brand and both tabs are wider than a 320px screen */
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem 1rem;
@@ -136,6 +137,7 @@ main > div {
 
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 
@@ -190,7 +192,7 @@ select {
 
 input::placeholder {
   color: var(--muted);
-  opacity: 0.8;
+  opacity: 1; /* any dimming drops it under the 4.5:1 minimum, as 0.8 did at 3.75:1 */
 }
 
 input[aria-invalid="true"] {
@@ -1254,7 +1256,7 @@ input[aria-invalid="true"] {
 
 .stage-button {
   display: grid;
-  grid-template-columns: 1.75rem minmax(7rem, 1fr) minmax(6rem, auto) 4.5rem;
+  grid-template-columns: 1.75rem minmax(0, 1fr) minmax(6rem, auto) 4.5rem;
   grid-template-areas:
     "index name status time"
     "bar bar bar bar";
@@ -1285,7 +1287,9 @@ input[aria-invalid="true"] {
 
 .stage-name {
   grid-area: name;
+  min-width: 0;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .stage-status {
@@ -1298,6 +1302,18 @@ input[aria-invalid="true"] {
   text-align: right;
   font-size: 0.875rem;
   color: var(--muted);
+}
+
+/* On a phone, status drops under the name so the name column can shrink to the screen. The
+   breakpoint is in rem so enlarged text switches to this layout sooner. */
+@media (max-width: 30rem) {
+  .stage-button {
+    grid-template-columns: 1.75rem minmax(0, 1fr) auto;
+    grid-template-areas:
+      "index name time"
+      ". status status"
+      "bar bar bar";
+  }
 }
 
 .stage-bar {
@@ -1342,6 +1358,7 @@ input[aria-invalid="true"] {
 
 .stage-detail {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.75rem;
   padding-top: 0.5rem;
   border-top: 1px solid var(--border);
