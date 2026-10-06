@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { categoryLabel, distanceLabel } from "./format";
+import { usZoom } from "./geo";
 import { hasCoordinates } from "./places";
 import type { Coordinates, MapConfig, Place } from "./types";
 
@@ -21,6 +22,7 @@ export interface MapMove {
 
 interface Props {
   tiles: MapConfig | null;
+  /** Where to start when the person's location is not known. */
   initialCenter: Coordinates;
   /** The search the places belong to. */
   applied: Circle | null;
@@ -36,8 +38,10 @@ interface Props {
   busy: boolean;
   onSelect: (id: string | null) => void;
   onHover: (id: string | null) => void;
-  /** Called when the map settles after being moved, with its center. */
-  onCenterChange: (center: Coordinates) => void;
+  /** Called when the map settles after being moved, with its center and zoom. */
+  onCenterChange: (center: Coordinates, zoom: number) => void;
+  /** Called when the person grabs the map, so a late location does not move it from under them. */
+  onInteract: () => void;
   /** Panels drawn over the map, such as a place sheet. The map's own notices get their own space. */
   children?: ReactNode;
 }
@@ -47,7 +51,6 @@ type PinState = "idle" | "hover" | "selected";
 
 /** After this many failed tiles with none loaded, say the tiles are not coming. */
 const TILE_FAILURES = 4;
-const INITIAL_ZOOM = 15;
 
 const prefersReducedMotion = () =>
   typeof window.matchMedia === "function" &&
@@ -84,7 +87,7 @@ export function MapView(props: Props) {
         attributionControl: false, // the page shows the attribution itself, outside the map
         zoomSnap: 0.5,
         worldCopyJump: true,
-      }).setView(latLng(handlers.current.initialCenter), INITIAL_ZOOM);
+      }).setView(latLng(handlers.current.initialCenter), usZoom(element.clientWidth));
     } catch {
       setHealth("unavailable");
       return;
@@ -93,8 +96,11 @@ export function MapView(props: Props) {
     setHealth("ready");
     instance.on("moveend", () => {
       const c = instance.getCenter();
-      handlers.current.onCenterChange({ latitude: c.lat, longitude: c.lng });
+      handlers.current.onCenterChange({ latitude: c.lat, longitude: c.lng }, instance.getZoom());
     });
+    const interact = () => handlers.current.onInteract();
+    for (const type of ["pointerdown", "wheel", "keydown"])
+      element.addEventListener(type, interact);
     instance.on("click", () => handlers.current.onSelect(null));
     const resize = new ResizeObserver(() => {
       instance.invalidateSize();

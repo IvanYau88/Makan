@@ -12,15 +12,22 @@ describe("format", () => {
     expect(categoryLabel("cafe")).toBe("Cafe");
   });
 
-  it("shows distances as approximate, in meters under a kilometer", () => {
-    expect(distanceLabel(140)).toBe("~140 m");
-    expect(distanceLabel(999)).toBe("~999 m");
-    expect(distanceLabel(1250)).toBe("~1.3 km");
+  it("shows distances as approximate, in feet under a tenth of a mile and miles above", () => {
+    expect(distanceLabel(0)).toBe("~0 ft");
+    expect(distanceLabel(140)).toBe("~460 ft");
+    expect(distanceLabel(160)).toBe("~520 ft");
+    expect(distanceLabel(161)).toBe("~0.1 mi");
+    expect(distanceLabel(482)).toBe("~0.3 mi");
+    expect(distanceLabel(1609)).toBe("~1.0 mi");
+    expect(distanceLabel(5000)).toBe("~3.1 mi");
   });
 
   it("labels radii, coordinates and durations", () => {
-    expect(radiusLabel(500)).toBe("500 m");
-    expect(radiusLabel(2000)).toBe("2 km");
+    expect(radiusLabel(402)).toBe("0.25 mi");
+    expect(radiusLabel(805)).toBe("0.5 mi");
+    expect(radiusLabel(1609)).toBe("1 mi");
+    expect(radiusLabel(4828)).toBe("3 mi");
+    expect(radiusLabel(100)).toBe("0.06 mi");
     expect(coordinateLabel(3.1480001, 101.695)).toBe("3.148, 101.695");
     expect(durationLabel(null)).toBe("-");
     expect(durationLabel(12)).toBe("12 ms");

@@ -33,7 +33,7 @@ from makan.consensus import (
 )
 from makan.graph import Graph, GraphResult, Step, StepContext, run_graph
 from makan.models import Participant, Session
-from makan.places.base import PlacesProvider
+from makan.places.base import PlacesProvider, distance_label
 from makan.providers.base import Provider
 from makan.solo import Candidate, Research, research_steps
 from makan.trace import TraceSink
@@ -281,7 +281,7 @@ def _recommendation(
 
 def _option(scored: Scored, people: int, unverified: tuple[str, ...]) -> RankedOption:
     place = scored.place
-    reasons = [f"{place.distance_m} m from the search point"]
+    reasons = [f"{distance_label(place.distance_m)} from the search point"]
     if place.request_fit:
         reasons.append(f"matches {place.request_fit} requested category filter(s)")
     else:
@@ -317,7 +317,7 @@ def _least_misery(option: RankedOption) -> str:
 
 def _runner_up(option: RankedOption) -> str:
     if option.minimum is None or option.average is None:
-        return f"{option.place.name} ({option.place.distance_m} m)"
+        return f"{option.place.name} ({distance_label(option.place.distance_m)})"
     return (
         f"{option.place.name} (lowest score {floor_score(option.minimum):.2f} "
         f"from {_join(option.least_happy)}; average {option.average:.2f})"

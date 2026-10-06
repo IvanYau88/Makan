@@ -74,7 +74,7 @@ function parseDegrees(text: string, limit: number): number | string {
   const trimmed = text.trim();
   if (!trimmed) return "Enter a number.";
   const value = Number(trimmed);
-  if (!Number.isFinite(value)) return "Enter a number, such as 3.148.";
+  if (!Number.isFinite(value)) return "Enter a number, such as 40.713.";
   if (Math.abs(value) > limit) return `Must be between -${limit} and ${limit}.`;
   return value;
 }

@@ -16,6 +16,8 @@ Read `docs/DESIGN.md` before making architectural decisions.
 - Allergies and other hard constraints stay in plain code, and a fixed-answer scorer never decides them.
   Paid Jev is only ever used when `MAKAN_SCORER_BACKEND=jev` is set, never as a fallback.
 - Change the schema with a new numbered file in `migrations/`, and update `makan.models` in the same change.
+- Show people miles and feet, never meters or kilometers.
+  Storage and the API stay in meters, and conversion happens at the display and input edges (`web/src/units.ts`, `distance_label` in `makan/places/base.py`).
 - Never send raw trace events to a client.
   They hold the session link token and exception text, so the web channel sends only the bounded view from `makan.web.runs`.
   A type decides what a trace may hold through `trace_summary()`.

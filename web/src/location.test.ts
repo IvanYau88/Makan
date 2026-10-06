@@ -52,7 +52,7 @@ describe("parseCoordinates", () => {
 
   it("says what is wrong with each field", () => {
     expect(parseCoordinates("", "abc")).toEqual({
-      errors: { latitude: "Enter a number.", longitude: "Enter a number, such as 3.148." },
+      errors: { latitude: "Enter a number.", longitude: "Enter a number, such as 40.713." },
     });
     expect(parseCoordinates("91", "181")).toEqual({
       errors: {
@@ -64,7 +64,7 @@ describe("parseCoordinates", () => {
 
   it("only flags the bad field", () => {
     expect(parseCoordinates("3", "x")).toEqual({
-      errors: { longitude: "Enter a number, such as 3.148." },
+      errors: { longitude: "Enter a number, such as 40.713." },
     });
   });
 });

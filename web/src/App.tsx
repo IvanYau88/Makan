@@ -5,14 +5,14 @@ import type { Status, View } from "./DiscoverView";
 import { ExecutionView } from "./ExecutionView";
 import { abandonRun, recordRun } from "./history";
 import type { HistoryEntry } from "./history";
-import { DEFAULT_CENTER, roundCenter } from "./geo";
+import { SEARCH_ZOOM, US_CENTER, roundCenter } from "./geo";
 import { LocationError, locate, parseCoordinates } from "./location";
 import type { CoordinateErrors } from "./location";
 import type { MapMove } from "./MapView";
 import { NO_FILTERS, visiblePlaces } from "./places";
 import type { PlaceFilters } from "./places";
 import { phaseText } from "./stages";
-import { RADII, REQUEST_PLACEHOLDER } from "./SearchBar";
+import { DEFAULT_RADIUS_M, RADII, REQUEST_PLACEHOLDER } from "./SearchBar";
 import type { FormValues } from "./SearchBar";
 import type { AppConfig, Coordinates, Recommendation } from "./types";
 
@@ -23,7 +23,7 @@ export function App() {
   const [page, setPage] = useState<Page>("discover");
   const [form, setForm] = useState<FormValues>({
     request: "",
-    radiusM: 1000,
+    radiusM: DEFAULT_RADIUS_M,
     manual: false,
     latitude: "",
     longitude: "",
@@ -32,7 +32,10 @@ export function App() {
   const [result, setResult] = useState<Recommendation | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [coordinateErrors, setCoordinateErrors] = useState<CoordinateErrors>({});
-  const [mapCenter, setMapCenter] = useState<Coordinates>(DEFAULT_CENTER);
+  const [mapCenter, setMapCenter] = useState<Coordinates>(US_CENTER);
+  // False while the map shows the whole country because nobody has said where they are. Its
+  // center is then not a place to search, so searching asks for the person's location instead.
+  const [placed, setPlaced] = useState(false);
   const [moveTo, setMoveTo] = useState<MapMove | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -41,6 +44,9 @@ export function App() {
   const [sheetExpanded, setSheetExpanded] = useState(false);
   // One tab's runs, newest first. Nothing is stored: a reload starts empty.
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+
+  // Set once the map has a place, from a location, a search, or the person moving the map.
+  const claimed = useRef(false);
 
   const inflight = useRef<{ seq: number; controller: AbortController } | null>(null);
   const counter = useRef(0);
@@ -55,6 +61,25 @@ export function App() {
 
   useEffect(() => () => inflight.current?.controller.abort(), []);
 
+  // Start the map on the person's own location. If the browser cannot say, or they decline, it
+  // stays on the view of the United States and says nothing: they never asked for a search.
+  useEffect(() => {
+    let ignore = false;
+    locate().then(
+      (where) => {
+        if (ignore || claimed.current) return;
+        claimed.current = true;
+        setMapCenter(where);
+        setPlaced(true);
+        setMoveTo({ center: where, radiusM: DEFAULT_RADIUS_M, key: -++counter.current });
+      },
+      () => undefined,
+    );
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
   /** Start a search, giving up on any one still going. Returns its number and abort signal. */
   const begin = useCallback((text: string) => {
     const previous = inflight.current;
@@ -62,6 +87,7 @@ export function App() {
       previous.controller.abort();
       setHistory((h) => abandonRun(h, previous.seq));
     }
+    claimed.current = true;
     const seq = ++counter.current;
     const controller = new AbortController();
     inflight.current = { seq, controller };
@@ -131,6 +157,8 @@ export function App() {
   );
 
   const goTo = (center: Coordinates, radiusM: number | null) => {
+    claimed.current = true;
+    setPlaced(true);
     setMapCenter(center);
     setMoveTo({ center, radiusM, key: -++counter.current });
   };
@@ -143,8 +171,13 @@ export function App() {
         return;
       }
       const where = roundCenter(parsed.coordinates);
-      goTo(where, null);
+      goTo(where, form.radiusM);
       void search(form, where);
+      return;
+    }
+    // Nowhere chosen yet: "here" means where the person is.
+    if (!placed) {
+      void locateAndSearch();
       return;
     }
     void search(form, roundCenter(mapCenter));
@@ -164,7 +197,7 @@ export function App() {
       return;
     }
     if (started.signal.aborted) return;
-    goTo(where, null);
+    goTo(where, form.radiusM);
     await search(form, where, started);
   };
 
@@ -243,7 +276,14 @@ export function App() {
             onSelect={select}
             onHover={setHoveredId}
             mapCenter={mapCenter}
-            onMapCenter={setMapCenter}
+            placed={placed}
+            onMapCenter={(center, zoom) => {
+              setMapCenter(center);
+              if (zoom >= SEARCH_ZOOM) setPlaced(true);
+            }}
+            onMapInteract={() => {
+              claimed.current = true;
+            }}
             moveTo={moveTo}
             view={view}
             onView={setView}

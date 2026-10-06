@@ -7,7 +7,7 @@ import { PlaceList } from "./PlaceList";
 import { SearchBar } from "./SearchBar";
 import type { FormValues } from "./SearchBar";
 import { radiusLabel } from "./format";
-import { DEFAULT_CENTER, hasMoved } from "./geo";
+import { US_CENTER, hasMoved } from "./geo";
 import { NO_FILTERS, isFiltered } from "./places";
 import type { PlaceFilters } from "./places";
 import type { CoordinateErrors } from "./location";
@@ -38,7 +38,10 @@ interface Props {
   onSelect: (id: string | null) => void;
   onHover: (id: string | null) => void;
   mapCenter: Coordinates;
-  onMapCenter: (center: Coordinates) => void;
+  /** False while the map shows the whole country and nowhere has been chosen. */
+  placed: boolean;
+  onMapCenter: (center: Coordinates, zoom: number) => void;
+  onMapInteract: () => void;
   moveTo: MapMove | null;
   view: View;
   onView: (view: View) => void;
@@ -223,6 +226,7 @@ export function DiscoverView(props: Props) {
         onLocate={props.onLocate}
         busy={working}
         mapCenter={mapCenter}
+        placed={props.placed}
         locationError={props.locationError}
         coordinateErrors={props.coordinateErrors}
         appliedRadiusM={applied?.radiusM ?? null}
@@ -311,7 +315,7 @@ export function DiscoverView(props: Props) {
           <div className="map-frame">
             <MapView
               tiles={props.tiles}
-              initialCenter={DEFAULT_CENTER}
+              initialCenter={US_CENTER}
               applied={applied}
               pending={pending}
               moveTo={props.moveTo}
@@ -323,6 +327,7 @@ export function DiscoverView(props: Props) {
               onSelect={props.onSelect}
               onHover={props.onHover}
               onCenterChange={props.onMapCenter}
+              onInteract={props.onMapInteract}
             >
               {centerMoved && (
                 <button

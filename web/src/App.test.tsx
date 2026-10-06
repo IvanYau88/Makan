@@ -65,6 +65,9 @@ function stubLocation(outcome: "ok" | "denied") {
   });
 }
 
+// The browser knows where the person is unless a test says otherwise, so the map starts there.
+beforeEach(() => stubLocation("ok"));
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -91,21 +94,21 @@ describe("Discover", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.type(screen.getByLabelText("What are you in the mood for?"), "thai please");
-    await user.selectOptions(screen.getByLabelText("How far will you go?"), "2000");
+    await user.selectOptions(screen.getByLabelText("How far will you go?"), "3219");
     await user.click(findFood());
 
     expect(await screen.findByRole("heading", { name: "Nearby options" })).toHaveFocus();
     expect(calls).toEqual([
-      { latitude: 3.148, longitude: 101.695, request: "thai please", radius_m: 2000 },
+      { latitude: 3.148, longitude: 101.695, request: "thai please", radius_m: 3219 },
     ]);
     expect(
-      screen.getByText(/3 options · within 1 km · straight-line distance/),
+      screen.getByText(/3 options · within 1 mi · straight-line distance/),
     ).toBeInTheDocument();
 
     const mid = row(/^1\. Mid Thai/);
     expect(within(mid).getByText("Top pick")).toBeInTheDocument();
     expect(within(mid).getByText("Matches your request")).toBeInTheDocument();
-    expect(within(mid).getByText(/Thai restaurant · ~140 m/)).toBeInTheDocument();
+    expect(within(mid).getByText(/Thai restaurant · ~460 ft/)).toBeInTheDocument();
     expect(within(row(/^3\. Near Ramen/)).getByText("Nearby alternative")).toBeInTheDocument();
     expect(screen.getByText(/Overture Maps Foundation/)).toBeInTheDocument();
     expect(screen.getByText(/Opening hours, menus, prices/)).toBeInTheDocument();
@@ -138,7 +141,7 @@ describe("Discover", () => {
     expect(
       within(detail).getByText(/not in this data, so none of them is verified/),
     ).toBeInTheDocument();
-    expect(within(detail).getByText(/~140 m straight-line/)).toBeInTheDocument();
+    expect(within(detail).getByText(/~460 ft straight-line/)).toBeInTheDocument();
 
     await user.click(pin(2, "Far Thai"));
     expect(row(/^2\. Far Thai/)).toHaveAttribute("aria-current", "true");
@@ -229,12 +232,12 @@ describe("Discover", () => {
     const { calls, user } = await searched((body) =>
       answer({ ...RESULT, query: { ...RESULT.query, radius_m: Number(body.radius_m) } }),
     );
-    await user.selectOptions(screen.getByLabelText("How far will you go?"), "500");
+    await user.selectOptions(screen.getByLabelText("How far will you go?"), "805");
     expect(screen.getByText(/The radius changed/)).toBeInTheDocument();
     expect(document.querySelectorAll(".map-radius-pending").length).toBe(1);
     await user.click(findFood());
     await waitFor(() => expect(calls).toHaveLength(2));
-    expect(calls[1]?.radius_m).toBe(500);
+    expect(calls[1]?.radius_m).toBe(805);
     await waitFor(() => expect(screen.queryByText(/The radius changed/)).not.toBeInTheDocument());
   });
 
@@ -245,7 +248,7 @@ describe("Discover", () => {
     await act(async () => map.setView([3.2, 101.8], 15, { animate: false }));
     await user.click(await screen.findByRole("button", { name: "Search this area" }));
     await waitFor(() => expect(calls).toHaveLength(2));
-    expect(calls[1]).toMatchObject({ latitude: 3.2, longitude: 101.8, radius_m: 1000 });
+    expect(calls[1]).toMatchObject({ latitude: 3.2, longitude: 101.8, radius_m: 1609 });
   });
 
   it("keeps the previous results visible and marked while a new search runs", async () => {
@@ -379,7 +382,7 @@ describe("Discover", () => {
 
     await screen.findByRole("heading", { name: "Nearby options" });
     expect(calls).toEqual([
-      { latitude: 3.148, longitude: 101.695, request: "something good to eat", radius_m: 1000 },
+      { latitude: 3.148, longitude: 101.695, request: "something good to eat", radius_m: 1609 },
     ]);
   });
 
@@ -391,7 +394,7 @@ describe("Discover", () => {
     await user.click(screen.getByRole("button", { name: "Use my location" }));
     await screen.findByRole("heading", { name: "Nearby options" });
     expect(calls).toEqual([
-      { latitude: 3.148, longitude: 101.695, request: "something good to eat", radius_m: 1000 },
+      { latitude: 3.148, longitude: 101.695, request: "something good to eat", radius_m: 1609 },
     ]);
   });
 
@@ -429,11 +432,11 @@ describe("Discover", () => {
     await user.click(findFood());
 
     expect(await screen.findByRole("heading", { name: "No places found" })).toBeInTheDocument();
-    expect(screen.getByText(/nothing to eat within 1 km/)).toBeInTheDocument();
+    expect(screen.getByText(/nothing to eat within 1 mi/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Search a wider area" }));
     await waitFor(() => expect(calls).toHaveLength(2));
-    expect(calls[1]?.radius_m).toBe(2000);
-    expect(screen.getByLabelText("How far will you go?")).toHaveValue("2000");
+    expect(calls[1]?.radius_m).toBe(3219);
+    expect(screen.getByLabelText("How far will you go?")).toHaveValue("3219");
   });
 
   it("offers no wider search at the largest radius", async () => {
@@ -443,12 +446,12 @@ describe("Discover", () => {
         pick: null,
         runners_up: [],
         places: [],
-        query: { ...RESULT.query, radius_m: 5000 },
+        query: { ...RESULT.query, radius_m: 4828 },
       }),
     );
     const user = userEvent.setup();
     render(<App />);
-    await user.selectOptions(screen.getByLabelText("How far will you go?"), "5000");
+    await user.selectOptions(screen.getByLabelText("How far will you go?"), "4828");
     await user.click(findFood());
     await screen.findByRole("heading", { name: "No places found" });
     expect(screen.queryByRole("button", { name: "Search a wider area" })).not.toBeInTheDocument();
@@ -507,6 +510,76 @@ describe("Discover", () => {
     );
     expect(row(/^1\. No Coords/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /map pin$/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("Where the map starts", () => {
+  beforeEach(() => {
+    // jsdom has no layout, so give the map a phone-sized box to fit things into.
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(() => 390);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(() => 600);
+  });
+
+  it("starts on the person's own location, at a zoom that shows their radius", async () => {
+    stubApi(() => answer(RESULT));
+    render(<App />);
+    const map = capturedMap();
+    await waitFor(() => expect(map.getCenter().lat).toBeCloseTo(3.148, 3));
+    expect(map.getCenter().lng).toBeCloseTo(101.695, 3);
+    expect(screen.getByText(/Map center:/)).toHaveTextContent("3.148, 101.695");
+  });
+
+  it("starts on the whole United States when the location is unavailable, and never on a city", async () => {
+    stubLocation("denied");
+    stubApi(() => answer(RESULT));
+    render(<App />);
+    const map = capturedMap();
+    await act(async () => undefined);
+    expect(map.getZoom()).toBeLessThan(6);
+    expect(map.getBounds().contains(L.latLng(39.5, -98.35))).toBe(true);
+    // Nothing was asked for, so nothing is an error.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText(/Zoom the map in on where you want to eat/)).toBeInTheDocument();
+  });
+
+  it("asks for the location instead of searching the middle of the country", async () => {
+    stubLocation("denied");
+    const calls = stubApi(() => answer(RESULT));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(findFood());
+    expect(await screen.findByRole("alert")).toHaveTextContent("Location access was denied");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("searches the map once it is zoomed in on a place the person chose", async () => {
+    stubLocation("denied");
+    const calls = stubApi(() => answer(RESULT));
+    const user = userEvent.setup();
+    render(<App />);
+    const map = capturedMap();
+    await act(async () => map.setView([40.713, -74.006], 14, { animate: false }));
+    await user.click(findFood());
+    await screen.findByRole("heading", { name: "Nearby options" });
+    expect(calls).toEqual([
+      { latitude: 40.713, longitude: -74.006, request: "something good to eat", radius_m: 1609 },
+    ]);
+  });
+
+  it("does not move a map the person already grabbed when the location arrives late", async () => {
+    let arrive: (p: unknown) => void = () => undefined;
+    vi.stubGlobal("navigator", {
+      geolocation: { getCurrentPosition: (ok: (p: unknown) => void) => (arrive = ok) },
+    });
+    stubApi(() => answer(RESULT));
+    render(<App />);
+    const map = capturedMap();
+    const before = map.getCenter();
+    await act(async () => {
+      document.querySelector(".leaflet-container")!.dispatchEvent(new Event("pointerdown"));
+      arrive({ coords: { latitude: 3.14812, longitude: 101.69534 } });
+    });
+    expect(map.getCenter().lat).toBeCloseTo(before.lat, 3);
   });
 });
 
@@ -582,12 +655,12 @@ describe("Discover on a phone", () => {
     stubNarrow();
     await searched();
     const map = capturedMap();
-    expect(map.getZoom()).toBe(15);
+    expect(map.getZoom()).toBeLessThan(5); // no size yet, so the map is still zoomed out
 
     side = 400;
     await act(async () => resized());
-    expect(map.getZoom()).toBeLessThan(15); // a 1 km radius no longer fits at the starting zoom
-    expect(map.getBounds().contains(L.latLng(3.148, 101.695).toBounds(2000))).toBe(true);
+    expect(map.getZoom()).toBeGreaterThan(10); // now it fits the one mile radius
+    expect(map.getBounds().contains(L.latLng(3.148, 101.695).toBounds(3218))).toBe(true);
   });
 
   it("brings a place sheet opened from a pin into view", async () => {
@@ -910,7 +983,7 @@ describe("Execution", () => {
     await openExecution(user);
 
     const summary = screen.getByRole("region", { name: "Run summary" });
-    expect(within(summary).getByText("thai please · 1 km")).toBeInTheDocument();
+    expect(within(summary).getByText("thai please · 1 mi")).toBeInTheDocument();
     expect(within(summary).getByText("3.148, 101.695")).toBeInTheDocument();
     expect(within(summary).getByText("Complete recommendation")).toBeInTheDocument();
     expect(within(summary).getByText("Live")).toBeInTheDocument();

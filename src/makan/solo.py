@@ -21,7 +21,7 @@ from makan.memory.gate import GateDecision, RetrievalGate, RuleGate
 from makan.memory.service import Memory, RecalledFact, utc_now
 from makan.memory.store import Owner
 from makan.models import Participant, Session
-from makan.places.base import MAX_LIMIT, Place, PlaceQuery, PlacesProvider
+from makan.places.base import MAX_LIMIT, Place, PlaceQuery, PlacesProvider, distance_label
 from makan.places.tool import search_nearby_places
 from makan.providers.base import Provider
 from makan.providers.scoring import Scorer
@@ -344,7 +344,7 @@ def build_solo_graph(
         research: Research = ctx.inputs["merge"].unwrap()
         ranked: list[RankedCandidate] = []
         for candidate in research.candidates:
-            reasons = [f"{candidate.distance_m} m from your approximate location"]
+            reasons = [f"{distance_label(candidate.distance_m)} from your approximate location"]
             terms = [t for t in (research.intent.cuisine, research.intent.category) if t]
             if candidate.request_fit:
                 what = " and ".join(terms) if candidate.request_fit >= len(terms) else None

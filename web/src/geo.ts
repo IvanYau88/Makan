@@ -25,5 +25,18 @@ export function hasMoved(from: Coordinates, to: Coordinates): boolean {
   return distanceBetween(from, to) > PENDING_MOVE_M;
 }
 
-/** Where the map starts, before anyone has chosen a place. */
-export const DEFAULT_CENTER: Coordinates = { latitude: 3.148, longitude: 101.695 };
+/**
+ * Where the map starts when it does not know where the person is: the middle of the contiguous
+ * United States, zoomed out to show all of it. It is a view, not a place to search.
+ */
+export const US_CENTER: Coordinates = { latitude: 39.5, longitude: -98.35 };
+
+/** At this zoom or closer, the map shows a town, so its center is somewhere worth searching. */
+export const SEARCH_ZOOM = 10;
+
+/** The zoom that fits the contiguous US across a map this wide, in the map's half steps. */
+export function usZoom(widthPx: number): number {
+  const US_SPAN_DEGREES = 62; // 58 degrees of longitude, plus margin
+  const zoom = Math.log2((widthPx * 360) / (US_SPAN_DEGREES * 256));
+  return widthPx > 0 ? Math.max(2, Math.floor(zoom * 2) / 2) : 3;
+}

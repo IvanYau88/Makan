@@ -13,6 +13,8 @@ from dataclasses import dataclass, replace
 from typing import Protocol
 
 EARTH_RADIUS_M = 6_371_000
+METERS_PER_MILE = 1609.344
+FEET_PER_METER = 3.28084
 COORD_DECIMALS = 3  # about 110 m: the finest location the harness keeps or sends on
 MIN_RADIUS_M = 100
 MAX_RADIUS_M = 5_000
@@ -100,6 +102,17 @@ class PlacesProvider(Protocol):
         Every place carries `distance_m`. Raise PlacesError on failure.
         """
         ...
+
+
+def distance_label(meters: int) -> str:
+    """A distance for a person in the US: miles to one decimal, or feet under a tenth of a mile.
+
+    Storage and the API stay in meters. This is only for text shown to people, and the web page
+    formats distances the same way.
+    """
+    if meters / METERS_PER_MILE < 0.1:
+        return f"{math.floor(meters * FEET_PER_METER / 10 + 0.5) * 10} ft"
+    return f"{meters / METERS_PER_MILE:.1f} mi"
 
 
 def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> int:

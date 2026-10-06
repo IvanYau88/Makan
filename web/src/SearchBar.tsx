@@ -3,6 +3,7 @@ import type { FormEvent, RefObject } from "react";
 import type { CoordinateErrors } from "./location";
 import { coordinateLabel, radiusLabel } from "./format";
 import type { Coordinates } from "./types";
+import { milesToMeters } from "./units";
 
 export interface FormValues {
   request: string;
@@ -12,7 +13,9 @@ export interface FormValues {
   longitude: string;
 }
 
-export const RADII = [500, 1000, 2000, 5000] as const;
+/** Radius choices in miles, kept inside the API's 100 to 5000 m limits (3 miles is 4828 m). */
+export const RADII = [0.25, 0.5, 1, 2, 3].map(milesToMeters);
+export const DEFAULT_RADIUS_M = milesToMeters(1);
 export const REQUEST_PLACEHOLDER = "something good to eat";
 export const MAX_REQUEST_CHARS = 500;
 
@@ -25,6 +28,8 @@ interface Props {
   busy: boolean;
   /** The map's center now: where "Find food here" will look. */
   mapCenter: Coordinates;
+  /** False while the map shows the whole country and nowhere has been chosen. */
+  placed: boolean;
   /** Why the browser location failed, if it did. */
   locationError: string | null;
   coordinateErrors: CoordinateErrors;
@@ -39,6 +44,7 @@ export function SearchBar({
   onLocate,
   busy,
   mapCenter,
+  placed,
   locationError,
   coordinateErrors,
   appliedRadiusM,
@@ -113,18 +119,23 @@ export function SearchBar({
       <div className="searchbar-where">
         {values.manual ? (
           <span>Searching the coordinates below.</span>
+        ) : !placed ? (
+          <span>
+            Zoom the map in on where you want to eat, or use your location. Makan rounds the center
+            to about 0.1 mile and does not store it.
+          </span>
         ) : (
           <span>
             <span className="where-long">
               Searching around the map center, near{" "}
               <strong>{coordinateLabel(mapCenter.latitude, mapCenter.longitude)}</strong>. Move the
-              map to look somewhere else. Makan rounds the center to about 100 m and does not store
-              it.
+              map to look somewhere else. Makan rounds the center to about 0.1 mile and does not
+              store it.
             </span>
             <span className="where-short">
               Map center:{" "}
               <strong>{coordinateLabel(mapCenter.latitude, mapCenter.longitude)}</strong>, rounded
-              to about 100 m and not stored.
+              to about 0.1 mile and not stored.
             </span>
           </span>
         )}
@@ -203,7 +214,7 @@ function CoordinateField({
         inputMode="decimal"
         autoComplete="off"
         value={value}
-        placeholder={id === "latitude" ? "3.148" : "101.695"}
+        placeholder={id === "latitude" ? "40.713" : "-74.006"}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : undefined}
         onChange={(e) => onChange(e.target.value)}
