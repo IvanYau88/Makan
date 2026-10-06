@@ -795,6 +795,12 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   Both stay mounted and the inactive one is hidden, so the map keeps its position and the history survives a tab switch.
   A phone shows the map or the list, chosen by a Map and List toggle, and a place opens as a bottom sheet over the map or inline in its list row.
   The place sheet does not depend on a drag: it has Show more, Show less, and Close buttons.
+- **Outcomes never sit in a hidden pane:** on a phone, the search progress and live region, a failure with Try again, the result heading, the partial warning, and the empty state render above the Map and List panes, so the Map view cannot hide them and the heading that takes focus is always visible.
+  Beside the map they head the results column instead.
+  A failed search focuses its own failure heading, not the heading of the previous result.
+- **Map notices and the place sheet have separate space:** `MapView` draws its failure notice and Retry in a row above the map, and the map, the pins, the Search this area button, and the place sheet share the stage below it.
+  The sheet therefore cannot cover Retry, and on desktop it stops short of the zoom buttons.
+  On a phone, opening or expanding the sheet scrolls it into view, since the map is taller than the room under the search form, and the map and the selected pin stay visible above it.
 - **One source of truth for where to search:** the map's center.
   "Find food here" and "Search this area" search around it, "Use my location" and typed coordinates move it first, and the center is rounded to about 100 m before it leaves the page.
   A pan or a radius change never searches by itself, because each search costs a model call.

@@ -1,5 +1,6 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { onTestFinished } from "vitest";
 import L from "leaflet";
 import { App } from "./App";
 import { RESULT, place, run, stage } from "./test-fixtures";
@@ -568,6 +569,96 @@ describe("Discover on a phone", () => {
     expect(map.getBounds().contains(L.latLng(3.148, 101.695).toBounds(2000))).toBe(true);
   });
 
+  it("brings a place sheet opened from a pin into view", async () => {
+    stubNarrow();
+    const scrolled = vi.fn();
+    // jsdom has no scrollIntoView, so put one on the prototype for this test only.
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: function (this: Element) {
+        if (this.classList.contains("map-detail")) scrolled();
+      },
+    });
+    onTestFinished(() => {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    });
+    const { user } = await searched();
+    expect(scrolled).not.toHaveBeenCalled();
+    await user.click(pin(2, "Far Thai"));
+    expect(scrolled).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Show more" }));
+    expect(scrolled).toHaveBeenCalledTimes(2);
+  });
+
+  describe("search outcomes stay out of the switched panes", () => {
+    const inResultsPane = (el: HTMLElement) => el.closest(".results-pane") !== null;
+
+    it("shows a failure and Try again while the map is selected, and focuses the failure", async () => {
+      stubNarrow();
+      stubApi(() => errorLine("model_busy", "The language model is busy.", 503));
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(findFood());
+      const alert = await screen.findByRole("alert");
+      expect(document.querySelector(".discover")).toHaveAttribute("data-view", "map");
+      expect(inResultsPane(alert)).toBe(false);
+      expect(within(alert).getByRole("heading", { name: "The model is busy" })).toHaveFocus();
+      expect(within(alert).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    });
+
+    it("focuses the failure, not the old result heading, when a search fails after a result", async () => {
+      stubNarrow();
+      let n = 0;
+      const { user } = await searched(() => {
+        n += 1;
+        return n === 1 ? answer(RESULT) : errorLine("server_error", "It broke.", 500);
+      });
+      await user.click(findFood());
+      const alert = await screen.findByRole("alert");
+      expect(within(alert).getByRole("heading", { name: "That did not work" })).toHaveFocus();
+    });
+
+    it("shows the empty result and its wider search while the map is selected", async () => {
+      stubNarrow();
+      const calls = stubApi(() => answer({ ...RESULT, places: [], pick: null }));
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(findFood());
+      const heading = await screen.findByRole("heading", { name: "No places found" });
+      expect(heading).toHaveFocus();
+      expect(inResultsPane(heading)).toBe(false);
+      const wider = screen.getByRole("button", { name: "Search a wider area" });
+      expect(inResultsPane(wider)).toBe(false);
+      await user.click(wider);
+      await waitFor(() => expect(calls).toHaveLength(2));
+    });
+
+    it("shows the result heading, the partial warning and progress while the map is selected", async () => {
+      stubNarrow();
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      stubApi(async () => {
+        await gate;
+        return answer({ ...RESULT, partial: true });
+      });
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(findFood());
+      const progress = await waitFor(() => {
+        const el = document.querySelector<HTMLElement>(".progress");
+        expect(el).not.toBeNull();
+        return el!;
+      });
+      expect(inResultsPane(progress)).toBe(false);
+      expect(screen.getByRole("status")).toHaveTextContent(/Starting the search/);
+      release();
+      const heading = await screen.findByRole("heading", { name: "Nearby options" });
+      expect(heading).toHaveFocus();
+      expect(inResultsPane(heading)).toBe(false);
+      expect(inResultsPane(screen.getByText(/list may be missing places/))).toBe(false);
+    });
+  });
+
   it("does not crash when a search finishes while the map is hidden by the list view", async () => {
     stubNarrow();
     const { user } = await searched();
@@ -738,6 +829,27 @@ describe("Discover failures", () => {
     );
     expect(document.querySelector(".leaflet-container")).not.toBeNull();
     expect(pin(1, "Mid Thai")).toBeInTheDocument();
+  });
+
+  it("gives the map notice its own space, so an open place never covers Retry", async () => {
+    stubApi(() => answer(RESULT));
+    vi.spyOn(L, "map").mockImplementationOnce(() => {
+      throw new Error("no canvas");
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText("The map could not start.");
+    await user.click(findFood());
+    await user.click(await screen.findByRole("button", { name: /^1\. Mid Thai/ }));
+    const notice = document.querySelector(".map-fallback")!;
+    const detail = document.querySelector(".map-detail")!;
+    expect(detail).not.toBeNull();
+    // The sheet is positioned inside the stage under the notice, never over it.
+    expect(notice.closest(".map-stage")).toBeNull();
+    expect(detail.closest(".map-stage")).not.toBeNull();
+    expect(
+      within(notice as HTMLElement).getByRole("button", { name: "Retry the map" }),
+    ).toBeEnabled();
   });
 });
 
