@@ -95,15 +95,16 @@ export function SearchBar({
         </div>
 
         <div className="searchbar-actions">
-          <button type="submit" className="button button-primary" disabled={busy}>
-            {busy ? (
-              <>
-                <span className="spinner" aria-hidden="true" />
-                Finding food…
-              </>
-            ) : (
-              "Find food here"
-            )}
+          <button type="submit" className="button button-primary button-stable" disabled={busy}>
+            {/* Both labels are always laid out, so the button never changes size when it goes busy. */}
+            <span className="button-state" aria-hidden={busy || undefined}>
+              Find food here
+            </span>
+            <span className="button-state button-state-busy" aria-hidden={!busy || undefined}>
+              <span className="spinner" aria-hidden="true" />
+              <span className="busy-long">Finding food…</span>
+              <span className="busy-short">Finding…</span>
+            </span>
           </button>
           <button
             type="button"

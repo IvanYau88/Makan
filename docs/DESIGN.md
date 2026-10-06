@@ -785,6 +785,8 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - **UI:** mobile first, with one column on phones and a sticky form beside the results from 56rem.
   Controls are at least 44 px tall and 16 px text, so iOS does not zoom on focus.
   Colors follow the system light or dark setting and meet WCAG AA contrast, and that includes placeholder text, which is drawn at the full muted color because any extra opacity dropped it to 3.75:1 on white.
+  The search button keeps its size while it searches: its idle and busy labels share one grid cell, so the cell is as wide as the wider one and nothing beside it moves.
+  The busy label is "Finding food…" from 56rem and "Finding…" below it, since the longer one would wrap in the phone's half-width column.
   After a search, focus moves to the result or error heading and a hidden live region announces progress.
   An empty request becomes "something good to eat", and an empty result offers a search over the next larger radius.
 - **Follow-ups:** a geocoder for typed addresses, sign-in, the group page for the shared link, request rate limits and daily caps, a configurable port for the one command start, retrying a rate limited model call, durable and authorized run history, and a CORS allow-list once hosting is chosen.
@@ -831,6 +833,11 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   Hovering or focusing a row previews its pin, and selecting is a separate act.
   A selected pin is larger, filled, and ringed, so it is not told apart by color alone.
   Pins are not in the tab order, since the list reaches every action, but a touch screen reader can still name them.
+- **Map touch targets are 44 px, and close pins do not compete:** a pin is a 44 px box around its 34 px circle, and the zoom buttons are 44 px, which is the project's control size.
+  The box takes no pointer events, and a round target inside it does, so a transparent corner never blocks the pin underneath.
+  That target is 44 px wide unless a neighbour is closer, and then it is the distance to the neighbour, down to 24 px (the WCAG AA minimum), so two targets are tangent at worst (`pinHitSizes` in `web/src/pins.ts`, applied by `MapView` on every zoom).
+  Pins closer than that still overlap, and the better ranked one is drawn on top, so the person can zoom in or use the list, which numbers the same places.
+  The look is unchanged: the circle stays 34 px.
 - **Filters are on what came back:** category, "only places that match my request", and a sort by best match or nearest.
   They narrow the bounded list in the page and so cost nothing, and a count says how many of how many are shown.
   The request filter and the "matches your request" labels appear only when the request named a cuisine or venue type, because otherwise every place would read as a miss.

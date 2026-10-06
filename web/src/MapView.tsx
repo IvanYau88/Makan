@@ -5,6 +5,7 @@ import "leaflet/dist/leaflet.css";
 import { categoryLabel, distanceLabel } from "./format";
 import { usZoom } from "./geo";
 import { hasCoordinates } from "./places";
+import { pinHitSizes } from "./pins";
 import type { Coordinates, MapConfig, Place } from "./types";
 
 export interface Circle {
@@ -102,6 +103,8 @@ export function MapView(props: Props) {
     for (const type of ["pointerdown", "wheel", "keydown"])
       element.addEventListener(type, interact);
     instance.on("click", () => handlers.current.onSelect(null));
+    // Pin spacing, in pixels, only changes with the zoom, so size the touch targets when it does.
+    instance.on("zoomend", () => sizePinTargets(instance, markers.current));
     const resize = new ResizeObserver(() => {
       instance.invalidateSize();
       if (wantedMove.current && !hasNoSize(instance)) {
@@ -224,8 +227,12 @@ export function MapView(props: Props) {
         describe(pin.marker, place, state);
         pin.look = look;
       }
-      pin.marker.setZIndexOffset(state === "selected" ? 1000 : state === "hover" ? 500 : 0);
+      // Leaflet stacks by latitude, so when pins overlap the better ranked one is drawn on top.
+      pin.marker.setZIndexOffset(
+        state === "selected" ? 1000 : state === "hover" ? 500 : -place.rank,
+      );
     }
+    sizePinTargets(instance, markers.current);
   }, [places, selectedId, hoveredId, highlightMatches, attempt]);
 
   const unavailable = health === "unavailable";
@@ -287,12 +294,23 @@ function applyMove(instance: L.Map, move: MapMove): void {
   }
 }
 
+/** Gives each pin the touch target it has room for, 44px at most (see `pinHitSizes`). */
+function sizePinTargets(instance: L.Map, pins: Map<string, { marker: L.Marker }>): void {
+  const points = [...pins].map(([id, { marker }]) => {
+    const point = instance.latLngToLayerPoint(marker.getLatLng());
+    return { id, x: point.x, y: point.y };
+  });
+  for (const [id, size] of pinHitSizes(points)) {
+    pins.get(id)?.marker.getElement()?.style.setProperty("--hit", `${size}px`);
+  }
+}
+
 function pinIcon(place: Place, state: PinState, highlightMatches: boolean): L.DivIcon {
   return L.divIcon({
     className: `pin pin-${state}${place.matched || !highlightMatches ? " pin-matched" : ""}`,
     html: `<span>${place.rank}</span>`,
-    iconSize: [34, 34],
-    iconAnchor: [17, 17],
+    iconSize: [44, 44], // the touch target around the 34px circle, see `.pin` in styles.css
+    iconAnchor: [22, 22],
   });
 }
 
