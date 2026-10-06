@@ -96,6 +96,15 @@ def test_group_session_settings_have_defaults_and_overrides() -> None:
     assert password not in repr(config)
 
 
+def test_the_session_purge_interval_has_a_default_and_an_override() -> None:
+    assert Config.from_env({"MAKAN_MODEL": "m"}).session_purge_interval_minutes == 15
+    config = Config.from_env({"MAKAN_MODEL": "m", "MAKAN_SESSION_PURGE_INTERVAL_MINUTES": "5"})
+    assert config.session_purge_interval_minutes == 5
+    for value in ("hourly", "0", "-1"):
+        with pytest.raises(ConfigError, match="MAKAN_SESSION_PURGE_INTERVAL_MINUTES"):
+            Config.from_env({"MAKAN_MODEL": "m", "MAKAN_SESSION_PURGE_INTERVAL_MINUTES": value})
+
+
 def test_a_bad_session_retention_is_rejected() -> None:
     for value in ("a day", "0", "-1"):
         with pytest.raises(ConfigError, match="MAKAN_SESSION_RETENTION_HOURS"):

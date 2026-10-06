@@ -175,7 +175,7 @@ class GroupSessions:
         return session, self._store.participants(session.id)
 
     def purge_expired(self) -> int:
-        """Delete every expired session. Nothing schedules this, so the caller decides when."""
+        """Delete every expired session. The web app runs this on a schedule (makan.web.purge)."""
         return purge_expired_sessions(self._store, self._clock())
 
     def _live(self, link_token: str) -> Session:
@@ -228,7 +228,7 @@ def purge_expired_sessions(store: SessionStore, now: datetime | None = None) -> 
     """Delete the expired sessions in `store` and return how many went.
 
     This is the purge the schema leaves to the application. It is a plain function so a scheduler,
-    a CLI, or a test can call it, and nothing in Makan schedules it.
+    a CLI, or a test can call it. The web app runs it at startup and on an interval.
     """
     return store.purge_expired(utc_now() if now is None else now)
 

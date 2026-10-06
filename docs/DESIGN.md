@@ -230,7 +230,7 @@ Supabase can run the same files through its own migration tooling.
 - Session expiry is an `expires_at` column with no default.
   Null means no expiry is scheduled, so the retention period stays an open question and the app sets the field.
   Expiry is enforced by a purge of rows past `expires_at`, not by row-level security, so whatever reads a session through the link must check the field too.
-  `makan.sessions` does both: it checks `expires_at` on every call, and `purge_expired_sessions` deletes the rows, though nothing schedules the purge yet.
+  `makan.sessions` does both: it checks `expires_at` on every call, and `purge_expired_sessions` deletes the rows, which the web app runs on a schedule (see "Group sessions").
 - Participants hold the `constraints` and `preferences` the person chose to share in that session, as JSON whose shape `makan.consensus` defines (see "Group consensus decisions").
   A session has at most one host, and a signed-in user joins a session at most once.
 - A session has a nullable `closed_at`, added in migration `0002_session_closed.sql`.
@@ -264,7 +264,7 @@ Supabase can run the same files through its own migration tooling.
   They create and drop their own schema and role, and they use the `psycopg` dev dependency.
   Nothing in the test suite touches the network.
 
-Not done yet: the migration runner, scheduling the expired-session purge, and an adapter that writes trace events to the table.
+Not done yet: the migration runner and an adapter that writes trace events to the table.
 
 ## Places tool decisions
 
@@ -596,7 +596,13 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   `MAKAN_SESSION_RETENTION_HOURS` sets how long a new session lives from its creation, and the default is 24 hours, since a meal decision does not need to outlive the day.
   It is a fixed lifetime and not extended by activity.
   `purge_expired_sessions(store, now)` deletes expired sessions, and the database cascades to their participants, guest memory facts, and trace events.
-  It is a plain function and nothing schedules it.
+  It is a plain function, and the web app runs it.
+- **Purge schedule:** `create_app` runs `makan.web.purge.purge_forever` as a task in the app lifespan, so the purge needs no cron job, extra process, or database extension, and it works the same on in-memory and Postgres stores.
+  It purges once at startup and then every `MAKAN_SESSION_PURGE_INTERVAL_MINUTES`, which defaults to 15, so an expired session's names, allergies, diets, and refusals stay stored for at most that long past `expires_at`.
+  The interval is not the retention period: that stays `MAKAN_SESSION_RETENTION_HOURS`, and reads keep refusing an expired session before its row is deleted.
+  The purge runs in the thread pool, a failure is logged and retried on the next round, and shutdown cancels the task.
+  Every server process runs its own loop, which is safe because the delete only touches rows already expired, so concurrent runs only race to delete the same rows.
+  A host that stops the server between requests purges only while it runs, so the hosting choice must keep the process up long enough, or add a database-side job.
 - **Closing:** only the host can close, and closing twice keeps the first time.
   A closed session still reads, and the host can still get its result, because closing freezes the inputs.
   Nobody can join it or change their inputs.
@@ -630,7 +636,7 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   - Every group route is wrapped so that anything it does not answer for itself, such as a store whose connection dropped, is logged with its traceback and returned as 500 `server_error` in the same JSON shape, with no exception text.
     Session rule failures and bad input keep their own errors.
   - The shared error helpers moved to `makan.web.errors`, and the routes are plain functions that FastAPI runs in its thread pool, since the stores and the workflow are synchronous.
-- **Follow-ups:** the group page, the Open Graph preview card, a read endpoint for the host's result, scheduling the purge, and a connection pool.
+- **Follow-ups:** the group page, the Open Graph preview card, a read endpoint for the host's result, and a connection pool.
 
 ## Profiles and auth
 
