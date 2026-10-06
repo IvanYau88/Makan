@@ -237,6 +237,34 @@ input[aria-invalid="true"] {
   color: var(--on-accent);
 }
 
+/* A button whose label swaps (idle and busy) lays both out in one cell, so it keeps one size. */
+.button-stable {
+  display: inline-grid;
+  place-items: center;
+}
+
+.button-state {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.button-state[aria-hidden="true"] {
+  visibility: hidden;
+}
+
+/* The busy label stays on one line: the short one on phones, where "Finding food…" would wrap. */
+.button-state-busy {
+  white-space: nowrap;
+}
+
+.busy-long {
+  display: none;
+}
+
 .button-primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -491,6 +519,12 @@ input[aria-invalid="true"] {
   .where-short {
     display: none;
   }
+  .busy-long {
+    display: inline;
+  }
+  .busy-short {
+    display: none;
+  }
 }
 
 /* Discover: panes */
@@ -706,9 +740,28 @@ input[aria-invalid="true"] {
   stroke-width: 2;
 }
 
-.pin {
+/*
+ * The pin's box is 44px, the project's touch target, around a 34px circle. The box itself takes no
+ * pointer events, and the ::before circle does, at --hit: 44px, or less when a neighbour is closer
+ * than that (set by MapView), so two pins' targets never overlap more than their circles do.
+ */
+.pin,
+.pin.leaflet-interactive {
   display: grid;
   place-items: center;
+  pointer-events: none;
+}
+
+.pin::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--hit, 44px);
+  height: var(--hit, 44px);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: auto;
   cursor: pointer;
 }
 
@@ -760,10 +813,11 @@ input[aria-invalid="true"] {
   border: 1px solid var(--border);
 }
 
+.leaflet-bar a,
 .leaflet-touch .leaflet-bar a {
-  width: 2.5rem;
-  height: 2.5rem;
-  line-height: 2.5rem;
+  width: 2.75rem;
+  height: 2.75rem;
+  line-height: 2.75rem;
 }
 
 /* Discover: results */
