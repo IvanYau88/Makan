@@ -14,6 +14,7 @@ import json
 import logging
 import os
 from collections.abc import AsyncIterator, Callable, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -55,6 +56,7 @@ from makan.solo import (
 from makan.web.demo import DemoPlaces, DemoProvider
 from makan.web.errors import error, public_warnings, workflow_failure
 from makan.web.groups import register_group_routes
+from makan.web.purge import purge_forever
 from makan.web.runs import Outcome, RunRecorder, SearchMode
 
 log = logging.getLogger("makan.web")
@@ -115,9 +117,28 @@ def create_app(
     A `scorer` adds soft request signals to solo recommendations. Without one there are none.
 
     Group sessions are kept in `sessions`, or in memory for the life of the process when it is None.
+    While the app runs it deletes expired sessions at startup and then every
+    `config.session_purge_interval_minutes`, so expired participant data does not stay stored.
     """
+    group_sessions = _default_sessions(config) if sessions is None else sessions
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        purge = asyncio.create_task(
+            purge_forever(group_sessions, config.session_purge_interval_minutes * 60)
+        )
+        try:
+            yield
+        finally:
+            purge.cancel()
+            await asyncio.gather(purge, return_exceptions=True)
+
     app = FastAPI(
-        title="Makan", docs_url="/api/docs", redoc_url=None, openapi_url="/api/openapi.json"
+        title="Makan",
+        docs_url="/api/docs",
+        redoc_url=None,
+        openapi_url="/api/openapi.json",
+        lifespan=lifespan,
     )
     background: set[asyncio.Future[None]] = set()  # keeps streamed runs alive until they end
 
@@ -272,7 +293,7 @@ def create_app(
 
     register_group_routes(
         app,
-        _default_sessions(config) if sessions is None else sessions,
+        group_sessions,
         provider=provider,
         places=places,
         config=config,

@@ -442,21 +442,27 @@ def test_the_purge_cascades_to_guest_memory_and_traces_in_postgres(db: Any) -> N
     from makan.sessions.postgres import PostgresSessionStore
 
     store = PostgresSessionStore(db)
-    groups = GroupSessions(store, retention=timedelta(hours=1), clock=Clock())
-    session, _ = start(groups)
-    db.execute(
-        "insert into memory_facts (session_id, kind, content, source, confidence) "
-        "values (%s, 'constraint', '\"halal\"', 'stated', 1)",
-        (session.id,),
-    )
-    db.execute(
-        "insert into trace_events (run_id, seq, v, ts, type, session_id) "
-        "values ('r', 0, 1, now(), 'run_start', %s)",
-        (session.id,),
-    )
+    clock = Clock()
+    short = GroupSessions(store, retention=timedelta(hours=1), clock=clock)
+    long = GroupSessions(store, retention=timedelta(hours=5), clock=clock)
+    gone, _ = start(short)
+    kept, _ = start(long)
+    for session in (gone, kept):
+        db.execute(
+            "insert into memory_facts (session_id, kind, content, source, confidence) "
+            "values (%s, 'constraint', '\"halal\"', 'stated', 1)",
+            (session.id,),
+        )
+        db.execute(
+            "insert into trace_events (run_id, seq, v, ts, type, session_id) "
+            "values (%s, 0, 1, now(), 'run_start', %s)",
+            (session.id.hex, session.id),
+        )
     assert purge_expired_sessions(store, T0 + timedelta(hours=2)) == 1
     for table in ("sessions", "participants", "memory_facts", "trace_events"):
-        assert db.execute(f"select count(*) from {table}").fetchone()[0] == 0, table
+        assert db.execute(f"select count(*) from {table}").fetchone()[0] == 1, table
+        column = "id" if table == "sessions" else "session_id"
+        assert db.execute(f"select {column} from {table}").fetchone()[0] == kept.id, table
 
 
 def test_postgres_rows_match_what_the_service_stored(db: Any) -> None:

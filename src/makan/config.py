@@ -54,6 +54,7 @@ class Config:
     overture_release: str = ""  # empty means the latest release
     places_cache_ttl_seconds: int = 86_400
     session_retention_hours: int = 24  # how long a group session lives after it is created
+    session_purge_interval_minutes: int = 15  # how often the server deletes expired sessions
     database_url: str = field(default="", repr=False)  # empty keeps group sessions in memory
     map_tile_url: str = DEFAULT_MAP_TILE_URL  # a raster tile template with {z}, {x} and {y}
     map_attribution: str = DEFAULT_MAP_ATTRIBUTION  # shown beside the map whenever it is
@@ -101,6 +102,9 @@ class Config:
             ),
             session_retention_hours=_int(
                 env, "MAKAN_SESSION_RETENTION_HOURS", cls.session_retention_hours
+            ),
+            session_purge_interval_minutes=_int(
+                env, "MAKAN_SESSION_PURGE_INTERVAL_MINUTES", cls.session_purge_interval_minutes
             ),
             database_url=env.get("MAKAN_DATABASE_URL", "").strip(),
             map_tile_url=tile_url,
