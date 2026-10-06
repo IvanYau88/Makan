@@ -3,13 +3,14 @@ import { FlowGraph } from "./FlowGraph";
 import { coordinateLabel, durationLabel, radiusLabel } from "./format";
 import type { HistoryEntry } from "./history";
 import {
-  OUTCOME_LABEL,
   STAGE_INFO,
   STATUS_LABEL,
   blueprintStages,
+  outcomeLabel,
   phaseText,
   runSummary,
 } from "./stages";
+import { MODE_COPY } from "./searchMode";
 import type { Run, Stage, StageName } from "./types";
 
 interface Props {
@@ -19,11 +20,15 @@ interface Props {
 
 export function ExecutionView({ history, onClear }: Props) {
   const [chosenKey, setChosenKey] = useState<number | null>(null);
-  const [chosenStage, setChosenStage] = useState<StageName>("classify");
+  const [chosenStage, setChosenStage] = useState<StageName | null>(null);
   const entry = history.find((e) => e.key === chosenKey) ?? history[0] ?? null;
   const run = entry?.run ?? null;
   const stages = run && run.stages.length > 0 ? run.stages : blueprintStages();
-  const stage = stages.find((s) => s.name === chosenStage) ?? stages[0];
+  // With no pick, start on a stage that ran: a skipped one has nothing to show.
+  const stage =
+    stages.find((s) => s.name === chosenStage) ??
+    stages.find((s) => s.status !== "skipped") ??
+    stages[0];
 
   return (
     <div className="execution">
@@ -31,9 +36,10 @@ export function ExecutionView({ history, onClear }: Props) {
         <p className="eyebrow">Execution</p>
         <h2 className="page-title">The graph Makan actually runs</h2>
         <p className="lead">
-          Each search runs these eight stages. This page shows what the server recorded for your
-          searches in this tab, with real inputs, outputs, timings and errors. History is kept in
-          this tab only and is gone when you reload.
+          Pick for me runs these eight stages. Browse nearby runs only the nearby places search and
+          marks the rest skipped, because it makes no model call. This page shows what the server
+          recorded for your searches in this tab, with real inputs, outputs, timings and errors.
+          History is kept in this tab only and is gone when you reload.
         </p>
       </header>
 
@@ -63,7 +69,7 @@ export function ExecutionView({ history, onClear }: Props) {
                     aria-current={e.key === entry?.key ? "true" : undefined}
                     onClick={() => setChosenKey(e.key)}
                   >
-                    <span className="run-title">{e.run.request}</span>
+                    <span className="run-title">{e.run.request ?? "Browse nearby"}</span>
                     <span className="run-meta">{runLine(e)}</span>
                   </button>
                 </li>
@@ -75,7 +81,11 @@ export function ExecutionView({ history, onClear }: Props) {
         <div className="inspector">
           {run ? <RunSummary run={run} abandoned={entry?.abandoned ?? false} /> : <Blueprint />}
 
-          <FlowGraph stages={stages} selected={chosenStage} onSelect={setChosenStage} />
+          <FlowGraph
+            stages={stages}
+            selected={stage?.name ?? "classify"}
+            onSelect={setChosenStage}
+          />
 
           <h3 className="subtitle">Stages</h3>
           <StageList
@@ -85,7 +95,9 @@ export function ExecutionView({ history, onClear }: Props) {
             totalMs={run?.duration_ms ?? null}
           />
 
-          {stage && <StageDetail stage={stage} hasRun={!!run} />}
+          {stage && (
+            <StageDetail stage={stage} hasRun={!!run} browsing={run?.search_mode === "browse"} />
+          )}
         </div>
       </div>
     </div>
@@ -96,7 +108,7 @@ function runLine(entry: HistoryEntry): string {
   const { run } = entry;
   if (entry.abandoned) return "Stopped watching · it may have finished unseen";
   if (run.status === "running") return phaseText(run);
-  return `${run.outcome ? OUTCOME_LABEL[run.outcome] : run.status} · ${run.mode} · ${durationLabel(run.duration_ms)}`;
+  return `${run.outcome ? outcomeLabel(run) : run.status} · ${run.mode} · ${durationLabel(run.duration_ms)}`;
 }
 
 function Blueprint() {
@@ -111,7 +123,8 @@ function RunSummary({ run, abandoned }: { run: Run; abandoned: boolean }) {
   return (
     <section className="run-summary" aria-label="Run summary">
       <dl className="facts">
-        <Fact label="Request" value={`${run.request} · ${radiusLabel(run.radius_m)}`} />
+        <Fact label="Search" value={MODE_COPY[run.search_mode].label} />
+        <Fact label="Request" value={`${run.request ?? "None"} · ${radiusLabel(run.radius_m)}`} />
         <Fact
           label="Search center"
           value={coordinateLabel(run.center.latitude, run.center.longitude)}
@@ -120,7 +133,7 @@ function RunSummary({ run, abandoned }: { run: Run; abandoned: boolean }) {
           label="Graph"
           value={run.status === "running" ? "Running" : run.status === "ok" ? "Ok" : "Failed"}
         />
-        <Fact label="Outcome" value={run.outcome ? OUTCOME_LABEL[run.outcome] : "In progress"} />
+        <Fact label="Outcome" value={outcomeLabel(run)} />
         <Fact label="Mode" value={run.mode === "demo" ? "Demo" : "Live"} />
         <Fact label="Data source" value={run.data_source} />
         <Fact label="Duration" value={durationLabel(run.duration_ms)} />
@@ -194,15 +207,38 @@ function StageList({
   );
 }
 
-function StageDetail({ stage, hasRun }: { stage: Stage; hasRun: boolean }) {
+function StageDetail({
+  stage,
+  hasRun,
+  browsing,
+}: {
+  stage: Stage;
+  hasRun: boolean;
+  browsing: boolean;
+}) {
   const info = STAGE_INFO[stage.name];
   return (
     <section className="stage-detail" aria-labelledby="stage-detail-title">
       <h3 id="stage-detail-title" className="section-title">
         {info.title}
       </h3>
-      <p>{info.summary}</p>
-      {!hasRun ? null : (
+      <p>
+        {browsing && stage.name === "nearby_places"
+          ? "The places search, with no filters. Browse nearby runs only this stage, and the list shows its places in the order they came back, nearest first."
+          : info.summary}
+      </p>
+      {hasRun && stage.status === "skipped" ? (
+        <>
+          <dl className="facts">
+            <Fact label="Status" value={STATUS_LABEL.skipped} />
+          </dl>
+          <p className="hint">
+            {browsing
+              ? "Browse nearby asks for no suggestion, so this stage did not run and no model was called."
+              : "This stage did not run."}
+          </p>
+        </>
+      ) : !hasRun ? null : (
         <>
           <dl className="facts">
             <Fact label="Status" value={STATUS_LABEL[stage.status]} />

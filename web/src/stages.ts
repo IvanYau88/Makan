@@ -85,6 +85,7 @@ export const STATUS_LABEL: Record<StageStatus, string> = {
   ok: "ok",
   error: "error",
   timeout: "timed out",
+  skipped: "skipped",
 };
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
@@ -93,6 +94,19 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
   no_result: "No places found",
   failed: "No recommendation",
 };
+
+/** What the person got, in words that fit the search: a list is not a recommendation. */
+export function outcomeLabel(run: Run): string {
+  if (!run.outcome) return "In progress";
+  if (run.search_mode === "browse") {
+    return run.outcome === "complete"
+      ? "Places listed"
+      : run.outcome === "no_result"
+        ? "No places found"
+        : "No places listed";
+  }
+  return OUTCOME_LABEL[run.outcome];
+}
 
 /** A blueprint run with every stage not started, for the empty inspector. */
 export function blueprintStages(): Stage[] {
@@ -129,20 +143,28 @@ export function phaseText(run: Run | null): string {
   const done = run.stages.filter(
     (s) => s.status === "ok" || s.status === "error" || s.status === "timeout",
   );
+  // A skipped stage is no work to wait for, so it is not part of the count.
+  const total = run.stages.filter((s) => s.status !== "skipped").length;
   const first = active[0];
   const label = first ? PHASE[first.name] : "Working";
-  return `${label} (${done.length} of ${run.stages.length} stages done)`;
+  return `${label} (${done.length} of ${total} ${total === 1 ? "stage" : "stages"} done)`;
 }
 
 /** Plain words for why the run ended the way it did, keeping graph status and outcome apart. */
 export function runSummary(run: Run): string {
   const failed = run.stages.filter((s) => s.status === "error" || s.status === "timeout");
+  const browsing = run.search_mode === "browse";
   if (run.status === "running") return phaseText(run);
   if (run.outcome === "partial") {
     return `${failed.map((s) => STAGE_INFO[s.name].title).join(" and ")} did not finish, so the graph is marked failed. The results that remained are still usable.`;
   }
   if (run.outcome === "failed") {
-    return `${failed.map((s) => STAGE_INFO[s.name].title).join(", ")} did not finish, so there was nothing to recommend.`;
+    return `${failed.map((s) => STAGE_INFO[s.name].title).join(", ")} did not finish, so there was ${browsing ? "nothing to show" : "nothing to recommend"}.`;
+  }
+  if (browsing) {
+    const skipped = run.stages.filter((s) => s.status === "skipped").length;
+    const ran = `Browse nearby ran only the places search. The other ${skipped} stages were skipped, and no model was called.`;
+    return run.outcome === "no_result" ? `${ran} No place was within the radius.` : ran;
   }
   if (run.outcome === "no_result")
     return "Every stage finished, and no place was within the radius.";

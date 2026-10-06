@@ -23,9 +23,14 @@ export interface StaleFact {
   reason: string | null;
 }
 
+/** What a search is for: a suggestion (`recommend`), or just the places nearby (`browse`). */
+export type SearchMode = "recommend" | "browse";
+
 export interface SearchQuery extends Coordinates {
+  mode: SearchMode;
   radius_m: number;
-  request: string;
+  /** What the person asked for. Null when browsing, which takes no request. */
+  request: string | null;
 }
 
 export interface Recommendation {
@@ -67,8 +72,10 @@ export interface Coordinates {
   longitude: number;
 }
 
+/** The request body. A recommendation needs `request`, and browsing nearby sends none. */
 export interface RecommendRequest extends Coordinates {
-  request: string;
+  mode: SearchMode;
+  request?: string;
   radius_m: number;
 }
 
@@ -82,7 +89,15 @@ export type StageName =
   | "rank"
   | "explain";
 
-export type StageStatus = "waiting" | "queued" | "running" | "ok" | "error" | "timeout";
+export type StageStatus =
+  | "waiting"
+  | "queued"
+  | "running"
+  | "ok"
+  | "error"
+  | "timeout"
+  /** This search does not need the stage, so it never ran. */
+  | "skipped";
 
 export type Outcome = "complete" | "partial" | "no_result" | "failed";
 
@@ -125,8 +140,10 @@ export interface Run {
   ended_at?: string | null;
   duration_ms?: number | null;
   mode: Mode;
+  search_mode: SearchMode;
   model: string;
-  request: string;
+  /** Null for a browse run, which has no request. */
+  request: string | null;
   center: Coordinates;
   radius_m: number;
   data_source: string;

@@ -97,6 +97,9 @@ npm run dev     # backend with reload, and the Vite dev server at http://localho
 
 The page has two views.
 Discover is a map beside a list of nearby options: pins and rows share one numbering, selecting either opens the same detail, and the radius, category filter, and sort are on the page.
+Discover starts with a choice, "Pick for me" or "Browse nearby", remembered on the device.
+Pick for me asks for what you feel like and suggests a place.
+Browse nearby lists the places nearest you with no request, no suggestion, and no model call.
 Execution shows what the server recorded for each search made in this tab, stage by stage, with inputs, outputs, timings, and errors.
 Its history holds the last 10 runs, only in the tab, and a reload clears it.
 

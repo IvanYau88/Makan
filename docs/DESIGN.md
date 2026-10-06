@@ -714,7 +714,7 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 ### Web channel decisions
 
 - **Layout:** the backend is the `makan.web` package (`app.py` for routes and error mapping, `demo.py` for the offline stand-ins), and the front end is a Vite, React, and TypeScript project in `web/`.
-  The backend stays a thin adapter: it validates input, calls `makan.solo.recommend`, and shapes JSON.
+  The backend stays a thin adapter: it validates input, calls `makan.solo.recommend` or `makan.browse.browse`, and shapes JSON.
   Nothing about ranking or research lives in it.
 - **Tooling:** the front end uses npm, Vitest with Testing Library and jsdom, and ESLint with typescript-eslint and the React hooks rules.
   Prettier checks formatting, in the same `npm run lint`.
@@ -724,16 +724,24 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   In development Vite proxies `/api` to the backend.
   Where the deployed backend and static files are hosted is still the open hosting question, and a split deployment would add a CORS allow-list then.
 - **API shape:**
-  - `POST /api/recommendations` takes `latitude`, `longitude`, `request` (1 to 500 characters), and optional `radius_m` (100 to 5000, default 1000), and rejects unknown fields.
+  - `POST /api/recommendations` takes `mode`, `latitude`, `longitude`, an optional `request`, and optional `radius_m` (100 to 5000, default 1000), and rejects unknown fields.
+    `mode` is required and is `recommend` or `browse`, so the server never guesses what a search is for.
+    A `recommend` search needs a `request` of 1 to 500 characters after trimming, and a blank or missing one is a 422 on `request`.
+    A `browse` search takes no `request`, and sending one, even an empty string, is a 422 on `request`.
+    The contract changed from "`request` always required" and it has one client, the page, which changed with it, so there is no compatibility shim and no default `mode`.
     There is deliberately no `user_id`: signing in is a later change, and trusting a client-supplied user id would let anyone read another user's memory.
     Every call is a guest request, and its one-participant session is built and dropped inside the call, never shared or stored.
   - A 200 response holds `pick` (null when nothing was found), `runners_up`, `explanation`, `warnings`, `stale_facts`, `data_source`, `attribution`, `partial` (the graph did not finish cleanly, so the list may be incomplete), `mode`, and the fields the map needs.
-    `query` echoes the search as it ran, with the rounded center and the radius.
+    `query` echoes the search as it ran, with `mode`, the rounded center, the radius, and `request` (null when browsing).
+    A browse answer has the same shape with `pick` null, `runners_up` empty, `intent` null, `stale_facts` empty, and every place `matched` false, so the page needs no second renderer.
+    Its `places` are nearest first and `rank` is that position, so pins and rows still agree.
+    Its `explanation` says Makan made no recommendation.
+    Nothing in a browse answer is labelled a pick or a "top pick", on the server or in the page.
     `places` is every ranked candidate, pick included, with `candidate_count` and `truncated`, and `intent` says what the request was read as.
     A place has `id`, `name`, `category`, `distance_m`, `address`, `lat`, `lon`, `rank` (its stable position, from 1), `matched` (it fit what the request asked for, not only nearby), and `reasons`.
     `run` is the public record of the run described under "Execution view".
     No places found is a successful empty answer, not an error.
-  - `POST /api/recommendations/stream` takes the same body and answers with newline-delimited JSON: `{"type": "run", "run": ...}` as the graph's stages progress, then one `{"type": "result", "recommendation": ...}` or `{"type": "error", "status", "error": {"code", "message"}, "run"}`.
+  - `POST /api/recommendations/stream` takes the same body, for either mode, and answers with newline-delimited JSON: `{"type": "run", "run": ...}` as the graph's stages progress, then one `{"type": "result", "recommendation": ...}` or `{"type": "error", "status", "error": {"code", "message"}, "run"}`.
     The error line carries the same code and message as the plain route would, so the page treats both alike.
     Bad input is still a 422 before the stream starts.
     The page uses the stream, and the plain route stays for any other caller.
@@ -746,7 +754,7 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
     Any other model failure is 502 `provider_error`: a provider error says the model failed to answer, and an answer Makan could not use says so.
     The page never says the model could not read the request unless that is what happened.
     The page keys on the `model_busy` code, not on the status or the text, and shows "The model is busy" for it.
-    Both places searches failing is 502 `places_error`, or 504 when both timed out.
+    Both places searches failing is 502 `places_error`, or 504 when both timed out, and so is the one search of a browse failing.
     Anything unexpected is 500 `server_error`.
     A single failed search still gives a 200 with `partial` set.
     Exception text stays in the server log and out of responses and warnings.
@@ -788,8 +796,37 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   The search button keeps its size while it searches: its idle and busy labels share one grid cell, so the cell is as wide as the wider one and nothing beside it moves.
   The busy label is "Finding food…" from 56rem and "Finding…" below it, since the longer one would wrap in the phone's half-width column.
   After a search, focus moves to the result or error heading and a hidden live region announces progress.
-  An empty request becomes "something good to eat", and an empty result offers a search over the next larger radius.
+  An empty result offers a search over the next larger radius.
+  A Pick for me search with nothing typed is never filled in for the person: the form asks "Anything in mind, or no preference?", marks the box invalid, moves focus to it, and sends nothing.
+  Every way to start a search (the button, Use my location, Search this area, Try again, and the wider search) asks the same question.
 - **Follow-ups:** a geocoder for typed addresses, sign-in, the group page for the shared link, request rate limits and daily caps, a configurable port for the one command start, retrying a rate limited model call, durable and authorized run history, and a CORS allow-list once hosting is chosen.
+
+### Browse nearby decisions
+
+The owner wanted a person who just wants to look around, or to try something new, to be able to see the restaurants nearby without a recommendation.
+Before this, a blank request was silently turned into "something good to eat" and ran the full model graph, so no real browse path existed.
+
+- **Two modes, chosen first:** the page opens with a two-choice control, "Pick for me" and "Browse nearby", with one short sentence under each.
+  It is a native radio group, so arrow keys and screen readers work with no extra code.
+  On desktop it is the first thing in the left rail at entry, and on a phone it sits above the form.
+  The look is unchanged: it uses the existing tokens and no new palette, font, or component library.
+- **The choice is remembered per device** in `localStorage` under `makan.search-mode`, and it defaults to Pick for me.
+  Every read and write is guarded, so blocked or cleared storage means the default and nothing breaks.
+  It is a convenience of this browser and is never sent to the server, so it holds no profile and no location.
+- **Browse is places search only:** `makan.browse.browse` runs a one step graph, `browse_nearby`, with the same `nearby_places` tool call the solo graph makes, no filters, up to 20 places.
+  No model is called, no request is read, memory and the scorer are not touched, and nothing is picked.
+  It sorts the places nearest first, then by name and id, in code, so the order does not depend on the provider.
+  It reuses the solo `Candidate` and `RankedCandidate` types so the response needs no new place shape, and its one reason per place is the distance in miles and feet.
+  The radius, the category filter, and a sort are kept: a browse list can be sorted "Nearest first" (the server's order) or "Name, A to Z", and "Best match" and "Only places that match my request" do not appear because nothing is matched.
+- **Pick for me is unchanged:** the same graph, the same request box, and the same answer, with a pick and runners-up.
+  Hard constraints stay in code, and a scorer decides nothing about them.
+  Pick for me instead is one tap from Browse: it switches the mode and moves focus to the request box, and it does not start a search.
+- **What is on screen belongs to the search that made it:** the results heading, the sort labels, and the pick chip follow `query.mode` of the answer, not the mode chosen since, so switching modes never relabels old results.
+- **A phone gives the room back after a search:** the two sentences hide once results exist, because the form, the choice, and the map already compete for 844 px.
+  The choice stays, and the sentences were shown at entry.
+- **Not built here:** the profile questionnaire, profile storage, "something new" and "no preference" routes, ratings, "hide places I avoid", and any restyling.
+  The empty-request question names "no preference" but only asks it, and the way to look around without a request is Browse nearby.
+- **Units are unchanged:** storage and the API stay in meters, and the page shows miles and feet at the edges.
 
 ### Map and execution decisions
 
@@ -849,16 +886,21 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   Zero places, filters that hide everything, and a failed search are three different messages with three different ways out.
   An answer that arrives after a newer search began is ignored.
   A failed search says the results shown are from the previous search.
-- **Execution view:** it shows the eight real stages of the solo graph, `classify`, `intent`, `requested_places`, `nearby_places`, `memory`, `merge`, `rank`, and `explain`, with the dependencies the graph really has.
+- **Execution view:** it shows the eight real stages of the solo graph (and, for a browse run, the same eight with the unused ones skipped, below), `classify`, `intent`, `requested_places`, `nearby_places`, `memory`, `merge`, `rank`, and `explain`, with the dependencies the graph really has.
   The dependency picture is hidden from assistive technology, and the stage list beside it is the accessible way to pick a stage and doubles as a timeline whose bars show the two searches overlapping.
-  A stage is waiting (a stage before it has not ended), queued (its inputs are ready and it waits for a concurrency slot), running, ok, error, or timeout.
+  A stage is waiting (a stage before it has not ended), queued (its inputs are ready and it waits for a concurrency slot), running, ok, error, timeout, or skipped.
+  Skipped means this search does not need the stage, so it never ran: it is not waiting and it did not fail.
+  A browse run records one real stage, `nearby_places`, and the server fills in the other seven as skipped, in the solo graph's order and with the solo graph's dependencies (read from `build_solo_graph`, so the two cannot drift).
+  A skipped stage has no input, output, timing, or calls, and its detail says no model was called.
+  The run counts only the stages that ran ("0 of 1 stage done"), and its summary says Browse nearby ran only the places search.
+  A browse outcome reads "Places listed" or "No places found" and never "recommendation", its request reads "None", and the run history names it "Browse nearby".
   On a phone (under 30rem, which grows with enlarged text) a stage row moves its status under the name, and the name column may shrink and wrap, so the rows fit down to a 320 px screen.
   The page says timed out, never cancelled, because the work cannot be stopped.
   The graph's status and the product outcome are separate facts: a failed graph can still carry a usable recommendation (partial), and an ok graph can find nothing (no result).
   Memory says it is not used for guests rather than claiming personalization.
 - **Run record:** `makan.web.runs.RunRecorder` is the trace sink for one request, and its `snapshot` is what the browser gets, never the raw events.
   Raw events hold the session link token, model text, and exception text.
-  The snapshot carries the mode, the configured model name (read from config, not hard coded), the request, the rounded center, the radius, the data source, the loop and graph limits, and per stage its inputs, bounded outputs, timing, overlap, calls, and a failure in fixed words.
+  The snapshot carries the mode, `search_mode` (`recommend` or `browse`), the configured model name (read from config, not hard coded), the request (null when browsing), the rounded center, the radius, the data source, the loop and graph limits, and per stage its inputs, bounded outputs, timing, overlap, calls, and a failure in fixed words.
   Strings are capped at 300 characters, lists at ten items (a search stage previews five places), and nesting at four levels, and an exception's text is shown only for the two types that carry wording this code base wrote.
 - **History is the tab's, not the server's:** the page keeps the last 10 runs in memory and a reload clears them.
   The server stores nothing, so there is no endpoint that reads another person's run, and the "no location stored" promise still holds.

@@ -70,6 +70,7 @@ export function run(extra: Partial<Run> = {}, stages?: Stage[]): Run {
     ended_at: "2026-10-05T10:00:01+00:00",
     duration_ms: 420,
     mode: "live",
+    search_mode: "recommend",
     model: "test/model",
     request: "thai please",
     center: { latitude: 3.148, longitude: 101.695 },
@@ -82,7 +83,13 @@ export function run(extra: Partial<Run> = {}, stages?: Stage[]): Run {
 }
 
 export const RESULT: Recommendation = {
-  query: { latitude: 3.148, longitude: 101.695, radius_m: 1609, request: "thai please" },
+  query: {
+    mode: "recommend",
+    latitude: 3.148,
+    longitude: 101.695,
+    radius_m: 1609,
+    request: "thai please",
+  },
   intent: { cuisine: "thai", category: null },
   pick: MID,
   runners_up: [FAR, NEAR],
@@ -99,4 +106,64 @@ export const RESULT: Recommendation = {
   partial: false,
   mode: "live",
   run: run(),
+};
+
+const BROWSE_PLACES: Place[] = [
+  place("Near Ramen", 90, {
+    rank: 1,
+    category: "ramen_restaurant",
+    matched: false,
+    reasons: ["0.1 mi from your approximate location"],
+  }),
+  place("Mid Thai", 140, {
+    rank: 2,
+    matched: false,
+    reasons: ["0.1 mi from your approximate location"],
+  }),
+  place("Far Thai", 760, {
+    rank: 3,
+    matched: false,
+    reasons: ["0.5 mi from your approximate location"],
+  }),
+];
+
+/** A browse run: only the places search ran, and the other seven stages were skipped. */
+export function browseRun(extra: Partial<Run> = {}): Run {
+  return run(
+    {
+      graph: "browse_nearby",
+      search_mode: "browse",
+      request: null,
+      ...extra,
+    },
+    (Object.keys(STAGES) as StageName[]).map((name) =>
+      name === "nearby_places"
+        ? stage(name, { after: [] })
+        : stage(name, {
+            status: "skipped",
+            started_ms: null,
+            duration_ms: null,
+            input: null,
+            output: null,
+          }),
+    ),
+  );
+}
+
+/** What Browse nearby returns: no pick, no intent, and the places nearest first. */
+export const BROWSE_RESULT: Recommendation = {
+  ...RESULT,
+  query: {
+    mode: "browse",
+    latitude: 3.148,
+    longitude: 101.695,
+    radius_m: 1609,
+    request: null,
+  },
+  intent: null,
+  pick: null,
+  runners_up: [],
+  places: BROWSE_PLACES,
+  explanation: "The places nearest to you come first. Makan made no recommendation.",
+  run: browseRun(),
 };

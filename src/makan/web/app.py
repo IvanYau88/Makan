@@ -14,6 +14,7 @@ import json
 import logging
 import os
 from collections.abc import AsyncIterator, Callable, Mapping
+from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -23,9 +24,17 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationInfo,
+    field_validator,
+)
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from makan.browse import BrowseRequest, BrowseResult, browse
 from makan.config import Config, ConfigError
 from makan.env import load_dotenv
 from makan.places.base import MAX_RADIUS_M, MIN_RADIUS_M, PlaceQuery, PlacesProvider
@@ -35,11 +44,18 @@ from makan.providers.openrouter import OpenRouterProvider
 from makan.providers.scoring import Scorer, build_scorer
 from makan.sessions import GroupSessions, InMemorySessionStore
 from makan.sessions.service import MAX_REQUEST_CHARS
-from makan.solo import RankedCandidate, Recommendation, SoloRequest, SoloResult, recommend
+from makan.solo import (
+    RankedCandidate,
+    Recommendation,
+    SoloRequest,
+    SoloResult,
+    build_solo_graph,
+    recommend,
+)
 from makan.web.demo import DemoPlaces, DemoProvider
 from makan.web.errors import error, public_warnings, workflow_failure
 from makan.web.groups import register_group_routes
-from makan.web.runs import Outcome, RunRecorder
+from makan.web.runs import Outcome, RunRecorder, SearchMode
 
 log = logging.getLogger("makan.web")
 
@@ -48,16 +64,40 @@ DEFAULT_WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 
 class RecommendBody(BaseModel):
-    """What the browser sends. There is deliberately no user id: guests are the only caller."""
+    """What the browser sends. There is deliberately no user id: guests are the only caller.
+
+    The `mode` is always stated, so no request is guessed at. `recommend` needs a `request`, and
+    `browse` takes none: there is nothing to read, and no model is called.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
+    mode: SearchMode
     latitude: Annotated[float, Field(ge=-90, le=90)]
     longitude: Annotated[float, Field(ge=-180, le=180)]
     request: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_REQUEST_CHARS)
-    ]
+        str | None, StringConstraints(strip_whitespace=True, max_length=MAX_REQUEST_CHARS)
+    ] = Field(default=None, validate_default=True)
     radius_m: Annotated[int, Field(ge=MIN_RADIUS_M, le=MAX_RADIUS_M)] = 1000
+
+    @field_validator("request")
+    @classmethod
+    def request_fits_mode(cls, request: str | None, info: ValidationInfo) -> str | None:
+        mode = info.data.get("mode")
+        if mode == "recommend" and not request:
+            raise ValueError("a recommendation needs a request")
+        if mode == "browse" and request is not None:
+            raise ValueError("browsing nearby takes no request")
+        return request
+
+
+@dataclass(frozen=True)
+class Answer:
+    """What one search came to: the JSON to send, or the error to send in its place."""
+
+    recorder: RunRecorder
+    payload: dict[str, Any] | None = None
+    failure: JSONResponse | None = None
 
 
 def create_app(
@@ -108,14 +148,23 @@ def create_app(
             },
         }
 
-    def run_solo(
+    # The stages of the full solo graph, so a browse run can show the ones it skipped.
+    plan = tuple(
+        (step.name, step.after)
+        for step in build_solo_graph(
+            provider=provider, places=places, config=config, scorer=scorer
+        ).steps
+    )
+
+    def run_search(
         body: RecommendBody, on_update: Callable[[dict[str, Any]], None] | None = None
-    ) -> tuple[SoloResult, RunRecorder]:
-        """Run the workflow with a recorder on its trace. Synchronous, so call it off the loop."""
-        request = SoloRequest(body.latitude, body.longitude, body.request, body.radius_m)
+    ) -> Answer:
+        """Run the search with a recorder on its trace. Synchronous, so call it off the loop."""
         center = PlaceQuery.near(body.latitude, body.longitude, body.radius_m)
         recorder = RunRecorder(
             mode=mode,
+            search_mode=body.mode,
+            plan=plan if body.mode == "browse" else None,
             config=config,
             request=body.request,
             latitude=center.lat,
@@ -124,8 +173,20 @@ def create_app(
             data_source=places.name,
             on_update=on_update,
         )
+        if body.mode == "browse":
+            found = browse(
+                BrowseRequest(body.latitude, body.longitude, body.radius_m),
+                places=places,
+                config=config,
+                sink=recorder,
+            )
+            recorder.finish(_browse_outcome(found))
+            if found.places is None:
+                return Answer(recorder, failure=workflow_failure(found.graph))
+            return Answer(recorder, _browse_json(found, mode, recorder))
+        assert body.request is not None  # a recommendation always has one, see RecommendBody
         result = recommend(
-            request,
+            SoloRequest(body.latitude, body.longitude, body.request, body.radius_m),
             provider=provider,
             places=places,
             config=config,
@@ -133,23 +194,24 @@ def create_app(
             scorer=scorer,
         )
         recorder.finish(_outcome(result))
-        return result, recorder
+        if result.recommendation is None:
+            return Answer(recorder, failure=workflow_failure(result.graph))
+        payload = _recommendation_json(
+            result.recommendation, result.graph.ok, mode, _query_json(body, result), recorder
+        )
+        return Answer(recorder, payload)
 
     @app.post("/api/recommendations")
     async def recommendations(body: RecommendBody) -> JSONResponse:
         # The workflow is synchronous and runs its own event loop, so it must leave ours.
         try:
-            result, recorder = await run_in_threadpool(run_solo, body)
+            answer = await run_in_threadpool(run_search, body)
         except Exception:
             log.exception("recommendation crashed")
             return error(500, "server_error", "Something went wrong on our side. Try again.")
-        if result.recommendation is None:
-            return workflow_failure(result.graph)
-        return JSONResponse(
-            _recommendation_json(
-                result.recommendation, result.graph.ok, mode, _query_json(body, result), recorder
-            )
-        )
+        if answer.failure is not None:
+            return answer.failure
+        return JSONResponse(answer.payload)
 
     @app.post("/api/recommendations/stream")
     async def recommendations_stream(body: RecommendBody) -> StreamingResponse:
@@ -166,30 +228,18 @@ def create_app(
 
         def work() -> None:
             try:
-                result, recorder = run_solo(body, lambda run: push({"type": "run", "run": run}))
-                if result.recommendation is None:
-                    failure = workflow_failure(result.graph)
+                answer = run_search(body, lambda run: push({"type": "run", "run": run}))
+                if answer.failure is not None:
                     push(
                         {
                             "type": "error",
-                            "status": failure.status_code,
-                            **json.loads(bytes(failure.body)),
-                            "run": recorder.snapshot(),
+                            "status": answer.failure.status_code,
+                            **json.loads(bytes(answer.failure.body)),
+                            "run": answer.recorder.snapshot(),
                         }
                     )
                 else:
-                    push(
-                        {
-                            "type": "result",
-                            "recommendation": _recommendation_json(
-                                result.recommendation,
-                                result.graph.ok,
-                                mode,
-                                _query_json(body, result),
-                                recorder,
-                            ),
-                        }
-                    )
+                    push({"type": "result", "recommendation": answer.payload})
             except Exception:
                 log.exception("recommendation crashed")
                 push(
@@ -320,15 +370,28 @@ def _outcome(result: SoloResult) -> Outcome:
     return "complete" if rec.pick else "no_result"
 
 
+def _browse_outcome(result: BrowseResult) -> Outcome:
+    if result.places is None:
+        return "failed"
+    return "complete" if result.places else "no_result"
+
+
 def _query_json(body: RecommendBody, result: SoloResult) -> dict[str, Any]:
     """The search as it ran: the rounded center the places were found around, not the raw input."""
     context = result.session.context
     return {
+        "mode": body.mode,
         "latitude": context["latitude"],
         "longitude": context["longitude"],
         "radius_m": context["radius_m"],
         "request": body.request,
     }
+
+
+def _attribution(data_source: str) -> str | None:
+    if data_source.startswith("overture:"):
+        return "Places data: Overture Maps Foundation (CDLA Permissive 2.0)."
+    return None
 
 
 def _place_json(ranked: RankedCandidate, rank: int) -> dict[str, Any]:
@@ -378,12 +441,36 @@ def _recommendation_json(
             for r in rec.stale_facts
         ],
         "data_source": rec.data_source,
-        "attribution": (
-            "Places data: Overture Maps Foundation (CDLA Permissive 2.0)."
-            if rec.data_source.startswith("overture:")
-            else None
-        ),
+        "attribution": _attribution(rec.data_source),
         "partial": not graph_ok,
+        "mode": mode,
+        "run": recorder.snapshot(),
+    }
+
+
+def _browse_json(result: BrowseResult, mode: Mode, recorder: RunRecorder) -> dict[str, Any]:
+    """The same shape as a recommendation, with no pick, no runners-up, and no intent."""
+    assert result.places is not None
+    return {
+        "query": {
+            "mode": "browse",
+            "latitude": result.query.lat,
+            "longitude": result.query.lon,
+            "radius_m": result.query.radius_m,
+            "request": None,
+        },
+        "intent": None,
+        "pick": None,
+        "runners_up": [],
+        "places": [_place_json(r, i) for i, r in enumerate(result.places, start=1)],
+        "candidate_count": len(result.places),
+        "truncated": result.truncated,
+        "explanation": "The places nearest to you come first. Makan made no recommendation.",
+        "warnings": list(result.warnings),
+        "stale_facts": [],
+        "data_source": result.data_source,
+        "attribution": _attribution(result.data_source),
+        "partial": False,
         "mode": mode,
         "run": recorder.snapshot(),
     }

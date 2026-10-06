@@ -26,6 +26,21 @@ describe("visiblePlaces", () => {
     expect(shown.map((p) => p.rank)).toEqual([2, 4, 3, 1]);
   });
 
+  it("sorts by name for browsing, breaking ties by rank", () => {
+    const shown = visiblePlaces([...PLACES, place("Alpha Thai", 50, { rank: 5 })], {
+      ...NO_FILTERS,
+      sort: "name",
+    });
+    expect(names(shown)).toEqual([
+      "Alpha Thai",
+      "Alpha Thai",
+      "Bravo Ramen",
+      "Charlie Thai",
+      "Delta Cafe",
+    ]);
+    expect(shown.map((p) => p.rank).slice(0, 2)).toEqual([1, 5]);
+  });
+
   it("filters by category and by whether the request matched", () => {
     expect(names(visiblePlaces(PLACES, { ...NO_FILTERS, category: "cafe" }))).toEqual([
       "Delta Cafe",

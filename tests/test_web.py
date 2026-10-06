@@ -22,7 +22,12 @@ CONFIG = Config(model="test/classifier")
 THAI = place("Mid Thai", "thai_restaurant", 3.1485, 101.6951)
 NEAR = place("Near Ramen", "ramen_restaurant", 3.1481, 101.6951)
 FAR = place("Far Thai", "thai_restaurant", 3.152, 101.695)
-BODY: dict[str, Any] = {"latitude": KLCC[0], "longitude": KLCC[1], "request": "thai please"}
+BODY: dict[str, Any] = {
+    "mode": "recommend",
+    "latitude": KLCC[0],
+    "longitude": KLCC[1],
+    "request": "thai please",
+}
 
 
 def classify(cuisine: str | None = "thai") -> FakeProvider:
@@ -225,7 +230,8 @@ def test_demo_mode_needs_no_key_and_makes_no_network_call(no_dist: dict[str, str
     app = TestClient(create_app_from_env({**no_dist, "MAKAN_DEMO": "1"}))
     assert app.get("/api/health").json()["mode"] == "demo"
     response = app.post(
-        "/api/recommendations", json={"latitude": 51.5, "longitude": -0.12, "request": "thai"}
+        "/api/recommendations",
+        json={**BODY, "latitude": 51.5, "longitude": -0.12, "request": "thai"},
     )
     assert response.status_code == 200
     body = response.json()
@@ -237,7 +243,7 @@ def test_demo_mode_needs_no_key_and_makes_no_network_call(no_dist: dict[str, str
 def test_demo_mode_finds_nothing_at_the_poles(no_dist: dict[str, str]) -> None:
     app = TestClient(create_app_from_env({**no_dist, "MAKAN_DEMO": "true"}))
     body = app.post(
-        "/api/recommendations", json={"latitude": 90, "longitude": 0, "request": "lunch"}
+        "/api/recommendations", json={**BODY, "latitude": 90, "longitude": 0, "request": "lunch"}
     ).json()
     assert body["pick"] is None
 

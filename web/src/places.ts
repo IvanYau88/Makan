@@ -5,7 +5,7 @@ export interface PlaceFilters {
   category: string;
   /** Only places that matched what the request asked for, not nearby alternatives. */
   matchedOnly: boolean;
-  sort: "rank" | "distance";
+  sort: "rank" | "distance" | "name";
 }
 
 export const NO_FILTERS: PlaceFilters = { category: "all", matchedOnly: false, sort: "rank" };
@@ -23,6 +23,9 @@ export function visiblePlaces(places: Place[], filters: PlaceFilters): Place[] {
   );
   if (filters.sort === "distance") {
     return [...shown].sort((a, b) => a.distance_m - b.distance_m || a.rank - b.rank);
+  }
+  if (filters.sort === "name") {
+    return [...shown].sort((a, b) => a.name.localeCompare(b.name) || a.rank - b.rank);
   }
   return [...shown].sort((a, b) => a.rank - b.rank);
 }

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { onTestFinished } from "vitest";
 import L from "leaflet";
 import { App } from "./App";
-import { RESULT, place, run, stage } from "./test-fixtures";
+import { BROWSE_RESULT, RESULT, browseRun, place, run, stage } from "./test-fixtures";
 import type { Recommendation, Run } from "./types";
 
 type Handler = (body: Record<string, unknown>) => Response | Promise<Response>;
@@ -74,6 +74,12 @@ afterEach(() => {
 });
 
 const findFood = () => screen.getByRole("button", { name: "Find food here" });
+/** Search the way a person does: say what they feel like, then press Find food here. */
+async function submit(user: ReturnType<typeof userEvent.setup> = userEvent.setup()) {
+  const box = screen.getByLabelText("What are you in the mood for?");
+  if (!(box as HTMLInputElement).value) await user.type(box, "thai please");
+  await user.click(findFood());
+}
 const row = (name: RegExp | string) =>
   within(screen.getByRole("list", { name: "Nearby places" })).getByRole("button", { name });
 const pin = (rank: number, name: string) =>
@@ -83,7 +89,7 @@ async function searched(handler: Handler = () => answer(RESULT), mode?: "demo" |
   const calls = stubApi(handler, mode);
   const user = userEvent.setup();
   render(<App />);
-  await user.click(findFood());
+  await submit(user);
   await screen.findByRole("heading", { name: "Nearby options" });
   return { calls, user };
 }
@@ -95,11 +101,17 @@ describe("Discover", () => {
     render(<App />);
     await user.type(screen.getByLabelText("What are you in the mood for?"), "thai please");
     await user.selectOptions(screen.getByLabelText("How far will you go?"), "3219");
-    await user.click(findFood());
+    await submit(user);
 
     expect(await screen.findByRole("heading", { name: "Nearby options" })).toHaveFocus();
     expect(calls).toEqual([
-      { latitude: 3.148, longitude: 101.695, request: "thai please", radius_m: 3219 },
+      {
+        mode: "recommend",
+        latitude: 3.148,
+        longitude: 101.695,
+        request: "thai please",
+        radius_m: 3219,
+      },
     ]);
     expect(
       screen.getByText(/3 options · within 1 mi · straight-line distance/),
@@ -235,7 +247,7 @@ describe("Discover", () => {
     await user.selectOptions(screen.getByLabelText("How far will you go?"), "805");
     expect(screen.getByText(/The radius changed/)).toBeInTheDocument();
     expect(document.querySelectorAll(".map-radius-pending").length).toBe(1);
-    await user.click(findFood());
+    await submit(user);
     await waitFor(() => expect(calls).toHaveLength(2));
     expect(calls[1]?.radius_m).toBe(805);
     await waitFor(() => expect(screen.queryByText(/The radius changed/)).not.toBeInTheDocument());
@@ -260,7 +272,7 @@ describe("Discover", () => {
       return answer(RESULT);
     });
     second = true;
-    await user.click(findFood());
+    await submit(user);
 
     expect(await screen.findByRole("button", { name: /Finding food/ })).toBeDisabled();
     expect(row(/^1\. Mid Thai/)).toBeInTheDocument();
@@ -281,7 +293,7 @@ describe("Discover", () => {
     stubApi(() => new Response(body, { status: 200 }));
     const user = userEvent.setup();
     render(<App />);
-    await user.click(findFood());
+    await submit(user);
 
     const running = run({ status: "running", outcome: null, duration_ms: null, ended_at: null }, [
       stage("classify"),
@@ -340,7 +352,7 @@ describe("Discover", () => {
     });
     const user = userEvent.setup();
     render(<App />);
-    await user.click(findFood());
+    await submit(user);
     await screen.findByRole("heading", { name: "Nearby options" });
 
     const map = capturedMap();
@@ -369,6 +381,7 @@ describe("Discover", () => {
     stubLocation("denied");
     const user = userEvent.setup();
     render(<App />);
+    await user.type(screen.getByLabelText("What are you in the mood for?"), "thai please");
     await user.click(screen.getByRole("button", { name: "Use my location" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Location access was denied");
@@ -378,11 +391,17 @@ describe("Discover", () => {
 
     await user.type(latitude, "3.148");
     await user.type(screen.getByLabelText("Longitude"), "101.695");
-    await user.click(findFood());
+    await submit(user);
 
     await screen.findByRole("heading", { name: "Nearby options" });
     expect(calls).toEqual([
-      { latitude: 3.148, longitude: 101.695, request: "something good to eat", radius_m: 1609 },
+      {
+        mode: "recommend",
+        latitude: 3.148,
+        longitude: 101.695,
+        request: "thai please",
+        radius_m: 1609,
+      },
     ]);
   });
 
@@ -391,10 +410,17 @@ describe("Discover", () => {
     stubLocation("ok");
     const user = userEvent.setup();
     render(<App />);
+    await user.type(screen.getByLabelText("What are you in the mood for?"), "thai please");
     await user.click(screen.getByRole("button", { name: "Use my location" }));
     await screen.findByRole("heading", { name: "Nearby options" });
     expect(calls).toEqual([
-      { latitude: 3.148, longitude: 101.695, request: "something good to eat", radius_m: 1609 },
+      {
+        mode: "recommend",
+        latitude: 3.148,
+        longitude: 101.695,
+        request: "thai please",
+        radius_m: 1609,
+      },
     ]);
   });
 
@@ -416,7 +442,7 @@ describe("Discover", () => {
     render(<App />);
     await user.click(screen.getByRole("button", { name: "Enter coordinates" }));
     await user.type(screen.getByLabelText("Latitude"), "95");
-    await user.click(findFood());
+    await submit(user);
 
     const latitude = screen.getByLabelText("Latitude");
     expect(latitude).toBeInvalid();
@@ -429,7 +455,7 @@ describe("Discover", () => {
     const calls = stubApi(() => answer({ ...RESULT, pick: null, runners_up: [], places: [] }));
     const user = userEvent.setup();
     render(<App />);
-    await user.click(findFood());
+    await submit(user);
 
     expect(await screen.findByRole("heading", { name: "No places found" })).toBeInTheDocument();
     expect(screen.getByText(/nothing to eat within 1 mi/)).toBeInTheDocument();
@@ -452,7 +478,7 @@ describe("Discover", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.selectOptions(screen.getByLabelText("How far will you go?"), "4828");
-    await user.click(findFood());
+    await submit(user);
     await screen.findByRole("heading", { name: "No places found" });
     expect(screen.queryByRole("button", { name: "Search a wider area" })).not.toBeInTheDocument();
   });
@@ -547,7 +573,7 @@ describe("Where the map starts", () => {
     const calls = stubApi(() => answer(RESULT));
     const user = userEvent.setup();
     render(<App />);
-    await user.click(findFood());
+    await submit(user);
     expect(await screen.findByRole("alert")).toHaveTextContent("Location access was denied");
     expect(calls).toHaveLength(0);
   });
@@ -559,10 +585,16 @@ describe("Where the map starts", () => {
     render(<App />);
     const map = capturedMap();
     await act(async () => map.setView([40.713, -74.006], 14, { animate: false }));
-    await user.click(findFood());
+    await submit(user);
     await screen.findByRole("heading", { name: "Nearby options" });
     expect(calls).toEqual([
-      { latitude: 40.713, longitude: -74.006, request: "something good to eat", radius_m: 1609 },
+      {
+        mode: "recommend",
+        latitude: 40.713,
+        longitude: -74.006,
+        request: "thai please",
+        radius_m: 1609,
+      },
     ]);
   });
 
@@ -692,7 +724,7 @@ describe("Discover on a phone", () => {
       stubApi(() => errorLine("model_busy", "The language model is busy.", 503));
       const user = userEvent.setup();
       render(<App />);
-      await user.click(findFood());
+      await submit(user);
       const alert = await screen.findByRole("alert");
       expect(document.querySelector(".discover")).toHaveAttribute("data-view", "map");
       expect(inResultsPane(alert)).toBe(false);
@@ -707,7 +739,7 @@ describe("Discover on a phone", () => {
         n += 1;
         return n === 1 ? answer(RESULT) : errorLine("server_error", "It broke.", 500);
       });
-      await user.click(findFood());
+      await submit(user);
       const alert = await screen.findByRole("alert");
       expect(within(alert).getByRole("heading", { name: "That did not work" })).toHaveFocus();
     });
@@ -717,7 +749,7 @@ describe("Discover on a phone", () => {
       const calls = stubApi(() => answer({ ...RESULT, places: [], pick: null }));
       const user = userEvent.setup();
       render(<App />);
-      await user.click(findFood());
+      await submit(user);
       const heading = await screen.findByRole("heading", { name: "No places found" });
       expect(heading).toHaveFocus();
       expect(inResultsPane(heading)).toBe(false);
@@ -737,7 +769,7 @@ describe("Discover on a phone", () => {
       });
       const user = userEvent.setup();
       render(<App />);
-      await user.click(findFood());
+      await submit(user);
       const progress = await waitFor(() => {
         const el = document.querySelector<HTMLElement>(".progress");
         expect(el).not.toBeNull();
@@ -757,7 +789,7 @@ describe("Discover on a phone", () => {
     stubNarrow();
     const { user } = await searched();
     await user.click(screen.getByRole("button", { name: "List" }));
-    await user.click(findFood());
+    await submit(user);
     expect(await screen.findByRole("heading", { name: "Nearby options" })).toBeInTheDocument();
   });
 });
@@ -775,7 +807,7 @@ describe("Pins follow the latest search", () => {
       return n === 1 ? answer({ ...RESULT, places: swapped }) : answer(RESULT);
     });
     expect(pin(1, "Far Thai")).toBeInTheDocument();
-    await user.click(findFood());
+    await submit(user);
     await waitFor(() => expect(pin(1, "Mid Thai")).toBeInTheDocument());
     expect(pin(2, "Far Thai")).toBeInTheDocument();
   });
@@ -800,7 +832,7 @@ describe("Discover failures", () => {
     });
     const user = userEvent.setup();
     render(<App />);
-    await user.click(findFood());
+    await submit(user);
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Nearby places data is unavailable.");
@@ -816,7 +848,7 @@ describe("Discover failures", () => {
       errorLine("model_busy", "The language model is busy right now. Try again in a minute.", 503),
     );
     render(<App />);
-    await userEvent.click(findFood());
+    await submit();
     const alert = await screen.findByRole("alert");
     expect(within(alert).getByRole("heading", { name: "The model is busy" })).toBeInTheDocument();
     expect(alert).toHaveTextContent("The language model is busy right now. Try again in a minute.");
@@ -825,7 +857,7 @@ describe("Discover failures", () => {
   it("keeps the generic heading for other failures, even a 503 with no model_busy code", async () => {
     stubApi(() => errorLine("provider_error", "The language model failed.", 503));
     render(<App />);
-    await userEvent.click(findFood());
+    await submit();
     const alert = await screen.findByRole("alert");
     expect(within(alert).getByRole("heading", { name: "That did not work" })).toBeInTheDocument();
   });
@@ -839,7 +871,7 @@ describe("Discover failures", () => {
       }
       return errorLine("provider_error", "The language model failed.", 502);
     });
-    await user.click(findFood());
+    await submit(user);
     expect(await screen.findByRole("alert")).toHaveTextContent("previous search");
     expect(row(/^1\. Mid Thai/)).toBeInTheDocument();
   });
@@ -849,14 +881,14 @@ describe("Discover failures", () => {
       json({ error: { code: "invalid_request", message: "Check these fields: radius_m." } }, 422),
     );
     render(<App />);
-    await userEvent.click(findFood());
+    await submit();
     expect(await screen.findByRole("alert")).toHaveTextContent("Check these fields: radius_m.");
   });
 
   it("falls back to a generic message when the error is not JSON", async () => {
     stubApi(() => new Response("<html>Bad gateway</html>", { status: 502 }));
     render(<App />);
-    await userEvent.click(findFood());
+    await submit();
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Something went wrong on our side. Try again.",
     );
@@ -867,14 +899,14 @@ describe("Discover failures", () => {
       throw new TypeError("Failed to fetch");
     });
     render(<App />);
-    await userEvent.click(findFood());
+    await submit();
     expect(await screen.findByRole("alert")).toHaveTextContent("Can't reach Makan");
   });
 
   it("says so when the stream ends without an answer", async () => {
     stubApi(() => lines([{ type: "run", run: run({ status: "running", outcome: null }) }]));
     render(<App />);
-    await userEvent.click(findFood());
+    await submit();
     expect(await screen.findByRole("alert")).toHaveTextContent("Can't reach Makan");
   });
 
@@ -899,7 +931,7 @@ describe("Discover failures", () => {
       }),
     );
     render(<App />);
-    await userEvent.click(findFood());
+    await submit();
     expect(await screen.findByRole("heading", { name: "Nearby options" })).toBeInTheDocument();
     expect(screen.getByText(/Map tiles:/)).toHaveTextContent("not loaded");
   });
@@ -913,7 +945,7 @@ describe("Discover failures", () => {
     render(<App />);
     const alert = await screen.findByText("The map could not start.");
     expect(alert.closest('[role="alert"]')).toHaveTextContent("The list of places still works.");
-    await user.click(findFood());
+    await submit(user);
     expect(await screen.findByRole("button", { name: /^1\. Mid Thai/ })).toBeInTheDocument();
 
     spy.mockImplementation(trackedMap);
@@ -933,7 +965,7 @@ describe("Discover failures", () => {
     const user = userEvent.setup();
     render(<App />);
     await screen.findByText("The map could not start.");
-    await user.click(findFood());
+    await submit(user);
     await user.click(await screen.findByRole("button", { name: /^1\. Mid Thai/ }));
     const notice = document.querySelector(".map-fallback")!;
     const detail = document.querySelector(".map-detail")!;
@@ -944,6 +976,191 @@ describe("Discover failures", () => {
     expect(
       within(notice as HTMLElement).getByRole("button", { name: "Retry the map" }),
     ).toBeEnabled();
+  });
+});
+
+describe("Search mode", () => {
+  const modeChoice = () => screen.getByRole("group", { name: "What do you want to do?" });
+  const browseNearby = () => within(modeChoice()).getByRole("radio", { name: /^Browse nearby/ });
+  const pickForMe = () => within(modeChoice()).getByRole("radio", { name: /^Pick for me/ });
+  const browseHere = () => screen.getByRole("button", { name: "Browse here" });
+
+  it("offers Pick for me and Browse nearby, each with a sentence, and starts on Pick for me", () => {
+    stubApi(() => answer(RESULT));
+    render(<App />);
+    expect(pickForMe()).toBeChecked();
+    expect(browseNearby()).not.toBeChecked();
+    expect(modeChoice()).toHaveTextContent("Say what you feel like and get one suggestion.");
+    expect(modeChoice()).toHaveTextContent("Look around at the places nearest you.");
+    expect(screen.getByLabelText("What are you in the mood for?")).toBeInTheDocument();
+  });
+
+  it("remembers the choice on this device", async () => {
+    stubApi(() => answer(RESULT));
+    const user = userEvent.setup();
+    const { unmount } = render(<App />);
+    await user.click(browseNearby());
+    expect(window.localStorage.getItem("makan.search-mode")).toBe("browse");
+    unmount();
+
+    render(<App />);
+    expect(browseNearby()).toBeChecked();
+    expect(screen.queryByLabelText("What are you in the mood for?")).not.toBeInTheDocument();
+  });
+
+  it("starts on Pick for me when storage is blocked or holds nonsense", () => {
+    stubApi(() => answer(RESULT));
+    window.localStorage.setItem("makan.search-mode", "surprise");
+    const { unmount } = render(<App />);
+    expect(pickForMe()).toBeChecked();
+    unmount();
+
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("blocked", "SecurityError");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("blocked", "SecurityError");
+    });
+    render(<App />);
+    expect(pickForMe()).toBeChecked();
+  });
+
+  it("asks what the person has in mind instead of making a request up", async () => {
+    const calls = stubApi(() => answer(RESULT));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(findFood());
+
+    const box = screen.getByLabelText("What are you in the mood for?");
+    expect(box).toHaveFocus();
+    expect(box).toBeInvalid();
+    expect(box).toHaveAccessibleDescription(/^Anything in mind, or no preference\?/);
+    expect(calls).toHaveLength(0);
+    expect(screen.queryByText(/something good to eat/)).not.toBeInTheDocument();
+
+    // The same goes for the other ways to start a search.
+    await user.click(screen.getByRole("button", { name: "Use my location" }));
+    expect(calls).toHaveLength(0);
+
+    await user.type(box, "t");
+    expect(box).toBeValid();
+    expect(screen.queryByText(/Anything in mind/)).not.toBeInTheDocument();
+  });
+
+  it("browses with no request and no model, and shows no top pick", async () => {
+    const calls = stubApi(() => answer(BROWSE_RESULT, [browseRun({ status: "running" })]));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(browseNearby());
+    expect(screen.queryByLabelText("What are you in the mood for?")).not.toBeInTheDocument();
+    await user.click(browseHere());
+
+    expect(await screen.findByRole("heading", { name: "Places nearby" })).toHaveFocus();
+    expect(calls).toEqual([
+      { mode: "browse", latitude: 3.148, longitude: 101.695, radius_m: 1609 },
+    ]);
+    expect(screen.getByText(/3 places · within 1 mi · nearest first/)).toBeInTheDocument();
+    expect(screen.queryByText("Top pick")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Matches your request|Nearby alternative/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Only places that match my request")).not.toBeInTheDocument();
+    const rows = within(screen.getByRole("list", { name: "Nearby places" })).getAllByRole("button");
+    expect(rows.map((r) => r.getAttribute("aria-label"))).toEqual([
+      "1. Near Ramen, Ramen restaurant, ~300 ft",
+      "2. Mid Thai, Thai restaurant, ~460 ft",
+      "3. Far Thai, Thai restaurant, ~0.5 mi",
+    ]);
+  });
+
+  it("keeps the radius, the category filter and a sort in Browse nearby", async () => {
+    const calls = stubApi(() => answer(BROWSE_RESULT));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(browseNearby());
+    await user.selectOptions(screen.getByLabelText("How far will you go?"), "3219");
+    await user.click(browseHere());
+    await screen.findByRole("heading", { name: "Places nearby" });
+    expect(calls[0]?.radius_m).toBe(3219);
+
+    await user.selectOptions(screen.getByLabelText("Category"), "ramen_restaurant");
+    expect(screen.getByText(/1 of 3 shown/)).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Category"), "all");
+
+    expect(
+      within(screen.getByLabelText("Sort by"))
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Nearest first", "Name, A to Z"]);
+    await user.selectOptions(screen.getByLabelText("Sort by"), "name");
+    const names = within(screen.getByRole("list", { name: "Nearby places" }))
+      .getAllByRole("button")
+      .map((r) => r.getAttribute("aria-label")?.split(",")[0]);
+    expect(names).toEqual(["3. Far Thai", "2. Mid Thai", "1. Near Ramen"]);
+  });
+
+  it("opens a place without calling it a pick", async () => {
+    stubApi(() => answer(BROWSE_RESULT));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(browseNearby());
+    await user.click(browseHere());
+    await screen.findByRole("heading", { name: "Places nearby" });
+    await user.click(
+      within(screen.getByRole("list", { name: "Nearby places" })).getByRole("button", {
+        name: /^1\. Near Ramen/,
+      }),
+    );
+    const detail = screen.getByRole("region", { name: "Near Ramen" });
+    expect(within(detail).queryByText("Top pick")).not.toBeInTheDocument();
+    expect(within(detail).getByText("0.1 mi from your approximate location")).toBeInTheDocument();
+  });
+
+  it("offers Pick for me instead with one tap, and goes to the request box", async () => {
+    stubApi(() => answer(BROWSE_RESULT));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(browseNearby());
+    await user.click(screen.getByRole("button", { name: "Pick for me instead" }));
+    expect(pickForMe()).toBeChecked();
+    expect(screen.getByLabelText("What are you in the mood for?")).toHaveFocus();
+  });
+
+  it("labels results by the search that made them, not the mode chosen since", async () => {
+    stubApi(() => answer(BROWSE_RESULT));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(browseNearby());
+    await user.click(browseHere());
+    await screen.findByRole("heading", { name: "Places nearby" });
+    await user.click(pickForMe());
+    expect(screen.getByRole("heading", { name: "Places nearby" })).toBeInTheDocument();
+    expect(screen.queryByText("Top pick")).not.toBeInTheDocument();
+  });
+
+  it("says a browse run skipped the model stages in the Execution view", async () => {
+    stubApi(() => answer(BROWSE_RESULT));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(browseNearby());
+    await user.click(browseHere());
+    await screen.findByRole("heading", { name: "Places nearby" });
+    await user.click(screen.getByRole("button", { name: "Execution" }));
+
+    const summary = screen.getByRole("region", { name: "Run summary" });
+    expect(summary).toHaveTextContent("Browse nearby ran only the places search");
+    expect(summary).toHaveTextContent("The other 7 stages were skipped, and no model was called.");
+    expect(within(summary).getByText("Places listed")).toBeInTheDocument();
+    expect(within(summary).queryByText("Complete recommendation")).not.toBeInTheDocument();
+    const stages = within(screen.getByRole("list", { name: "Stages" }));
+    expect(stages.getByRole("button", { name: /^Classify\s*skipped/ })).toBeInTheDocument();
+    expect(stages.getByRole("button", { name: /^Nearby places\s*ok/ })).toBeInTheDocument();
+    expect(stages.getAllByText("skipped")).toHaveLength(7);
+    const history = within(screen.getByRole("list", { name: "Runs" }));
+    expect(history.getByText("Browse nearby")).toBeInTheDocument();
+
+    await user.click(stages.getByRole("button", { name: /^Classify/ }));
+    expect(screen.getByRole("region", { name: "Classify" })).toHaveTextContent(
+      "this stage did not run and no model was called",
+    );
   });
 });
 
@@ -978,7 +1195,7 @@ describe("Execution", () => {
     const user = userEvent.setup();
     stubApi(() => answer(RESULT, [run({ status: "running", outcome: null })]));
     render(<App />);
-    await user.click(findFood());
+    await submit(user);
     await screen.findByRole("heading", { name: "Nearby options" });
     await openExecution(user);
 
@@ -1015,7 +1232,7 @@ describe("Execution", () => {
     const user = userEvent.setup();
     stubApi(() => answer({ ...RESULT, partial: true, run: partial }));
     render(<App />);
-    await user.click(findFood());
+    await submit(user);
     await screen.findByRole("heading", { name: "Nearby options" });
     await openExecution(user);
 
@@ -1038,7 +1255,7 @@ describe("Execution", () => {
     stubApi(() => new Response(body, { status: 200 }));
     const user = userEvent.setup();
     render(<App />);
-    await user.click(findFood());
+    await submit(user);
     const live = run({ status: "running", outcome: null, duration_ms: null, ended_at: null }, [
       stage("classify", { status: "running", duration_ms: null }),
       stage("intent", { status: "waiting", duration_ms: null, started_ms: null }),
@@ -1084,7 +1301,7 @@ describe("Execution", () => {
     });
     render(<App />);
     for (let i = 0; i < 12; i += 1) {
-      await user.click(findFood());
+      await submit(user);
       await waitFor(() => expect(findFood()).toBeEnabled());
     }
     await openExecution(user);
@@ -1100,7 +1317,7 @@ describe("Execution", () => {
       lines([{ type: "run", run: run({ status: "running", outcome: null, request: "dropped" }) }]),
     );
     render(<App />);
-    await user.click(findFood());
+    await submit(user);
     expect(await screen.findByRole("alert")).toHaveTextContent("Can't reach Makan");
     await openExecution(user);
     const item = within(screen.getByRole("list", { name: "Runs" })).getByRole("button");
@@ -1112,7 +1329,7 @@ describe("Execution", () => {
     const user = userEvent.setup();
     stubApi(() => answer(RESULT));
     render(<App />);
-    await user.click(findFood());
+    await submit(user);
     await screen.findByRole("heading", { name: "Nearby options" });
     await openExecution(user);
     expect(screen.getByText("thai please")).toBeInTheDocument();
