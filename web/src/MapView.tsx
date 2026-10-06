@@ -52,6 +52,8 @@ type PinState = "idle" | "hover" | "selected";
 
 /** After this many failed tiles with none loaded, say the tiles are not coming. */
 const TILE_FAILURES = 4;
+const Z_RANK_STEP = 10_000;
+const Z_STEP = 1_000_000;
 
 const prefersReducedMotion = () =>
   typeof window.matchMedia === "function" &&
@@ -227,9 +229,14 @@ export function MapView(props: Props) {
         describe(pin.marker, place, state);
         pin.look = look;
       }
-      // Leaflet stacks by latitude, so when pins overlap the better ranked one is drawn on top.
+      // Leaflet adds the pixel y to this offset, so the steps are far larger than any y gap:
+      // overlapping pins stack by rank, and a hovered or selected pin is always on top.
       pin.marker.setZIndexOffset(
-        state === "selected" ? 1000 : state === "hover" ? 500 : -place.rank,
+        state === "selected"
+          ? 3 * Z_STEP
+          : state === "hover"
+            ? 2 * Z_STEP
+            : -place.rank * Z_RANK_STEP,
       );
     }
     sizePinTargets(instance, markers.current);
