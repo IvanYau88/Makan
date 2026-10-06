@@ -38,6 +38,23 @@ class TraceEvent:
         return json.dumps(self.to_dict(), ensure_ascii=False)
 
 
+def jsonable(value: Any) -> Any:
+    """A JSON safe copy of `value`, with `repr` standing in for what JSON cannot hold.
+
+    An object that defines `trace_summary()` is written as what that returns, so its author, not
+    a generic walk over its fields, decides what a trace may hold.
+    """
+    try:
+        return json.loads(json.dumps(value, default=_default, ensure_ascii=False))
+    except (TypeError, ValueError):
+        return repr(value)
+
+
+def _default(value: Any) -> Any:
+    summary = getattr(value, "trace_summary", None)
+    return summary() if callable(summary) else repr(value)
+
+
 class TraceSink(Protocol):
     def emit(self, event: TraceEvent) -> None: ...
 

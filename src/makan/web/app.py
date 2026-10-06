@@ -9,9 +9,11 @@ Run it with `uvicorn --factory makan.web:create_app_from_env`. See the README fo
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import os
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -19,23 +21,24 @@ from typing import Annotated, Any, Literal
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from makan.config import Config, ConfigError
 from makan.env import load_dotenv
-from makan.places.base import MAX_RADIUS_M, MIN_RADIUS_M, PlacesProvider
+from makan.places.base import MAX_RADIUS_M, MIN_RADIUS_M, PlaceQuery, PlacesProvider
 from makan.places.factory import places_provider
 from makan.providers.base import Provider
 from makan.providers.openrouter import OpenRouterProvider
 from makan.sessions import GroupSessions, InMemorySessionStore
 from makan.sessions.service import MAX_REQUEST_CHARS
-from makan.solo import RankedCandidate, Recommendation, SoloRequest, recommend
+from makan.solo import RankedCandidate, Recommendation, SoloRequest, SoloResult, recommend
 from makan.web.demo import DemoPlaces, DemoProvider
 from makan.web.errors import error, public_warnings, workflow_failure
 from makan.web.groups import register_group_routes
+from makan.web.runs import Outcome, RunRecorder
 
 log = logging.getLogger("makan.web")
 
@@ -72,6 +75,7 @@ def create_app(
     app = FastAPI(
         title="Makan", docs_url="/api/docs", redoc_url=None, openapi_url="/api/openapi.json"
     )
+    background: set[asyncio.Future[None]] = set()  # keeps streamed runs alive until they end
 
     @app.exception_handler(RequestValidationError)
     async def invalid(_: Request, exc: RequestValidationError) -> JSONResponse:
@@ -88,20 +92,122 @@ def create_app(
     async def health() -> dict[str, str]:
         return {"status": "ok", "mode": mode}
 
+    @app.get("/api/config")
+    async def public_config() -> dict[str, Any]:
+        """What the page needs to start: the run mode and where its map tiles come from."""
+        return {
+            "mode": mode,
+            "map": {
+                "tile_url": config.map_tile_url,
+                "attribution": config.map_attribution,
+                "attribution_url": config.map_attribution_url or None,
+            },
+        }
+
+    def run_solo(
+        body: RecommendBody, on_update: Callable[[dict[str, Any]], None] | None = None
+    ) -> tuple[SoloResult, RunRecorder]:
+        """Run the workflow with a recorder on its trace. Synchronous, so call it off the loop."""
+        request = SoloRequest(body.latitude, body.longitude, body.request, body.radius_m)
+        center = PlaceQuery.near(body.latitude, body.longitude, body.radius_m)
+        recorder = RunRecorder(
+            mode=mode,
+            config=config,
+            request=body.request,
+            latitude=center.lat,
+            longitude=center.lon,
+            radius_m=center.radius_m,
+            data_source=places.name,
+            on_update=on_update,
+        )
+        result = recommend(request, provider=provider, places=places, config=config, sink=recorder)
+        recorder.finish(_outcome(result))
+        return result, recorder
+
     @app.post("/api/recommendations")
     async def recommendations(body: RecommendBody) -> JSONResponse:
-        request = SoloRequest(body.latitude, body.longitude, body.request, body.radius_m)
         # The workflow is synchronous and runs its own event loop, so it must leave ours.
         try:
-            result = await run_in_threadpool(
-                recommend, request, provider=provider, places=places, config=config
-            )
+            result, recorder = await run_in_threadpool(run_solo, body)
         except Exception:
             log.exception("recommendation crashed")
             return error(500, "server_error", "Something went wrong on our side. Try again.")
         if result.recommendation is None:
             return workflow_failure(result.graph)
-        return JSONResponse(_recommendation_json(result.recommendation, result.graph.ok, mode))
+        return JSONResponse(
+            _recommendation_json(
+                result.recommendation, result.graph.ok, mode, _query_json(body, result), recorder
+            )
+        )
+
+    @app.post("/api/recommendations/stream")
+    async def recommendations_stream(body: RecommendBody) -> StreamingResponse:
+        """The same answer as one JSON object per line, led by the run as its stages progress.
+
+        Lines are `{"type": "run", "run": ...}` while it works, then one last `result` line with
+        the recommendation or an `error` line with the same code and message as the plain route.
+        """
+        loop = asyncio.get_running_loop()
+        lines: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+        def push(line: dict[str, Any] | None) -> None:
+            loop.call_soon_threadsafe(lines.put_nowait, line)
+
+        def work() -> None:
+            try:
+                result, recorder = run_solo(body, lambda run: push({"type": "run", "run": run}))
+                if result.recommendation is None:
+                    failure = workflow_failure(result.graph)
+                    push(
+                        {
+                            "type": "error",
+                            "status": failure.status_code,
+                            **json.loads(bytes(failure.body)),
+                            "run": recorder.snapshot(),
+                        }
+                    )
+                else:
+                    push(
+                        {
+                            "type": "result",
+                            "recommendation": _recommendation_json(
+                                result.recommendation,
+                                result.graph.ok,
+                                mode,
+                                _query_json(body, result),
+                                recorder,
+                            ),
+                        }
+                    )
+            except Exception:
+                log.exception("recommendation crashed")
+                push(
+                    {
+                        "type": "error",
+                        "status": 500,
+                        "error": {
+                            "code": "server_error",
+                            "message": "Something went wrong on our side. Try again.",
+                        },
+                    }
+                )
+            finally:
+                push(None)
+
+        # The thread cannot be cancelled, so it finishes even if the browser leaves.
+        finished = asyncio.ensure_future(run_in_threadpool(work))
+        background.add(finished)
+        finished.add_done_callback(background.discard)
+
+        async def body_lines() -> AsyncIterator[str]:
+            while (line := await lines.get()) is not None:
+                yield json.dumps(line, ensure_ascii=False) + "\n"
+
+        return StreamingResponse(
+            body_lines(),
+            media_type="application/x-ndjson",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
 
     register_group_routes(
         app,
@@ -191,7 +297,29 @@ def _group_sessions(config: Config) -> GroupSessions:
     )
 
 
-def _place_json(ranked: RankedCandidate) -> dict[str, Any]:
+def _outcome(result: SoloResult) -> Outcome:
+    """What the person got, which the graph status alone cannot say: a failed graph can still
+    carry a usable recommendation, and an ok graph can find nothing."""
+    rec = result.recommendation
+    if rec is None:
+        return "failed"
+    if not result.graph.ok:
+        return "partial"
+    return "complete" if rec.pick else "no_result"
+
+
+def _query_json(body: RecommendBody, result: SoloResult) -> dict[str, Any]:
+    """The search as it ran: the rounded center the places were found around, not the raw input."""
+    context = result.session.context
+    return {
+        "latitude": context["latitude"],
+        "longitude": context["longitude"],
+        "radius_m": context["radius_m"],
+        "request": body.request,
+    }
+
+
+def _place_json(ranked: RankedCandidate, rank: int) -> dict[str, Any]:
     p = ranked.place
     return {
         "id": p.id,
@@ -199,15 +327,33 @@ def _place_json(ranked: RankedCandidate) -> dict[str, Any]:
         "category": p.category,
         "distance_m": p.distance_m,
         "address": p.address,
+        "lat": p.lat,
+        "lon": p.lon,
+        "rank": rank,
+        "matched": p.request_fit > 0,
         "reasons": list(ranked.reasons),
     }
 
 
-def _recommendation_json(rec: Recommendation, graph_ok: bool, mode: Mode) -> dict[str, Any]:
+def _recommendation_json(
+    rec: Recommendation,
+    graph_ok: bool,
+    mode: Mode,
+    query: dict[str, Any],
+    recorder: RunRecorder,
+) -> dict[str, Any]:
     warnings, explanation = public_warnings(rec.warnings, rec.explanation)
+    rank_of = {r.place.id: i for i, r in enumerate(rec.ranked, start=1)}
     return {
-        "pick": _place_json(rec.pick) if rec.pick else None,
-        "runners_up": [_place_json(r) for r in rec.runners_up],
+        "query": query,
+        "intent": (
+            {"cuisine": rec.intent.cuisine, "category": rec.intent.category} if rec.intent else None
+        ),
+        "pick": _place_json(rec.pick, 1) if rec.pick else None,
+        "runners_up": [_place_json(r, rank_of[r.place.id]) for r in rec.runners_up],
+        "places": [_place_json(r, i) for i, r in enumerate(rec.ranked, start=1)],
+        "candidate_count": len(rec.ranked),
+        "truncated": rec.truncated,
         "explanation": explanation,
         "warnings": warnings,
         "stale_facts": [
@@ -227,4 +373,5 @@ def _recommendation_json(rec: Recommendation, graph_ok: bool, mode: Mode) -> dic
         ),
         "partial": not graph_ok,
         "mode": mode,
+        "run": recorder.snapshot(),
     }

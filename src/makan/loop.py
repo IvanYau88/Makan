@@ -74,11 +74,13 @@ def run(
     system_prompt: str = "",
     limits: Limits | None = None,
     sink: TraceSink | None = None,
+    run_id: str | None = None,
 ) -> RunResult:
+    """Run the loop. A caller that must know the run's id before it starts passes its own."""
     limits = limits or Limits()
     registry = _registry(tools)
     specs = [t.spec() for t in tools] + [FINISH]
-    run_id = uuid.uuid4().hex
+    run_id = run_id or uuid.uuid4().hex
     emitter = Emitter(run_id, sink or NullSink())
 
     messages: list[Message] = []

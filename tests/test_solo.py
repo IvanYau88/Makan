@@ -310,3 +310,93 @@ def test_overture_results_include_source_attribution() -> None:
     assert result.recommendation
     assert result.recommendation.data_source == "overture:fixture"
     assert "Overture Maps Foundation (CDLA Permissive 2.0)" in result.recommendation.explanation
+
+
+def test_places_keep_coordinates_and_the_full_ranked_list_reaches_the_recommendation() -> None:
+    result = recommend(
+        SoloRequest(*KLCC, "thai"),
+        provider=classifier(),
+        places=FakePlacesProvider([NEAR, THAI, FAR]),
+        config=CONFIG,
+    )
+    rec = result.recommendation
+    assert rec and rec.pick and rec.intent and rec.intent.cuisine == "thai"
+    assert [r.place.name for r in rec.ranked] == ["Mid Thai", "Far Thai", "Near Ramen"]
+    assert (rec.pick.place.lat, rec.pick.place.lon) == (THAI.lat, THAI.lon)
+    assert all(r.place.lat is not None and r.place.lon is not None for r in rec.ranked)
+    assert rec.truncated is False
+    assert "matches your request for thai" in rec.pick.reasons
+    assert (
+        "nearby alternative; your request is not confirmed for this place" in rec.ranked[2].reasons
+    )
+
+
+def test_direct_tool_calls_are_traced_and_linked_to_their_step() -> None:
+    sink = ListSink()
+    recommend(
+        SoloRequest(*KLCC, "thai"),
+        provider=classifier(),
+        places=FakePlacesProvider([THAI]),
+        config=CONFIG,
+        sink=sink,
+    )
+    finished = {e.data["step"]: e.data for e in sink.events if e.type == "step_finish"}
+    (child,) = finished["requested_places"]["child_runs"]
+    (tool_call,) = [e for e in sink.events if e.run_id == child and e.type == "tool_call"]
+    assert tool_call.data["name"] == "search_nearby_places"
+    assert tool_call.data["arguments"]["cuisine"] == "thai"
+    (tool_result,) = [e for e in sink.events if e.run_id == child and e.type == "tool_result"]
+    assert tool_result.data["ok"] is True and json.loads(tool_result.data["output"])["count"] == 1
+    (model_run,) = finished["classify"]["child_runs"]
+    assert any(e.run_id == model_run and e.type == "run_end" for e in sink.events)
+    summaries = {e.data["step"]: e.data["output"] for e in sink.events if e.type == "step_finish"}
+    assert summaries["intent"] == {"cuisine": "thai", "category": None, "requirements": []}
+    assert summaries["memory"]["reason"] == "no user memory"
+    assert summaries["merge"]["candidate_count"] == 1
+
+
+def test_a_failed_model_step_still_names_its_child_run_and_the_failed_tool_is_traced() -> None:
+    sink = ListSink()
+    recommend(
+        SoloRequest(*KLCC, "thai"),
+        provider=FakeProvider([ProviderError("offline")]),
+        places=FakePlacesProvider([THAI]),
+        config=CONFIG,
+        sink=sink,
+    )
+    (failed,) = [e for e in sink.events if e.type == "step_error" and e.data["step"] == "classify"]
+    (child,) = failed.data["child_runs"]
+    assert any(e.run_id == child and e.type == "error" for e in sink.events)
+
+    sink = ListSink()
+
+    class Down(FakePlacesProvider):
+        def search_nearby(self, query: PlaceQuery) -> list[Place]:
+            raise PlacesError("offline")
+
+    recommend(
+        SoloRequest(*KLCC, "thai"),
+        provider=classifier(),
+        places=Down([THAI]),
+        config=CONFIG,
+        sink=sink,
+    )
+    results = [
+        e
+        for e in sink.events
+        if e.type == "tool_result" and e.data["name"] == "search_nearby_places"
+    ]
+    assert len(results) == 2 and all(e.data["ok"] is False for e in results)
+    assert all("PlacesError: offline" in e.data["output"] for e in results)
+
+
+def test_a_search_that_returns_its_limit_marks_the_list_truncated() -> None:
+    many = [place(f"Cafe {i:02}", "cafe", 3.148 + i * 0.00001, 101.695) for i in range(25)]
+    result = recommend(
+        SoloRequest(*KLCC, "cafe"),
+        provider=classifier(cuisine=None, category="cafe"),
+        places=FakePlacesProvider(many),
+        config=CONFIG,
+    )
+    assert result.recommendation and result.recommendation.truncated
+    assert len(result.recommendation.ranked) == 20

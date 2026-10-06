@@ -17,6 +17,13 @@ class ConfigError(Exception):
     """A required setting is missing or malformed."""
 
 
+# OpenStreetMap's own tiles, a best effort service for light use that needs visible attribution.
+# A real deployment should point MAKAN_MAP_TILE_URL at a provider it has an agreement with.
+DEFAULT_MAP_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+DEFAULT_MAP_ATTRIBUTION = "© OpenStreetMap contributors"
+DEFAULT_MAP_ATTRIBUTION_URL = "https://www.openstreetmap.org/copyright"
+
+
 @dataclass(frozen=True)
 class Config:
     model: str
@@ -27,6 +34,9 @@ class Config:
     places_cache_ttl_seconds: int = 86_400
     session_retention_hours: int = 24  # how long a group session lives after it is created
     database_url: str = field(default="", repr=False)  # empty keeps group sessions in memory
+    map_tile_url: str = DEFAULT_MAP_TILE_URL  # a raster tile template with {z}, {x} and {y}
+    map_attribution: str = DEFAULT_MAP_ATTRIBUTION  # shown beside the map whenever it is
+    map_attribution_url: str = DEFAULT_MAP_ATTRIBUTION_URL  # where that attribution links, or ""
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -36,6 +46,18 @@ class Config:
             raise ConfigError("MAKAN_MODEL is not set")
         defaults = Limits()
         graph_defaults = GraphLimits()
+        tile_url = env.get("MAKAN_MAP_TILE_URL", "").strip()
+        attribution = env.get("MAKAN_MAP_ATTRIBUTION", "").strip()
+        attribution_url = env.get("MAKAN_MAP_ATTRIBUTION_URL", "").strip()
+        if tile_url:
+            if not all(f"{{{axis}}}" in tile_url for axis in "zxy"):
+                raise ConfigError("MAKAN_MAP_TILE_URL must contain {z}, {x} and {y}")
+            if not attribution:
+                raise ConfigError("MAKAN_MAP_ATTRIBUTION is required with MAKAN_MAP_TILE_URL")
+        else:
+            tile_url = DEFAULT_MAP_TILE_URL
+            attribution = attribution or DEFAULT_MAP_ATTRIBUTION
+            attribution_url = attribution_url or DEFAULT_MAP_ATTRIBUTION_URL
         return cls(
             model=model,
             openrouter_api_key=env.get("OPENROUTER_API_KEY", "").strip(),
@@ -59,6 +81,9 @@ class Config:
                 env, "MAKAN_SESSION_RETENTION_HOURS", cls.session_retention_hours
             ),
             database_url=env.get("MAKAN_DATABASE_URL", "").strip(),
+            map_tile_url=tile_url,
+            map_attribution=attribution,
+            map_attribution_url=attribution_url,
         )
 
 
