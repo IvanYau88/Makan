@@ -9,6 +9,7 @@ from datetime import datetime
 from makan.memory.gate import GateDecision, RetrievalGate
 from makan.memory.service import Memory, RecalledFact
 from makan.memory.store import Owner
+from makan.models import MemoryKind
 
 HEADER = (
     "What you remember about this user from earlier. "
@@ -18,10 +19,13 @@ HEADER = (
 )
 
 
+_CONSTRAINTS: tuple[MemoryKind, ...] = ("constraint",)
+
+
 @dataclass(frozen=True)
 class TurnMemory:
     decision: GateDecision
-    facts: tuple[RecalledFact, ...] = ()  # empty when the gate skipped the lookup
+    facts: tuple[RecalledFact, ...] = ()  # only constraints when the gate skipped the lookup
     text: str | None = None  # a block for the system prompt, or None when there is nothing to add
 
     def trace_summary(self) -> dict[str, object]:
@@ -34,11 +38,13 @@ class TurnMemory:
 
 
 def recall_for_turn(memory: Memory, gate: RetrievalGate, owner: Owner, message: str) -> TurnMemory:
-    """Look up memory only if the gate says this turn needs it."""
+    """Recall for one turn. The gate decides about soft memory, never about constraints.
+
+    Stored constraints such as allergies are recalled every turn, so no gate, rule or model,
+    can hide one. The gate only decides whether the rest of memory is looked up.
+    """
     decision = gate.decide(message)
-    if not decision.lookup:
-        return TurnMemory(decision)
-    facts = tuple(memory.recall(owner))
+    facts = tuple(memory.recall(owner, kinds=None if decision.lookup else _CONSTRAINTS))
     if not facts:
         return TurnMemory(decision)
     now = memory.now()

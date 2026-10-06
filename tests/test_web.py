@@ -14,6 +14,7 @@ from makan.config import Config, ConfigError
 from makan.places import FakePlacesProvider, Place, PlacesError
 from makan.providers import FakeProvider, ProviderBusy, ProviderError, ToolCall
 from makan.providers.fake import call
+from makan.providers.scoring import Distribution, FakeScorer, Question, ScoreResult, Status
 from makan.web import create_app, create_app_from_env
 from tests.helpers import KLCC, place
 
@@ -245,6 +246,38 @@ def test_live_mode_builds_real_providers_from_the_environment(no_dist: dict[str,
     env = {**no_dist, "MAKAN_MODEL": "some/model", "OPENROUTER_API_KEY": "sk-test"}
     app = TestClient(create_app_from_env(env))
     assert app.get("/api/health").json()["mode"] == "live"
+
+
+def test_a_configured_scorer_adds_estimated_signals_to_the_explanation() -> None:
+    plain = client().post("/api/recommendations", json=BODY).json()
+    scored = client(scorer=_leaning_scorer()).post("/api/recommendations", json=BODY).json()
+
+    assert "estimate" not in plain["explanation"]
+    assert "budget band: cheap" in scored["explanation"]
+    assert scored["pick"] == plain["pick"]  # signals never change the ranking
+
+
+def test_live_mode_builds_the_configured_scorer_and_rejects_a_half_set_one(
+    no_dist: dict[str, str],
+) -> None:
+    live = {**no_dist, "MAKAN_MODEL": "some/model", "OPENROUTER_API_KEY": "sk-test"}
+    assert create_app_from_env({**live, "MAKAN_SCORER_BACKEND": "fake"})
+    assert create_app_from_env(
+        {**live, "MAKAN_SCORER_BACKEND": "logprob", "MAKAN_SCORER_MODEL": "m"}
+    )
+    with pytest.raises(ConfigError, match="MAKAN_SCORER_MODEL"):
+        create_app_from_env({**live, "MAKAN_SCORER_BACKEND": "jev"})
+
+
+def _leaning_scorer() -> FakeScorer:
+    def policy(question: Question) -> ScoreResult:
+        choice = {"budget_band": "cheap"}.get(question.decision, "not_stated")
+        ids = question.ids
+        rest = 0.1 / (len(ids) - 1)
+        d = Distribution.of({i: 0.9 if i == choice else rest for i in ids}, ids)
+        return ScoreResult(Status.OK, "fake", "", choice=choice, distribution=d)
+
+    return FakeScorer(policy)
 
 
 @pytest.mark.parametrize(
