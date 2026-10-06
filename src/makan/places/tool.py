@@ -18,10 +18,12 @@ from makan.tools import Tool, int_arg, number_arg, text_arg
 NAME = "search_nearby_places"
 DEFAULT_RADIUS_M = 1_000
 DEFAULT_LIMIT = 10
+VENUE_COORD_DECIMALS = 5  # about 1 m: a venue is a public point, unlike the user's location
 
 DESCRIPTION = (
     "Find places to eat or drink near a location, nearest first. "
-    "Each result has an id, name, category, distance in meters, and address when known. "
+    "Each result has an id, name, category, distance in meters, coordinates, "
+    "and address when known. "
     "Use cuisine for a kind of food (such as thai, ramen, or indian) and category for a kind of "
     "venue (such as cafe, bakery, bar, or fast food). "
     "If a search finds nothing, widen the radius or drop a filter. "
@@ -100,6 +102,8 @@ def _compact(place: Place) -> dict[str, Any]:
         "name": place.name,
         "category": place.category,
         "distance_m": place.distance_m,
+        "lat": round(place.lat, VENUE_COORD_DECIMALS),
+        "lon": round(place.lon, VENUE_COORD_DECIMALS),
         "address": place.address,
     }
     return {k: v for k, v in fields.items() if v is not None}

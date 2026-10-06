@@ -49,6 +49,13 @@ class Intent:
     category: str | None
     requirements: tuple[str, ...]
 
+    def trace_summary(self) -> dict[str, Any]:
+        return {
+            "cuisine": self.cuisine,
+            "category": self.category,
+            "requirements": list(self.requirements),
+        }
+
 
 @dataclass(frozen=True)
 class Candidate:
@@ -58,10 +65,21 @@ class Candidate:
     distance_m: int
     address: str | None
     request_fit: int
+    lat: float | None = None  # the venue's own coordinates, None when the source gave none
+    lon: float | None = None
 
     def matches(self, term: str) -> bool:
         # The tool exposes the primary category only, not the source's full taxonomy.
         return Place(self.id, self.name, self.category, (self.category,), 0, 0).matches(term)
+
+    def trace_summary(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "category": self.category,
+            "distance_m": self.distance_m,
+            "request_fit": self.request_fit,
+        }
 
 
 @dataclass(frozen=True)
@@ -70,6 +88,19 @@ class Research:
     candidates: tuple[Candidate, ...]
     memory: TurnMemory
     warnings: tuple[str, ...]
+    truncated: bool = False  # a search returned its limit, so more places may lie in the radius
+
+    def trace_summary(self) -> dict[str, Any]:
+        return {
+            "intent": self.intent.trace_summary(),
+            "candidate_count": len(self.candidates),
+            "truncated": self.truncated,
+            "memory": {
+                "lookup": self.memory.decision.lookup,
+                "reason": self.memory.decision.reason,
+            },
+            "warnings": list(self.warnings),
+        }
 
 
 @dataclass(frozen=True)
@@ -77,6 +108,13 @@ class RankedCandidate:
     place: Candidate
     reasons: tuple[str, ...]
     memory_score: float
+
+    def trace_summary(self) -> dict[str, Any]:
+        return {
+            "place": self.place.trace_summary(),
+            "reasons": list(self.reasons),
+            "memory_score": self.memory_score,
+        }
 
 
 @dataclass(frozen=True)
@@ -87,6 +125,19 @@ class Recommendation:
     warnings: tuple[str, ...]
     stale_facts: tuple[RecalledFact, ...]
     data_source: str
+    ranked: tuple[RankedCandidate, ...] = ()  # every candidate in rank order, pick included
+    truncated: bool = False
+    intent: Intent | None = None  # what the request was read as
+
+    def trace_summary(self) -> dict[str, Any]:
+        return {
+            "pick": self.pick.place.name if self.pick else None,
+            "runners_up": [r.place.name for r in self.runners_up],
+            "candidate_count": len(self.ranked),
+            "truncated": self.truncated,
+            "warnings": list(self.warnings),
+            "data_source": self.data_source,
+        }
 
 
 @dataclass(frozen=True)
@@ -175,15 +226,25 @@ def research_steps(
         warnings.extend(f"Cannot verify requirement: {r}." for r in intent.requirements)
         candidates: dict[str, Candidate] = {}
         successes = 0
+        truncated = False
         for name in ("requested_places", "nearby_places"):
             result = ctx.inputs[name]
             if not result.ok:
                 warnings.append(f"{name} {result.status}: {result.error}")
                 continue
             successes += 1
-            for p in json.loads(result.unwrap())["places"]:
+            found = json.loads(result.unwrap())
+            truncated = truncated or found["count"] >= MAX_LIMIT
+            for p in found["places"]:
                 candidate = Candidate(
-                    p["id"], p["name"], p["category"], p["distance_m"], p.get("address"), 0
+                    p["id"],
+                    p["name"],
+                    p["category"],
+                    p["distance_m"],
+                    p.get("address"),
+                    0,
+                    p.get("lat"),
+                    p.get("lon"),
                 )
                 fit = sum(
                     bool(term) and (name == "requested_places" or candidate.matches(term))
@@ -206,7 +267,7 @@ def research_steps(
                 warnings.append(f"Confirm stale memory {r.fact.id}: {r.fact.kind} {r.fact.content}")
             elif r.fact.kind == "constraint":
                 warnings.append(f"Cannot verify stored constraint: {r.fact.content}.")
-        return Research(intent, tuple(candidates.values()), turn, tuple(warnings))
+        return Research(intent, tuple(candidates.values()), turn, tuple(warnings), truncated)
 
     return [
         agent_step(
@@ -251,10 +312,14 @@ def build_solo_graph(
         ranked: list[RankedCandidate] = []
         for candidate in research.candidates:
             reasons = [f"{candidate.distance_m} m from your approximate location"]
+            terms = [t for t in (research.intent.cuisine, research.intent.category) if t]
             if candidate.request_fit:
-                reasons.append(f"matches {candidate.request_fit} requested category filter(s)")
-            elif research.intent.cuisine or research.intent.category:
-                reasons.append("nearby alternative; requested category match not confirmed")
+                what = " and ".join(terms) if candidate.request_fit >= len(terms) else None
+                reasons.append(
+                    f"matches your request for {what}" if what else "matches part of your request"
+                )
+            elif terms:
+                reasons.append("nearby alternative; your request is not confirmed for this place")
             score = 0.0
             for r in research.memory.facts:
                 if r.stale or r.fact.kind == "constraint":
@@ -310,6 +375,9 @@ def build_solo_graph(
             research.warnings,
             tuple(r for r in research.memory.facts if r.stale),
             source,
+            ranked,
+            research.truncated,
+            research.intent,
         )
 
     return Graph(

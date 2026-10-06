@@ -1,25 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, MODEL_BUSY, fetchMode, recommend } from "./api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ApiError, MODEL_BUSY, fetchConfig, recommend } from "./api";
+import { DiscoverView } from "./DiscoverView";
+import type { Status, View } from "./DiscoverView";
+import { ExecutionView } from "./ExecutionView";
+import { abandonRun, recordRun } from "./history";
+import type { HistoryEntry } from "./history";
+import { DEFAULT_CENTER, roundCenter } from "./geo";
 import { LocationError, locate, parseCoordinates } from "./location";
 import type { CoordinateErrors } from "./location";
-import { RADII, REQUEST_PLACEHOLDER, SearchForm } from "./SearchForm";
-import type { FormValues } from "./SearchForm";
-import { ResultView } from "./ResultView";
-import type { Mode, Recommendation } from "./types";
+import type { MapMove } from "./MapView";
+import { NO_FILTERS, visiblePlaces } from "./places";
+import type { PlaceFilters } from "./places";
+import { phaseText } from "./stages";
+import { RADII, REQUEST_PLACEHOLDER } from "./SearchBar";
+import type { FormValues } from "./SearchBar";
+import type { AppConfig, Coordinates, Recommendation } from "./types";
 
-type Status =
-  | { kind: "idle" }
-  | { kind: "working"; phase: "locating" | "searching" }
-  | { kind: "done"; result: Recommendation; radiusM: number }
-  | { kind: "failed"; message: string; busy: boolean };
-
-const PHASE_TEXT = {
-  locating: "Getting your location…",
-  searching: "Researching places nearby…",
-} as const;
+type Page = "discover" | "execution";
 
 export function App() {
-  const [values, setValues] = useState<FormValues>({
+  const [config, setConfig] = useState<AppConfig | null>(null);
+  const [page, setPage] = useState<Page>("discover");
+  const [form, setForm] = useState<FormValues>({
     request: "",
     radiusM: 1000,
     manual: false,
@@ -27,155 +29,238 @@ export function App() {
     longitude: "",
   });
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  const [result, setResult] = useState<Recommendation | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [coordinateErrors, setCoordinateErrors] = useState<CoordinateErrors>({});
-  const [mode, setMode] = useState<Mode | null>(null);
-  const inflight = useRef<AbortController | null>(null);
-  const resultHeading = useRef<HTMLHeadingElement>(null);
+  const [mapCenter, setMapCenter] = useState<Coordinates>(DEFAULT_CENTER);
+  const [moveTo, setMoveTo] = useState<MapMove | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [filters, setFilters] = useState<PlaceFilters>(NO_FILTERS);
+  const [view, setView] = useState<View>("map");
+  const [sheetExpanded, setSheetExpanded] = useState(false);
+  // One tab's runs, newest first. Nothing is stored: a reload starts empty.
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+
+  const inflight = useRef<{ seq: number; controller: AbortController } | null>(null);
+  const counter = useRef(0);
+  // Counts the results and errors to announce. DiscoverView moves focus when it changes.
+  const [focusHeading, setFocusHeading] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetchMode(controller.signal).then(setMode);
+    void fetchConfig(controller.signal).then(setConfig);
     return () => controller.abort();
   }, []);
 
-  useEffect(() => () => inflight.current?.abort(), []);
+  useEffect(() => () => inflight.current?.controller.abort(), []);
 
-  // A new result or error is announced by moving focus to it, so keyboard and screen reader
-  // users land on the answer instead of having to find it.
-  useEffect(() => {
-    if (status.kind === "done" || status.kind === "failed") resultHeading.current?.focus();
-  }, [status]);
-
-  const search = useCallback(async (form: FormValues) => {
-    inflight.current?.abort();
+  /** Start a search, giving up on any one still going. Returns its number and abort signal. */
+  const begin = useCallback((text: string) => {
+    const previous = inflight.current;
+    if (previous) {
+      previous.controller.abort();
+      setHistory((h) => abandonRun(h, previous.seq));
+    }
+    const seq = ++counter.current;
     const controller = new AbortController();
-    inflight.current = controller;
+    inflight.current = { seq, controller };
     setLocationError(null);
     setCoordinateErrors({});
+    setStatus({ kind: "working", text });
+    return { seq, signal: controller.signal };
+  }, []);
 
-    let where;
+  const finishIdle = (seq: number) => inflight.current?.seq === seq;
+
+  const search = useCallback(
+    async (
+      values: FormValues,
+      where: Coordinates,
+      started?: { seq: number; signal: AbortSignal },
+    ) => {
+      const { seq, signal } = started ?? begin("Starting the search…");
+      setStatus({ kind: "working", text: "Starting the search…" });
+      try {
+        const answer = await recommend(
+          {
+            ...where,
+            request: values.request.trim() || REQUEST_PLACEHOLDER,
+            radius_m: values.radiusM,
+          },
+          (run) => {
+            if (!finishIdle(seq)) return;
+            setHistory((h) => recordRun(h, seq, run));
+            setStatus({ kind: "working", text: phaseText(run) });
+          },
+          signal,
+        );
+        if (!finishIdle(seq)) return;
+        if (answer.run) {
+          const run = answer.run;
+          setHistory((h) => recordRun(h, seq, run));
+        }
+        setResult(answer);
+        setSelectedId(null);
+        setHoveredId(null);
+        setFilters(NO_FILTERS);
+        setMoveTo({
+          center: { latitude: answer.query.latitude, longitude: answer.query.longitude },
+          radiusM: answer.query.radius_m,
+          key: seq,
+        });
+        setStatus({ kind: "idle" });
+        setFocusHeading((n) => n + 1);
+        inflight.current = null;
+      } catch (error) {
+        if (signal.aborted || !finishIdle(seq)) return;
+        const failedRun = error instanceof ApiError ? error.run : null;
+        // A run that never reported its end, such as a dropped connection, is one we lost sight of.
+        if (failedRun) setHistory((h) => recordRun(h, seq, failedRun));
+        else setHistory((h) => abandonRun(h, seq));
+        setStatus({
+          kind: "failed",
+          message: error instanceof ApiError ? error.message : "Something went wrong. Try again.",
+          busy: error instanceof ApiError && error.code === MODEL_BUSY,
+        });
+        setFocusHeading((n) => n + 1);
+        inflight.current = null;
+      }
+    },
+    [begin],
+  );
+
+  const goTo = (center: Coordinates, radiusM: number | null) => {
+    setMapCenter(center);
+    setMoveTo({ center, radiusM, key: -++counter.current });
+  };
+
+  const searchHere = () => {
     if (form.manual) {
       const parsed = parseCoordinates(form.latitude, form.longitude);
       if ("errors" in parsed) {
         setCoordinateErrors(parsed.errors);
-        setStatus({ kind: "idle" });
         return;
       }
-      where = parsed.coordinates;
-    } else {
-      setStatus({ kind: "working", phase: "locating" });
-      try {
-        where = await locate();
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        setLocationError(error instanceof LocationError ? error.message : "Location failed.");
-        setValues((current) => ({ ...current, manual: true }));
-        setStatus({ kind: "idle" });
-        return;
-      }
+      const where = roundCenter(parsed.coordinates);
+      goTo(where, null);
+      void search(form, where);
+      return;
     }
-    if (controller.signal.aborted) return;
+    void search(form, roundCenter(mapCenter));
+  };
 
-    setStatus({ kind: "working", phase: "searching" });
+  const locateAndSearch = async () => {
+    const started = begin("Getting your location…");
+    let where: Coordinates;
     try {
-      const result = await recommend(
-        { ...where, request: form.request.trim() || REQUEST_PLACEHOLDER, radius_m: form.radiusM },
-        controller.signal,
-      );
-      setStatus({ kind: "done", result, radiusM: form.radiusM });
+      where = await locate();
     } catch (error) {
-      if (controller.signal.aborted) return;
-      setStatus({
-        kind: "failed",
-        message: error instanceof ApiError ? error.message : "Something went wrong. Try again.",
-        busy: error instanceof ApiError && error.code === MODEL_BUSY,
-      });
+      if (started.signal.aborted) return;
+      setLocationError(error instanceof LocationError ? error.message : "Location failed.");
+      setForm((current) => ({ ...current, manual: true }));
+      setStatus({ kind: "idle" });
+      inflight.current = null;
+      return;
     }
-  }, []);
+    if (started.signal.aborted) return;
+    goTo(where, null);
+    await search(form, where, started);
+  };
 
-  const busy = status.kind === "working";
-  const wider = RADII.find((r) => r > values.radiusM);
+  const retry = () => {
+    const where = result
+      ? { latitude: result.query.latitude, longitude: result.query.longitude }
+      : roundCenter(mapCenter);
+    void search(form, where);
+  };
+
+  const wider = RADII.find((r) => r > (result?.query.radius_m ?? form.radiusM));
   const widen = () => {
-    if (wider === undefined) return;
-    const next = { ...values, radiusM: wider };
-    setValues(next);
-    void search(next);
+    if (wider === undefined || !result) return;
+    const next = { ...form, radiusM: wider };
+    setForm(next);
+    void search(next, { latitude: result.query.latitude, longitude: result.query.longitude });
+  };
+
+  const visible = useMemo(
+    () => (result ? visiblePlaces(result.places, filters) : []),
+    [result, filters],
+  );
+
+  const changeFilters = (next: PlaceFilters) => {
+    setFilters(next);
+    if (result && selectedId) {
+      const stillShown = visiblePlaces(result.places, next).some((p) => p.id === selectedId);
+      if (!stillShown) setSelectedId(null);
+    }
+  };
+
+  const select = (id: string | null) => {
+    setSelectedId(id);
+    if (id) setSheetExpanded(false);
   };
 
   return (
     <>
-      {mode === "demo" && (
+      {config?.mode === "demo" && (
         <p className="banner" role="note">
-          Demo mode: sample places, not real venues.
+          Demo mode: sample places, not real venues or a real language model.
         </p>
       )}
-      <div className="app">
-        <header className="header">
-          <h1 className="brand">Makan</h1>
-          <p className="tagline">
-            Tell Makan where you are and what you fancy. It picks a place to eat.
-          </p>
-        </header>
+      <header className="topbar">
+        <h1 className="brand">Makan</h1>
+        <nav aria-label="Pages" className="tabs">
+          {(["discover", "execution"] as const).map((p) => (
+            <button
+              key={p}
+              type="button"
+              className="tab"
+              aria-current={page === p ? "page" : undefined}
+              onClick={() => setPage(p)}
+            >
+              {p === "discover" ? "Discover" : "Execution"}
+            </button>
+          ))}
+        </nav>
+      </header>
 
-        <main>
-          <SearchForm
-            values={values}
-            onChange={setValues}
-            onSubmit={() => void search(values)}
-            busy={busy}
+      <main>
+        <div hidden={page !== "discover"}>
+          <DiscoverView
+            tiles={config?.map ?? null}
+            form={form}
+            onForm={setForm}
             locationError={locationError}
             coordinateErrors={coordinateErrors}
+            status={status}
+            result={result}
+            visible={visible}
+            filters={filters}
+            onFilters={changeFilters}
+            selectedId={selectedId}
+            hoveredId={hoveredId}
+            onSelect={select}
+            onHover={setHoveredId}
+            mapCenter={mapCenter}
+            onMapCenter={setMapCenter}
+            moveTo={moveTo}
+            view={view}
+            onView={setView}
+            sheetExpanded={sheetExpanded}
+            onSheetToggle={() => setSheetExpanded((open) => !open)}
+            onSearch={searchHere}
+            onSearchArea={() => void search(form, roundCenter(mapCenter))}
+            onLocate={() => void locateAndSearch()}
+            onRetry={retry}
+            onWiden={wider === undefined ? null : widen}
+            focusSignal={focusHeading}
           />
-
-          <div className="output">
-            <div className="sr-only" role="status" aria-live="polite">
-              {status.kind === "working" ? PHASE_TEXT[status.phase] : ""}
-            </div>
-            {status.kind === "working" && (
-              <div className="loading card" aria-hidden="true">
-                <span className="spinner spinner-large" />
-                <p>{PHASE_TEXT[status.phase]}</p>
-                <div className="skeleton">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              </div>
-            )}
-
-            {status.kind === "failed" && (
-              <section className="card failure" role="alert" aria-labelledby="failure-heading">
-                <h2
-                  id="failure-heading"
-                  ref={resultHeading}
-                  tabIndex={-1}
-                  className="section-title"
-                >
-                  {status.busy ? "The model is busy" : "That did not work"}
-                </h2>
-                <p>{status.message}</p>
-                <button
-                  type="button"
-                  className="button button-secondary"
-                  onClick={() => void search(values)}
-                >
-                  Try again
-                </button>
-              </section>
-            )}
-
-            {status.kind === "done" && (
-              <ResultView
-                ref={resultHeading}
-                result={status.result}
-                radiusM={status.radiusM}
-                onWiden={wider === undefined ? null : widen}
-              />
-            )}
-          </div>
-        </main>
-      </div>
+        </div>
+        <div hidden={page !== "execution"}>
+          <ExecutionView history={history} onClear={() => setHistory([])} />
+        </div>
+      </main>
     </>
   );
 }

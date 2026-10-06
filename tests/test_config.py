@@ -100,3 +100,21 @@ def test_a_bad_session_retention_is_rejected() -> None:
     for value in ("a day", "0", "-1"):
         with pytest.raises(ConfigError, match="MAKAN_SESSION_RETENTION_HOURS"):
             Config.from_env({"MAKAN_MODEL": "m", "MAKAN_SESSION_RETENTION_HOURS": value})
+
+
+def test_map_tiles_default_to_openstreetmap_with_attribution() -> None:
+    config = Config.from_env({"MAKAN_MODEL": "m"})
+    assert config.map_tile_url == "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    assert config.map_attribution == "© OpenStreetMap contributors"
+    assert config.map_attribution_url.startswith("https://www.openstreetmap.org/")
+
+
+def test_a_custom_tile_provider_must_be_a_template_and_credit_itself() -> None:
+    env = {"MAKAN_MODEL": "m", "MAKAN_MAP_TILE_URL": "https://tiles.example/{z}/{x}/{y}.png"}
+    with pytest.raises(ConfigError, match="MAKAN_MAP_ATTRIBUTION"):
+        Config.from_env(env)
+    config = Config.from_env({**env, "MAKAN_MAP_ATTRIBUTION": "© Example"})
+    assert (config.map_tile_url, config.map_attribution) == (env["MAKAN_MAP_TILE_URL"], "© Example")
+    assert config.map_attribution_url == ""
+    with pytest.raises(ConfigError, match=r"\{z\}"):
+        Config.from_env({**env, "MAKAN_MAP_TILE_URL": "https://tiles.example/map.png"})

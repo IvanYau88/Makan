@@ -27,14 +27,14 @@ Trace events emitted, in order, with their `data`. They share one `run_id`, and 
 - `graph_end`: status (`ok`, or `failed` if any step was not ok), duration_ms, steps (name: status)
 
 `parallel_with` lists the steps whose run overlapped this one, in graph order, which is how a viewer
-tells what ran in parallel. `child_runs` holds the `run_id` of each core loop run the step started,
-whose own events go to the same sink. `output` is the step's value made JSON safe.
+tells what ran in parallel. `child_runs` holds the `run_id` of each core loop run or direct tool
+call the step started, added before the work begins so a failed step still names them. Their own
+events go to the same sink. `output` is the step's value made JSON safe, see `trace.jsonable`.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
@@ -42,7 +42,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from makan.trace import Emitter, NullSink, TraceSink
+from makan.trace import Emitter, NullSink, TraceSink, jsonable
 
 StepStatus = Literal["ok", "error", "timeout"]
 
@@ -166,7 +166,7 @@ async def run_graph_async(
             for s in graph.steps
         ],
         max_concurrency=limits.max_concurrency,
-        input=_jsonable(input),
+        input=jsonable(input),
     )
 
     # One worker thread per step, so the semaphore alone sets how many run at once. Nothing ever
@@ -252,7 +252,7 @@ class _Execution:
             "child_runs": list(ctx.child_runs),
         }
         if status == "ok":
-            self._emit("step_finish", output=_jsonable(value), **data)
+            self._emit("step_finish", output=jsonable(value), **data)
         else:
             self._emit("step_error", error=error, **data)
         return StepResult(step.name, status, value, error, duration_ms, failure)
@@ -281,14 +281,6 @@ def _dependency_order(steps: Sequence[Step]) -> tuple[Step, ...]:
         placed.update(s.name for s in ready)
         remaining = [s for s in remaining if s.name not in placed]
     return tuple(ordered)
-
-
-def _jsonable(value: Any) -> Any:
-    """A JSON safe copy of a step value, with `repr` standing in for what JSON cannot hold."""
-    try:
-        return json.loads(json.dumps(value, default=repr, ensure_ascii=False))
-    except (TypeError, ValueError):
-        return repr(value)
 
 
 def _ms(started: float) -> int:

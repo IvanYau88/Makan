@@ -120,6 +120,14 @@ Known failure modes to design against from the start:
 - Events go to a `TraceSink`.
   `ListSink` keeps them in memory for tests and `JsonlSink` appends one line per event, so a crashed run still leaves a readable trace.
   The trace viewer will read the JSON Lines files through `read_jsonl`.
+- A step's `output` goes through `makan.trace.jsonable`, which writes an object with a `trace_summary()` method as what that method returns and anything else JSON cannot hold as its `repr`.
+  The author of a type decides what a trace may hold, so a generic walk over dataclass fields never copies a participant id or a stored memory into a trace.
+  `Intent`, `Candidate`, `Research`, `RankedCandidate`, `Recommendation`, and `TurnMemory` define it, so their stage outputs are structured JSON with counts and names, not a `repr` string.
+- `child_runs` on a step event names every core loop run and every direct tool call the step started.
+  The id is added before the work begins, so a model call that raises (a busy provider, for example) still leaves its link on the `step_error` event.
+  The core loop takes an optional `run_id` so `agent_step` can do this.
+- `tool_step` traces a direct tool call as its own small run: a `tool_call` event with the tool name and arguments, then a `tool_result` event with `ok`, the output or `Type: message` error, and `duration_ms`.
+  The graph's `step_finish` alone could not say what a failed search had been asked.
 - A persisted event carries an optional session id and user id as columns beside the event, not inside it.
   The JSONL event is unchanged, and a run belongs to one session, so a JSONL file can still be tied to its session by `run_id`.
 
@@ -193,7 +201,10 @@ Not done yet: the migration runner, scheduling the expired-session purge, and an
   It takes `latitude`, `longitude`, and optional `radius_m` (100 to 5,000, default 1,000), `cuisine`, `category`, and `limit` (1 to 20, default 10).
   Bad arguments are `ValueError`s that the loop returns to the model as tool errors.
   A provider failure is a `PlacesError`, which the loop also returns as a tool error.
-- Results are one line of compact JSON: the search as it ran, a count, and per place an id, name, category, distance in meters, and address when known.
+- Results are one line of compact JSON: the search as it ran, a count, and per place an id, name, category, distance in meters, coordinates, and address when known.
+  The coordinates are a venue's own public point, rounded to five decimals (about a meter), so a map can pin it.
+  They were once dropped here, which made a map impossible.
+  The user's own location keeps its three decimal rounding.
   Opening hours, ratings, prices, and menus are not in Overture, and the tool description says so.
   Those need their own tools later, so the places tool stays small.
 - `cuisine` and `category` use the same match: every word of the filter must appear in one of a place's category labels, so "thai" finds `thai_restaurant` and "fast food" finds `fast_food_restaurant`.
@@ -372,7 +383,13 @@ It needs no account, and it runs as a session with a single participant whose li
   A single failed or timed-out search can yield a partial recommendation with warnings, while the graph stays failed and retains its trace evidence.
   Both searches failing, or failed classification, yield no recommendation.
   A memory failure falls back to request-only ranking with a warning and failed graph evidence.
-- No new environment variables are needed; existing model, loop, and graph settings apply.
+- A candidate carries the venue's `lat` and `lon` (null when a source gives none), and a `Recommendation` carries every ranked candidate and the intent it was read as, not only the pick and three runners-up.
+  Each search asks for at most 20 places, so the list holds at most 40, and `truncated` is set when either search returned its limit, which means more places may lie in the radius.
+  The product therefore calls the list bounded nearby options, never all restaurants nearby.
+- A reason is words a person would say: "matches your request for thai", or "nearby alternative; your request is not confirmed for this place".
+  The earlier "matches 1 requested category filter(s)" exposed the implementation.
+  The counts and the filters stay in the trace for the execution view.
+- Apart from the map settings below, no new environment variables are needed; existing model, loop, and graph settings apply.
   Follow-ups are additional evidence tools, provider-qualified stored place ratings when multiple places sources are used, and the already planned retry policy, channels, and auth.
 
 ### Group consensus
@@ -582,6 +599,7 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - Model-graded checks cover recommendation quality.
 - A release gate runs the evals before changes ship.
 - Every run emits structured trace events from the start, and the trace viewer renders them as a readable step-by-step view.
+  The web app's Execution page is its first form, for the current tab's runs; see "Map and execution decisions".
 
 ## Web stack
 
@@ -604,9 +622,18 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   - `POST /api/recommendations` takes `latitude`, `longitude`, `request` (1 to 500 characters), and optional `radius_m` (100 to 5000, default 1000), and rejects unknown fields.
     There is deliberately no `user_id`: signing in is a later change, and trusting a client-supplied user id would let anyone read another user's memory.
     Every call is a guest request, and its one-participant session is built and dropped inside the call, never shared or stored.
-  - A 200 response holds `pick` (null when nothing was found), `runners_up`, `explanation`, `warnings`, `stale_facts`, `data_source`, `attribution`, `partial` (the graph did not finish cleanly, so the list may be incomplete), and `mode`.
-    A place has `id`, `name`, `category`, `distance_m`, `address`, and `reasons`.
+  - A 200 response holds `pick` (null when nothing was found), `runners_up`, `explanation`, `warnings`, `stale_facts`, `data_source`, `attribution`, `partial` (the graph did not finish cleanly, so the list may be incomplete), `mode`, and the fields the map needs.
+    `query` echoes the search as it ran, with the rounded center and the radius.
+    `places` is every ranked candidate, pick included, with `candidate_count` and `truncated`, and `intent` says what the request was read as.
+    A place has `id`, `name`, `category`, `distance_m`, `address`, `lat`, `lon`, `rank` (its stable position, from 1), `matched` (it fit what the request asked for, not only nearby), and `reasons`.
+    `run` is the public record of the run described under "Execution view".
     No places found is a successful empty answer, not an error.
+  - `POST /api/recommendations/stream` takes the same body and answers with newline-delimited JSON: `{"type": "run", "run": ...}` as the graph's stages progress, then one `{"type": "result", "recommendation": ...}` or `{"type": "error", "status", "error": {"code", "message"}, "run"}`.
+    The error line carries the same code and message as the plain route would, so the page treats both alike.
+    Bad input is still a 422 before the stream starts.
+    The page uses the stream, and the plain route stays for any other caller.
+    A browser that leaves does not cancel the run: threads cannot be stopped, so the server finishes it and drops the answer.
+  - `GET /api/config` reports `{"mode", "map": {"tile_url", "attribution", "attribution_url"}}`, which the page needs before it can draw the map.
   - `GET /api/health` reports `{"status": "ok", "mode": "demo" | "live"}`, which the page uses to show the demo banner.
   - Every error uses `{"error": {"code", "message"}}` with a message safe to show.
     Bad input is 422 `invalid_request`.
@@ -617,7 +644,8 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
     Both places searches failing is 502 `places_error`, or 504 when both timed out.
     Anything unexpected is 500 `server_error`.
     A single failed search still gives a 200 with `partial` set.
-    Exception text and internal step names stay in the server log and out of responses and warnings.
+    Exception text stays in the server log and out of responses and warnings.
+    Stage names are public now, because the execution view names the stages it shows, but they never appear inside a warning or an explanation.
 - **Blocking work:** `recommend` is synchronous and runs its own event loop, so the route awaits it through a thread pool.
   The providers are built once at startup and shared across requests, which the built-in providers support.
 - **Run modes:** `MAKAN_DEMO=1` runs with `DemoProvider` and `DemoPlaces`, which need no key and make no network call.
@@ -651,7 +679,61 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   Colors follow the system light or dark setting and meet WCAG AA contrast.
   After a search, focus moves to the result or error heading and a hidden live region announces progress.
   An empty request becomes "something good to eat", and an empty result offers a search over the next larger radius.
-- **Follow-ups:** a geocoder for typed addresses, sign-in, the group page for the shared link, streaming progress, request rate limits and daily caps, a configurable port for the one command start, retrying a rate limited model call, the trace viewer, and a CORS allow-list once hosting is chosen.
+- **Follow-ups:** a geocoder for typed addresses, sign-in, the group page for the shared link, request rate limits and daily caps, a configurable port for the one command start, retrying a rate limited model call, durable and authorized run history, and a CORS allow-list once hosting is chosen.
+
+### Map and execution decisions
+
+- **Two pages, no router:** Discover is a search bar above a list beside a map, and Execution is the run inspector.
+  Both stay mounted and the inactive one is hidden, so the map keeps its position and the history survives a tab switch.
+  A phone shows the map or the list, chosen by a Map and List toggle, and a place opens as a bottom sheet over the map or inline in its list row.
+  The place sheet does not depend on a drag: it has Show more, Show less, and Close buttons.
+- **One source of truth for where to search:** the map's center.
+  "Find food here" and "Search this area" search around it, "Use my location" and typed coordinates move it first, and the center is rounded to about 100 m before it leaves the page.
+  A pan or a radius change never searches by itself, because each search costs a model call.
+  It draws a dashed circle for what would be searched and offers the button, and the solid circle always shows the search the list belongs to.
+  A move under 120 m counts as the map settling, which is above the worst rounding error.
+- **Renderer:** Leaflet with raster tiles.
+  Its pins are DOM elements, so they get real names and need no WebGL, which a headless or software rendered browser may lack.
+  The audit suggested MapLibre as one coherent choice, and vector tiles remain a later swap behind the same `MapView` props.
+  Tiles come from `MAKAN_MAP_TILE_URL` (default OpenStreetMap's own, a best effort service for light use), and a custom provider must be given a `MAKAN_MAP_ATTRIBUTION`, which the server refuses to start without.
+  The attribution is drawn under the map, not inside it, so a place sheet can never cover it.
+- **Map failure is its own state:** the map not starting, or four tiles failing with none loaded, shows a notice and a retry on the map, and the list and search keep working.
+  A search that finishes while the map is hidden (the list is showing on a phone) waits to move the map until it has a size, because fitting a zero size map throws.
+- **Pins and rows are one list:** both use the server's `rank` as their number, and the ids match.
+  Selecting either selects both and opens the same detail.
+  Hovering or focusing a row previews its pin, and selecting is a separate act.
+  A selected pin is larger, filled, and ringed, so it is not told apart by color alone.
+  Pins are not in the tab order, since the list reaches every action, but a touch screen reader can still name them.
+- **Filters are on what came back:** category, "only places that match my request", and a sort by best match or nearest.
+  They narrow the bounded list in the page and so cost nothing, and a count says how many of how many are shown.
+  The request filter and the "matches your request" labels appear only when the request named a cuisine or venue type, because otherwise every place would read as a miss.
+  Hours, price, reviews, and dietary filters do not exist, since Overture has no such data, and every place says what is unverified.
+- **Honest scope:** distances are straight-line and always shown with a tilde, and nothing implies walking time.
+  Directions links (Google Maps and OpenStreetMap, no account or key) appear only for real venues, never for demo's invented ones.
+  No rating, "open now", price, or popularity figure is shown, and none is invented to look like an established listing site.
+- **Loading, empty, and failed:** the previous results stay on screen, dimmed, while a search runs, and a live region names the stage the run is on, with a count of stages done, never a percentage.
+  Zero places, filters that hide everything, and a failed search are three different messages with three different ways out.
+  An answer that arrives after a newer search began is ignored.
+  A failed search says the results shown are from the previous search.
+- **Execution view:** it shows the eight real stages of the solo graph, `classify`, `intent`, `requested_places`, `nearby_places`, `memory`, `merge`, `rank`, and `explain`, with the dependencies the graph really has.
+  The dependency picture is hidden from assistive technology, and the stage list beside it is the accessible way to pick a stage and doubles as a timeline whose bars show the two searches overlapping.
+  A stage is waiting (a stage before it has not ended), queued (its inputs are ready and it waits for a concurrency slot), running, ok, error, or timeout.
+  The page says timed out, never cancelled, because the work cannot be stopped.
+  The graph's status and the product outcome are separate facts: a failed graph can still carry a usable recommendation (partial), and an ok graph can find nothing (no result).
+  Memory says it is not used for guests rather than claiming personalization.
+- **Run record:** `makan.web.runs.RunRecorder` is the trace sink for one request, and its `snapshot` is what the browser gets, never the raw events.
+  Raw events hold the session link token, model text, and exception text.
+  The snapshot carries the mode, the configured model name (read from config, not hard coded), the request, the rounded center, the radius, the data source, the loop and graph limits, and per stage its inputs, bounded outputs, timing, overlap, calls, and a failure in fixed words.
+  Strings are capped at 300 characters, lists at ten items (a search stage previews five places), and nesting at four levels, and an exception's text is shown only for the two types that carry wording this code base wrote.
+- **History is the tab's, not the server's:** the page keeps the last 10 runs in memory and a reload clears them.
+  The server stores nothing, so there is no endpoint that reads another person's run, and the "no location stored" promise still holds.
+  Durable cross-user history needs authorization, scope, retention, and redaction decisions of its own, and is a follow-up.
+  A run the page stopped following because a newer search began is marked so, since the server may still finish it.
+- **Palette:** a cool white and mint surface with teal for everything interactive, replacing the earlier brown and orange after review.
+  Light tokens are `#f6fafb` (page), `#ffffff` (surface), `#eaf5f2` (sunk), `#173238` (text), `#526970` (muted), and `#087e83` (accent).
+  Dark mode has its own teal and slate tokens, not the old scheme inverted.
+  Body text, muted text, accent text, and text on the accent all pass 4.5:1 in both, checked by script.
+  Information and warnings are a soft blue or mint and errors a soft red, with no orange.
 
 ## Hosting
 

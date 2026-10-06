@@ -24,6 +24,14 @@ class TurnMemory:
     facts: tuple[RecalledFact, ...] = ()  # empty when the gate skipped the lookup
     text: str | None = None  # a block for the system prompt, or None when there is nothing to add
 
+    def trace_summary(self) -> dict[str, object]:
+        """What a trace may hold: the gate's decision and a count, never the stored facts."""
+        return {
+            "lookup": self.decision.lookup,
+            "reason": self.decision.reason,
+            "fact_count": len(self.facts),
+        }
+
 
 def recall_for_turn(memory: Memory, gate: RetrievalGate, owner: Owner, message: str) -> TurnMemory:
     """Look up memory only if the gate says this turn needs it."""

@@ -165,7 +165,7 @@ def test_places_failure_is_a_502_and_one_failed_search_is_still_a_partial_answer
     assert body["pick"] is not None
     assert "Part of the search failed, so these results may be incomplete." in body["warnings"]
     assert "filtered search failed" not in response.text
-    assert "requested_places" not in response.text
+    assert "requested_places" not in " ".join([*body["warnings"], body["explanation"]])
 
 
 def test_an_unexpected_crash_is_a_500_without_details(monkeypatch: pytest.MonkeyPatch) -> None:

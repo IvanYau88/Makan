@@ -6,7 +6,7 @@ It learns your taste and picks a spot that suits you, or that your whole group a
 
 > Work in progress.
 > The design is written down in [docs/DESIGN.md](docs/DESIGN.md).
-> The agent loop, the provider adapter, trace events, the nearby places tool, the data schema, memory, the graph workflow engine, the single-user recommendation, and the group consensus backend, and a first web channel for solo use exist so far.
+> The agent loop, the provider adapter, trace events, the nearby places tool, the data schema, memory, the graph workflow engine, the single-user recommendation, and the group consensus backend, and a web channel for solo use with a map and an execution view exist so far.
 > The group web page, accounts, and Telegram are not built yet.
 
 ## What it does
@@ -30,7 +30,7 @@ Makan is a hands-on tour of modern AI engineering, and each piece is visible.
 - **Graph workflows:** reviews, menus, hours, and distance are researched in parallel, then merged.
 - **Memory:** a structured store where every fact carries a timestamp and a confidence, so stale tastes fade instead of silently skewing results, whether it holds one person's taste or a group's.
 - **Group consensus:** a merge step that handles constraints, per-person scoring, and a least-misery pick with average score as the tiebreaker.
-- **Trace view:** every step the agent takes can be inspected.
+- **Trace view:** every step the agent takes can be inspected. The web app's Execution page shows the real eight-stage graph of each search made in the current tab.
 
 ## Why from scratch
 
@@ -94,6 +94,11 @@ npm start       # builds the page and serves it with the API at http://localhost
 npm run dev     # backend with reload, and the Vite dev server at http://localhost:5173
 ```
 
+The page has two views.
+Discover is a map beside a list of nearby options: pins and rows share one numbering, selecting either opens the same detail, and the radius, category filter, and sort are on the page.
+Execution shows what the server recorded for each search made in this tab, stage by stage, with inputs, outputs, timings, and errors.
+Its history holds the last 10 runs, only in the tab, and a reload clears it.
+
 Both find `.venv` on their own and say what to install if setup has not been done.
 Add `-- --demo` (for example `npm start -- --demo`) to run with sample data, which needs no API key and no network.
 Demo mode shows a banner and invents sample places around any location you give it.
@@ -106,6 +111,10 @@ The app refuses to start, and says what is missing, if either setting is absent.
 
 For front end work, `npm run dev` proxies `/api` to the backend on `http://127.0.0.1:8000`.
 In `web/` you also have `npm run lint` (eslint and prettier), `npm test` (vitest, with no network calls), and `npm run build`.
+
+The map uses OpenStreetMap's tiles by default, which suit light use only.
+For anything beyond a demo, set `MAKAN_MAP_TILE_URL` to a raster tile template from a provider you have an agreement with, and `MAKAN_MAP_ATTRIBUTION` to the credit it requires.
+The attribution is always shown beside the map.
 
 Browsers only share a location on `localhost` or over HTTPS.
 On any other address, "locate me" fails with a message and the page falls back to typed coordinates.

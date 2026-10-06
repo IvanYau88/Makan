@@ -31,6 +31,8 @@ def test_results_are_compact_and_nearest_first() -> None:
         "name": "Near Noodles",
         "category": "ramen_restaurant",
         "distance_m": 16,
+        "lat": NEAR.lat,
+        "lon": NEAR.lon,
     }
     assert [p["name"] for p in result["places"]] == ["Near Noodles", "Mid Cafe"]
 
