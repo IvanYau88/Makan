@@ -787,6 +787,9 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   The backend tests use generated keys with `httpx.MockTransport` for the key set and the admin API, and the page tests mock `@supabase/supabase-js`.
   The Postgres variants of the store tests run when `MAKAN_TEST_DATABASE_URL` is set.
   The hosted project is exercised only by hand, with the full flow in a real browser, and every test account and row is removed afterwards.
+- **Tried by hand:** the full flow ran in a real browser against the hosted project in demo mode: a wrong password, sign in, profile, taste, a search that greeted the person by name and read their memory, a place left out, sign out and in, export, and delete, after which the tables and the Auth user list were empty.
+  Sign-up itself was only seen failing, with "cannot be used" for a reserved address and "too many attempts" when the project's built-in email limit was hit, because the confirmation email could not be sent.
+  The test user was made through the admin API, already confirmed, and the sign-up success path is covered by the mocked tests only.
 - **No migration:** the tables and policies from `0001` to `0003` already hold everything, so none was added.
 
 ## Channels

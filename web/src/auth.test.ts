@@ -6,6 +6,7 @@ describe("failureFrom", () => {
     [{ code: "invalid_credentials", status: 400 }, "wrong_password"],
     [{ code: "email_not_confirmed", status: 400 }, "unconfirmed"],
     [{ code: "weak_password", status: 422 }, "weak_password"],
+    [{ code: "email_address_invalid", status: 400 }, "invalid_email"],
     [{ code: "over_request_rate_limit", status: 429 }, "rate_limited"],
     [{ code: "over_email_send_rate_limit", status: 429 }, "rate_limited"],
     [{ status: 429 }, "rate_limited"],

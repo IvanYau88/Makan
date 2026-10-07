@@ -6,7 +6,13 @@ import type { AuthSettings } from "./types";
 export const MIN_PASSWORD_CHARS = 8;
 
 export type AuthFailureKind =
-  "wrong_password" | "unconfirmed" | "weak_password" | "rate_limited" | "network" | "other";
+  | "wrong_password"
+  | "unconfirmed"
+  | "weak_password"
+  | "invalid_email"
+  | "rate_limited"
+  | "network"
+  | "other";
 
 /** A sign-up or sign-in failure, worded for the person. `kind` lets the page add the right help. */
 export class AuthFailure extends Error {
@@ -22,8 +28,9 @@ export class AuthFailure extends Error {
 export const MESSAGES: Record<AuthFailureKind, string> = {
   wrong_password: "That email and password do not match. Check them and try again.",
   unconfirmed: "Confirm your email first. Open the link in the message we sent you, then sign in.",
+  invalid_email: "That email address cannot be used. Check it for typos, or use another address.",
   weak_password: `Choose a longer or less common password, at least ${MIN_PASSWORD_CHARS} characters.`,
-  rate_limited: "Too many attempts. Wait a minute and try again.",
+  rate_limited: "Too many attempts, or too many emails sent. Try again in a little while.",
   network: "Can't reach the sign-in service. Check your connection and try again.",
   other: "Something went wrong signing you in. Try again.",
 };
@@ -39,6 +46,7 @@ export function failureFrom(error: unknown): AuthFailure {
   if (code === "invalid_credentials") kind = "wrong_password";
   else if (code === "email_not_confirmed") kind = "unconfirmed";
   else if (code === "weak_password") kind = "weak_password";
+  else if (code === "email_address_invalid") kind = "invalid_email";
   else if (
     code === "over_request_rate_limit" ||
     code === "over_email_send_rate_limit" ||

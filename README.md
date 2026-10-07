@@ -126,6 +126,10 @@ They use the Supabase project from "Hosted database", with its Auth, so the step
    A missing setting fails at startup and names it.
    `python -m makan.web --demo` works with accounts too, using sample places and the real Auth and database.
 
+Supabase's built-in email service is meant for trying things out: it allows only a few emails an hour for the whole project and refuses some addresses, so a sign-up can fail with "too many attempts" or "cannot be used".
+Set up custom SMTP in the project before real use.
+Deleting an account needs `SUPABASE_SERVICE_ROLE_KEY`, and the server will not start with accounts on and no key.
+
 The backend checks Supabase's access tokens against the project's published signing keys (`/auth/v1/.well-known/jwks.json`), so no shared secret is needed.
 The Account page signs up, signs in and out, makes the profile (the name Makan greets you with, and the location history opt-in, which is off by default), takes the taste form, exports everything stored about you, and deletes your data and account.
 The taste form keeps a soft "skip" (a cuisine ranked lower) apart from a hard "never" (an allergy, a diet, or a place you will not go to), and a hard never does not fade with time.
