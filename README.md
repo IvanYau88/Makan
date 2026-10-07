@@ -85,6 +85,31 @@ GitHub Actions runs the development checks on pull requests and pushes to `main`
 CI checks formatting with `ruff format --check .`.
 A second CI job lints, tests, and builds the front end, and tests the start scripts.
 
+### Hosted database
+
+Saved group sessions live in Postgres when `MAKAN_DATABASE_URL` is set, and in memory otherwise, so they are lost when the server restarts.
+Demo mode always uses memory.
+The steps below use a Supabase project, and any Postgres 13 or newer works the same way.
+
+1. Create a project and open its connection settings.
+   Copy the session pooler connection string, which looks like `postgresql://postgres.<project-ref>:<password>@<pooler-host>:5432/postgres`.
+   Use the pooler and not the direct database host, which may not be reachable over IPv4.
+2. Apply every file in `migrations/` once, in file name order, with the Supabase SQL editor, `psql`, or `supabase db push`.
+   There is no migration runner, so apply each new file when you pull it.
+3. Install the extra with `pip install ".[web,postgres]"`.
+   The `dev` extra already includes it.
+4. Put the connection string in your local `.env` as `MAKAN_DATABASE_URL=<session pooler connection string>`.
+   Never commit it, and never paste it into a shared place, since it holds the database password.
+5. Start the server.
+   A wrong URL fails at startup with an error that does not echo it.
+   Create a group, restart the server, and open the link again to see that it is still there.
+
+The connection is the backend's privileged one, so it bypasses row-level security, as the design requires for guests and links.
+Row-level security still protects the tables from anyone who reaches them through Supabase's own API with a user token.
+After applying `0003`, the project's security advisor no longer flags the two helper functions for a mutable search path.
+Do not run the test suite's live Postgres tests against a hosted database, because they create and drop their own schema.
+Point `MAKAN_TEST_DATABASE_URL` at a local or throwaway Postgres instead.
+
 ### Web app
 
 The web channel is a FastAPI backend (`src/makan/web`) and a React front end (`web/`, Vite and TypeScript).

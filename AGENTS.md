@@ -16,6 +16,8 @@ Read `docs/DESIGN.md` before making architectural decisions.
 - Allergies and other hard constraints stay in plain code, and a fixed-answer scorer never decides them.
   Paid Jev is only ever used when `MAKAN_SCORER_BACKEND=jev` is set, never as a fallback.
 - Change the schema with a new numbered file in `migrations/`, and update `makan.models` in the same change.
+  Never run the live schema tests against a hosted database: they create and drop their own schema, so use a local Postgres for `MAKAN_TEST_DATABASE_URL`.
+- Every function a migration creates pins `search_path` (see migration `0003`), so Supabase's security advisor stays clean.
 - Show people miles and feet, never meters or kilometers.
   Storage and the API stay in meters, and conversion happens at the display and input edges (`web/src/units.ts`, `distance_label` in `makan/places/base.py`).
 - Never send raw trace events to a client.
