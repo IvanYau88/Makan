@@ -75,7 +75,6 @@ pytest          # tests, with no network calls
 ruff check .    # lint
 ruff format .   # format
 mypy            # types
-npm test        # the start scripts' tests, from the repository root
 ```
 
 The database schema is plain SQL in `migrations/`, applied in file name order to any Postgres 13 or newer.
@@ -83,17 +82,31 @@ The schema and Postgres memory store tests run on a live Postgres when `MAKAN_TE
 They create and drop their own schema, so a throwaway database is enough.
 GitHub Actions runs the development checks on pull requests and pushes to `main`, using Python 3.12 and a throwaway Postgres service so the database tests run too.
 CI checks formatting with `ruff format --check .`.
-A second CI job lints, tests, and builds the front end, and tests the start scripts.
+A second CI job lints, tests, and builds the front end.
 
 ### Web app
 
 The web channel is a FastAPI backend (`src/makan/web`) and a React front end (`web/`, Vite and TypeScript).
-Run it from the repository root, in cmd, PowerShell, macOS, or Linux:
+Run it in two terminals, each with the commands for its own part.
+
+For development, start the backend from the repository root, then the front end:
 
 ```sh
-npm start       # builds the page and serves it with the API at http://localhost:8000
-npm run dev     # backend with reload, and the Vite dev server at http://localhost:5173
+.venv/bin/python -m makan.web --reload     # on Windows: .venv\Scripts\python -m makan.web --reload
+cd web && npm run dev                      # the page, at http://localhost:5173
 ```
+
+The backend listens on `http://127.0.0.1:8000`, and the Vite dev server proxies `/api` to it.
+Activate the virtual environment first (see Development) and `python -m makan.web` works on its own.
+
+To serve the page from the backend alone, as a deployed server would, build it once and run the backend:
+
+```sh
+npm --prefix web run build
+.venv/bin/python -m makan.web              # the page and the API, at http://localhost:8000
+```
+
+`python -m makan.web` takes `--demo`, `--reload`, `--host` (default `127.0.0.1`), and `--port` (default `8000`).
 
 The page has three views.
 Discover is a map beside a list of nearby options: pins and rows share one numbering, selecting either opens the same detail, and the radius, category filter, and sort are on the page.
@@ -112,8 +125,7 @@ This works in demo mode too: open the link in a second browser profile to be a s
 Execution shows what the server recorded for each search made in this tab, stage by stage, with inputs, outputs, timings, and errors.
 Its history holds the last 10 runs, only in the tab, and a reload clears it.
 
-Both find `.venv` on their own and say what to install if setup has not been done.
-Add `-- --demo` (for example `npm start -- --demo`) to run with sample data, which needs no API key and no network.
+Add `--demo` (for example `python -m makan.web --demo`) to run with sample data, which needs no API key and no network.
 Demo mode shows a banner and invents sample places around any location you give it.
 Latitude 90 or -90 finds nothing, which shows the no-results state.
 
@@ -122,8 +134,8 @@ The backend loads `.env` from the current directory itself, or the file named by
 Windows line endings are fine, and a variable already set in the environment is never overridden.
 The app refuses to start, and says what is missing, if either setting is absent.
 
-For front end work, `npm run dev` proxies `/api` to the backend on `http://127.0.0.1:8000`.
-In `web/` you also have `npm run lint` (eslint and prettier), `npm test` (vitest, with no network calls), and `npm run build`.
+For front end work, `npm run dev` in `web/` proxies `/api` to the backend on `http://127.0.0.1:8000`.
+There you also have `npm run lint` (eslint and prettier), `npm test` (vitest, with no network calls), and `npm run build`.
 
 The map uses OpenStreetMap's tiles by default, which suit light use only.
 For anything beyond a demo, set `MAKAN_MAP_TILE_URL` to a raster tile template from a provider you have an agreement with, and `MAKAN_MAP_ATTRIBUTION` to the credit it requires.

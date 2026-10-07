@@ -72,6 +72,3 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
-      - name: Test the start scripts
-        working-directory: .
-        run: npm test

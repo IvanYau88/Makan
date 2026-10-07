@@ -798,16 +798,18 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   Quotes, `export`, and comments are handled, and a variable that is already set in the environment, even to an empty value, is never overridden.
   It is a few dozen lines, so `python-dotenv` was not added.
   Calling the factory with an explicit mapping, as the tests do, never touches `.env`.
-- **One command:** the repository root has a `package.json` with no dependencies, and `scripts/run.mjs` behind `npm run dev` and `npm start`.
-  `npm run dev` runs uvicorn with reload on `src/` next to the Vite dev server, and `npm start` builds the page and runs only uvicorn, which serves it at http://localhost:8000.
-  `-- --demo` sets `MAKAN_DEMO=1`, so demo mode needs no shell specific syntax.
-  The script is plain Node with no shell syntax, so it is the same in cmd, PowerShell, macOS, and Linux.
-  Python was the alternative, but every user already needs Node for the front end, and `npm run` gives the same command on every platform.
-  It finds `.venv`, then `venv`, then the active virtual environment, and checks that the Python packages and `web/node_modules` are installed before it starts anything, printing the command that fixes what is missing.
-  If one process ends, it stops the other and exits with the same code, and on POSIX each process leads its own group so npm, Vite, and uvicorn's reload worker all stop.
-  On Windows it ends the tree with `taskkill`, and it starts npm through the shell because npm is a `.cmd` file there.
-  Node's built-in test runner covers the pure parts (`npm test` at the root), and CI runs it.
-  It has not been run on Windows by its author, so that path is unverified.
+- **Two commands:** the backend starts with `python -m makan.web` (`src/makan/web/__main__.py`), and the front end with `npm run dev` in `web/`, so each part has the command its own ecosystem expects and nothing hides the two processes.
+  A Node launcher at the repository root, behind `npm run dev` and `npm start`, started both together.
+  It was removed because it hid which process printed what, needed its own tests and CI step, and duplicated what uvicorn and Vite each do on their own.
+  The entry point takes `--demo` (sets `MAKAN_DEMO=1`, the same as the variable), `--reload`, `--host` and `--port`, defaulting to `127.0.0.1` and `8000`, which is where `web/vite.config.ts` proxies `/api`.
+  It runs uvicorn with the `create_app_from_env` factory, so the factory still loads `.env`, and it loads `.env` first itself so a `MAKAN_DEMO` or `MAKAN_WEB_DIST` set there counts for its own checks.
+  With `--reload` it watches only the `makan` package, and the reload worker inherits the environment, so `--demo` survives a restart.
+  It serves the built page from `web/dist` (or `MAKAN_WEB_DIST`) when that exists, so a deployed server is `npm --prefix web run build` once and then the same command.
+  When the page is not built it says so and serves the API only.
+  Before starting it checks the optional packages: FastAPI and uvicorn always, and DuckDB unless the run is a demo, since only the live Overture provider needs it.
+  It names what is missing and prints the `pip install -e ".[web,overture]"` that fixes it.
+  Importing `makan.web` without FastAPI gives the same hint, because the package imports the app eagerly.
+  Windows works the same, with `.venv\Scripts\python` in place of `.venv/bin/python`.
 - **Location:** "locate me" asks the browser once per tap, with a 10 second timeout, and rounds the result to about 100 m before it leaves the page.
   If the browser refuses, is unsupported, or is on an insecure origin, the page says why, opens manual latitude and longitude fields, and moves focus to them.
   Typed coordinates are validated in the page before any request.
