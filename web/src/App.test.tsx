@@ -281,7 +281,9 @@ describe("Discover", () => {
 
     finish(answer({ ...RESULT, pick: null, places: [place("Only Place", 50, { rank: 1 })] }));
     expect(await screen.findByRole("button", { name: /^1\. Only Place/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^1\. Mid Thai/ })).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /^1\. Mid Thai/ })).not.toBeInTheDocument(),
+    );
     expect(document.querySelector('[data-stale="true"]')).toBeNull();
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
   });
