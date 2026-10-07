@@ -8,6 +8,7 @@ The checks in the second half run the migrations on a real Postgres and skip unl
 from __future__ import annotations
 
 import dataclasses
+import re
 import types
 import typing
 from collections.abc import Iterator
@@ -66,6 +67,16 @@ def test_migrations_are_numbered_in_order() -> None:
     assert files
     for index, path in enumerate(files, start=1):
         assert path.name.startswith(f"{index:04d}_"), path.name
+
+
+def test_every_migration_function_pins_its_search_path() -> None:
+    sql = "\n".join(path.read_text(encoding="utf-8") for path in migration_files())
+    created = set(re.findall(r"^create (?:or replace )?function (\w+)\(", sql, re.M | re.I))
+    pinned = set(
+        re.findall(r"^alter function (\w+)\([^)]*\)\s+set search_path\b", sql, re.M | re.I)
+    )
+    assert created == {"makan_current_user_id", "makan_touch_updated_at"}
+    assert created <= pinned
 
 
 def test_models_cover_every_table() -> None:
@@ -161,6 +172,28 @@ def test_every_table_enforces_row_level_security_with_a_policy(db: Any) -> None:
             (table,),
         ).fetchone()[0]
         assert policies > 0, table
+
+
+def test_helper_functions_have_a_pinned_search_path(db: Any) -> None:
+    rows = db.execute(
+        "select proname, proconfig from pg_proc "
+        "where pronamespace = current_schema()::regnamespace and proname like 'makan\\_%%'"
+    ).fetchall()
+    assert {name for name, _ in rows} == {"makan_current_user_id", "makan_touch_updated_at"}
+    for name, config in rows:
+        assert config == ['search_path=""'], name
+
+
+def test_user_mapping_works_with_the_pinned_search_path(db: Any, app_role: str) -> None:
+    schema = db.execute("select current_schema()").fetchone()[0]
+    uid = uuid4()
+    db.execute("insert into users (id) values (%s)", (uid,))
+    db.execute("insert into profiles (user_id) values (%s)", (uid,))
+    act_as(db, app_role, uid)
+    db.execute("set search_path to pg_temp")  # the caller's path never reaches the functions
+    assert db.execute(f"select {schema}.makan_current_user_id()").fetchone()[0] == uid
+    assert db.execute(f"update {schema}.profiles set display_name = 'x'").rowcount == 1
+    assert db.execute(f"select count(*) from {schema}.profiles").fetchone()[0] == 1
 
 
 def test_session_expiry_has_no_default_retention(db: Any) -> None:

@@ -260,6 +260,12 @@ Supabase can run the same files through its own migration tooling.
   The backend checks the link token and `expires_at` itself, and it creates the participant row when someone joins through a link.
 - Deleting a user cascades to their profile, sessions, participants, memory facts, and trace events, which is the data deletion the Profiles section promises.
   Export has no schema support to add, since every owned row is reachable by `user_id`.
+- Every function a migration creates pins `search_path`, because a function that does not resolves its names through its caller's path, and Supabase's security advisor flags it as a mutable search path.
+  Migration `0003_pin_function_search_path.sql` sets it to empty on `makan_current_user_id` and `makan_touch_updated_at`.
+  That is enough because neither body reads a table or calls a user function, and `pg_catalog` is always searched.
+  It is a new migration and not an edit of `0001`, since `0001` is already applied to the hosted project.
+  The model does not change, because no table or column does.
+  `tests/test_schema.py` fails if a function created in any migration is not pinned, and on a live Postgres it checks the stored setting and that the user mapping and the `updated_at` trigger still work under a hostile caller path.
 - Tests that check the migrations on a live Postgres read `MAKAN_TEST_DATABASE_URL` and skip when it is unset.
   They create and drop their own schema and role, and they use the `psycopg` dev dependency.
   Nothing in the test suite touches the network.
@@ -624,6 +630,14 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   When it is blank, sessions live in memory and a warning says they are lost on restart, and demo mode always keeps them in memory.
   Apply the files in `migrations/` first, since there is no migration runner.
   A connection pool and reconnecting after a dropped connection are follow-ups.
+- **Hosted database:** the same URL setting works against a hosted Supabase project through its session pooler connection string, because the store only needs plain Postgres over one long-lived connection.
+  The direct database host is not used, since it can be unreachable over IPv4.
+  The pooler role bypasses row-level security, which is what the store needs as the backend's privileged connection.
+  Verified on a hosted project with migrations `0001` and `0002` applied:
+  a group and its participants survived a server restart and the shared link still read, with the participant's own inputs only for their own token;
+  with `request.jwt.claims` set per user inside a rolled-back transaction, each user saw only their own rows in all six tables, and a null, empty, or subject-less identity saw none, for both the `authenticated` and `anon` roles;
+  and the purge deleted an expired session with its participants, guest memory fact, and trace events while keeping an unexpired one.
+  The schema tests are never run against a hosted database, because they create and drop their own schema.
 - **Endpoints**, under `/api/groups`, with the same error shape as the rest of the API:
   - `POST /api/groups` takes `latitude`, `longitude`, `request`, optional `radius_m` and `display_name`, and returns the `link_token`, the host's `participant_token`, the session, and `you`.
   - `GET /api/groups/{link_token}` returns the session with who is in and whether each has shared, and `you` when a token is sent.
