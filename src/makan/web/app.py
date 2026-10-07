@@ -2,7 +2,9 @@
 
 One endpoint turns a location and a request into a recommendation, and everything else is
 plumbing around `makan.solo.recommend`. No account is needed: the session it creates has one
-participant, is never shared, and is not stored.
+participant, is never shared, and is not stored. A request that carries a valid access token
+is a signed-in person's, and reads their stored memory and greets them by name (see
+`makan.web.accounts`).
 
 Run it with `python -m makan.web` (see `makan.web.__main__`). See the README for the run modes.
 """
@@ -20,7 +22,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -35,6 +37,7 @@ from pydantic import (
 )
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from makan.accounts.tokens import Identity
 from makan.browse import BrowseRequest, BrowseResult, browse
 from makan.config import Config, ConfigError
 from makan.env import load_dotenv
@@ -53,8 +56,14 @@ from makan.solo import (
     build_solo_graph,
     recommend,
 )
+from makan.web.accounts import (
+    AccountServices,
+    build_account_services,
+    optional_identity,
+    register_account_routes,
+)
 from makan.web.demo import DemoPlaces, DemoProvider
-from makan.web.errors import error, public_warnings, workflow_failure
+from makan.web.errors import ApiError, error, public_warnings, workflow_failure
 from makan.web.groups import register_group_routes
 from makan.web.purge import purge_forever
 from makan.web.runs import Outcome, RunRecorder, SearchMode
@@ -66,7 +75,8 @@ DEFAULT_WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 
 class RecommendBody(BaseModel):
-    """What the browser sends. There is deliberately no user id: guests are the only caller.
+    """What the browser sends. There is deliberately no user id: who is asking comes only from
+    a verified access token in the `Authorization` header, never from the body.
 
     The `mode` is always stated, so no request is guessed at. `recommend` needs a `request`, and
     `browse` takes none: there is nothing to read, and no model is called.
@@ -111,10 +121,15 @@ def create_app(
     static_dir: Path | None = None,
     sessions: GroupSessions | None = None,
     scorer: Scorer | None = None,
+    accounts: AccountServices | None = None,
 ) -> FastAPI:
     """Build the app around ready providers. Tests pass fakes, and the CLI passes real ones.
 
     A `scorer` adds soft request signals to solo recommendations. Without one there are none.
+
+    With `accounts`, a signed-in person's solo searches read their memory and greet them, and
+    `/api/me` serves their profile, taste, export, and deletion. Without it everyone is a guest,
+    and an `Authorization` header on a search is ignored.
 
     Group sessions are kept in `sessions`, or in memory for the life of the process when it is None.
     While the app runs it deletes expired sessions at startup and then every
@@ -149,6 +164,10 @@ def create_app(
         )
         return error(422, "invalid_request", f"Check these fields: {fields}.")
 
+    @app.exception_handler(ApiError)
+    async def api_error(_: Request, exc: ApiError) -> JSONResponse:
+        return error(exc.status, exc.code, str(exc), exc.headers)
+
     @app.exception_handler(StarletteHTTPException)
     async def http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
         return error(exc.status_code, "http_error", str(exc.detail))
@@ -167,7 +186,12 @@ def create_app(
                 "attribution": config.map_attribution,
                 "attribution_url": config.map_attribution_url or None,
             },
+            "auth": accounts.public_config() if accounts else None,
         }
+
+    app.state.accounts = accounts
+    if accounts is not None:
+        register_account_routes(app, accounts)
 
     # The stages of the full solo graph, so a browse run can show the ones it skipped.
     plan = tuple(
@@ -178,7 +202,9 @@ def create_app(
     )
 
     def run_search(
-        body: RecommendBody, on_update: Callable[[dict[str, Any]], None] | None = None
+        body: RecommendBody,
+        on_update: Callable[[dict[str, Any]], None] | None = None,
+        identity: Identity | None = None,
     ) -> Answer:
         """Run the search with a recorder on its trace. Synchronous, so call it off the loop."""
         center = PlaceQuery.near(body.latitude, body.longitude, body.radius_m)
@@ -206,11 +232,20 @@ def create_app(
                 return Answer(recorder, failure=workflow_failure(found.graph))
             return Answer(recorder, _browse_json(found, mode, recorder))
         assert body.request is not None  # a recommendation always has one, see RecommendBody
+        # `identity` is None for a guest, and always when accounts are off.
         result = recommend(
-            SoloRequest(body.latitude, body.longitude, body.request, body.radius_m),
+            SoloRequest(
+                body.latitude,
+                body.longitude,
+                body.request,
+                body.radius_m,
+                user_id=identity.user_id if identity else None,
+                display_name=_name_of(accounts, identity),
+            ),
             provider=provider,
             places=places,
             config=config,
+            memory=accounts.accounts.memory if identity and accounts else None,
             sink=recorder,
             scorer=scorer,
         )
@@ -223,10 +258,12 @@ def create_app(
         return Answer(recorder, payload)
 
     @app.post("/api/recommendations")
-    async def recommendations(body: RecommendBody) -> JSONResponse:
+    async def recommendations(
+        body: RecommendBody, identity: Annotated[Identity | None, Depends(optional_identity)]
+    ) -> JSONResponse:
         # The workflow is synchronous and runs its own event loop, so it must leave ours.
         try:
-            answer = await run_in_threadpool(run_search, body)
+            answer = await run_in_threadpool(run_search, body, None, identity)
         except Exception:
             log.exception("recommendation crashed")
             return error(500, "server_error", "Something went wrong on our side. Try again.")
@@ -235,7 +272,9 @@ def create_app(
         return JSONResponse(answer.payload)
 
     @app.post("/api/recommendations/stream")
-    async def recommendations_stream(body: RecommendBody) -> StreamingResponse:
+    async def recommendations_stream(
+        body: RecommendBody, identity: Annotated[Identity | None, Depends(optional_identity)]
+    ) -> StreamingResponse:
         """The same answer as one JSON object per line, led by the run as its stages progress.
 
         Lines are `{"type": "run", "run": ...}` while it works, then one last `result` line with
@@ -249,7 +288,7 @@ def create_app(
 
         def work() -> None:
             try:
-                answer = run_search(body, lambda run: push({"type": "run", "run": run}))
+                answer = run_search(body, lambda run: push({"type": "run", "run": run}), identity)
                 if answer.failure is not None:
                     push(
                         {
@@ -340,7 +379,8 @@ def create_app_from_env(env: Mapping[str, str] | None = None) -> FastAPI:
             config=config,
             mode="demo",
             static_dir=dist,
-            sessions=_default_sessions(config),  # demo mode never needs a database
+            sessions=_default_sessions(config),  # demo group sessions never need a database
+            accounts=build_account_services(config),  # accounts do, when Supabase is set
         )
     try:
         config = Config.from_env(env)
@@ -358,7 +398,22 @@ def create_app_from_env(env: Mapping[str, str] | None = None) -> FastAPI:
         mode="live",
         static_dir=dist,
         sessions=_group_sessions(config),
+        accounts=build_account_services(config),
     )
+
+
+def _name_of(accounts: AccountServices | None, identity: Identity | None) -> str | None:
+    """The signed-in person's name for the greeting, or None for a guest or no profile yet.
+
+    A lookup that fails only costs the greeting, not the search.
+    """
+    if accounts is None or identity is None:
+        return None
+    try:
+        return accounts.accounts.display_name(identity.user_id)
+    except Exception:
+        log.exception("could not read the display name")
+        return None
 
 
 def _default_sessions(config: Config) -> GroupSessions:
@@ -466,6 +521,7 @@ def _recommendation_json(
         "candidate_count": len(rec.ranked),
         "truncated": rec.truncated,
         "explanation": explanation,
+        "greeting": rec.greeting,
         "warnings": warnings,
         "stale_facts": [
             {
@@ -502,6 +558,7 @@ def _browse_json(result: BrowseResult, mode: Mode, recorder: RunRecorder) -> dic
         "candidate_count": len(result.places),
         "truncated": result.truncated,
         "explanation": "The places nearest to you come first. Makan made no recommendation.",
+        "greeting": None,
         "warnings": list(result.warnings),
         "stale_facts": [],
         "data_source": result.data_source,

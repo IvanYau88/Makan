@@ -411,6 +411,12 @@ function ResultsHeader({
       <h2 id="result-heading" ref={headingRef} tabIndex={-1} className="section-title">
         {total === 0 ? "No places found" : browsed ? "Places nearby" : "Nearby options"}
       </h2>
+      {result.greeting && (
+        <p className="greeting">
+          {result.greeting}
+          {result.pick ? ` Your top pick is ${result.pick.name}.` : ""}
+        </p>
+      )}
       {total > 0 && (
         <p className="hint">
           {filtered ? `${shown} of ${total} shown` : `${total} ${browsed ? "places" : "options"}`} ·

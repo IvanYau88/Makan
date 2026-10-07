@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 from makan.graph import GraphLimits
 from makan.loop import Limits
@@ -46,6 +47,28 @@ class ScorerConfig:
 
 
 @dataclass(frozen=True)
+class SupabaseConfig:
+    """The Supabase project that holds accounts. Present only when `SUPABASE_URL` is set.
+
+    `anon_key` is the project's public key and is sent to the browser. `service_role_key` is
+    privileged, stays on the server, and is hidden from `repr` so it cannot reach a log.
+    """
+
+    url: str  # the project URL without a trailing slash
+    anon_key: str
+    service_role_key: str = field(repr=False)
+    redirect_url: str = ""  # where the confirmation email sends the person, or "" for this origin
+
+    @property
+    def issuer(self) -> str:
+        return f"{self.url}/auth/v1"
+
+    @property
+    def jwks_url(self) -> str:
+        return f"{self.issuer}/.well-known/jwks.json"
+
+
+@dataclass(frozen=True)
 class Config:
     model: str
     openrouter_api_key: str = field(default="", repr=False)
@@ -60,6 +83,7 @@ class Config:
     map_attribution: str = DEFAULT_MAP_ATTRIBUTION  # shown beside the map whenever it is
     map_attribution_url: str = DEFAULT_MAP_ATTRIBUTION_URL  # where that attribution links, or ""
     scorer: ScorerConfig = field(default_factory=ScorerConfig)
+    supabase: SupabaseConfig | None = None  # None leaves accounts off, so everyone is a guest
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -115,7 +139,39 @@ class Config:
                 model=env.get("MAKAN_SCORER_MODEL", "").strip(),
                 timeout_s=float(_int(env, "MAKAN_SCORER_TIMEOUT_SECONDS", 15)),
             ),
+            supabase=_supabase(env),
         )
+
+
+def _supabase(env: Mapping[str, str]) -> SupabaseConfig | None:
+    """Accounts are on when `SUPABASE_URL` is set, and then every setting they need must be."""
+    url = env.get("SUPABASE_URL", "").strip().rstrip("/")
+    if not url:
+        return None
+    if not _is_http_url(url):
+        raise ConfigError("SUPABASE_URL must be an http or https URL")
+    redirect = env.get("MAKAN_AUTH_REDIRECT_URL", "").strip()
+    if redirect and not _is_http_url(redirect):
+        raise ConfigError("MAKAN_AUTH_REDIRECT_URL must be an http or https URL")
+    anon = env.get("SUPABASE_ANON_KEY", "").strip()
+    service = env.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    missing = [
+        name
+        for name, value in (
+            ("SUPABASE_ANON_KEY", anon),
+            ("SUPABASE_SERVICE_ROLE_KEY", service),
+            ("MAKAN_DATABASE_URL", env.get("MAKAN_DATABASE_URL", "").strip()),
+        )
+        if not value
+    ]
+    if missing:
+        raise ConfigError(f"accounts need {', '.join(missing)} when SUPABASE_URL is set")
+    return SupabaseConfig(url, anon, service, redirect)
+
+
+def _is_http_url(value: str) -> bool:
+    parts = urlsplit(value)
+    return parts.scheme in ("http", "https") and bool(parts.netloc)
 
 
 def _int(env: Mapping[str, str], name: str, default: int) -> int:

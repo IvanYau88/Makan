@@ -111,8 +111,8 @@ def test_missing_packages_are_named_with_the_fix(
 
 def test_duckdb_is_only_needed_for_live_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("importlib.util.find_spec", lambda name: None)
-    assert entry.missing_packages(demo=True) == ["fastapi", "uvicorn"]
-    assert entry.missing_packages(demo=False) == ["fastapi", "uvicorn", "duckdb"]
+    assert entry.missing_packages(demo=True) == ["fastapi", "uvicorn", "jwt"]
+    assert entry.missing_packages(demo=False) == ["fastapi", "uvicorn", "jwt", "duckdb"]
 
 
 def test_a_missing_named_env_file_stops_the_start(

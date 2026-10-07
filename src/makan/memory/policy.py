@@ -16,18 +16,19 @@ from makan.models import MEMORY_KINDS, MEMORY_SOURCES, MemoryFact, MemoryKind, M
 
 @dataclass(frozen=True)
 class DecayPolicy:
-    """`half_life` of None means the fact never decays. Nothing uses that by default."""
+    """`half_life` of None means the fact never decays. Hard constraints use that."""
 
     half_life: timedelta | None
 
 
 def _default_decay() -> dict[MemoryKind, DecayPolicy]:
-    # Every kind decays. Whether hard constraints such as allergies should be exempt is an
-    # open question in docs/DESIGN.md, so this does not decide it.
+    # Tastes and ratings fade. A hard constraint such as an allergy never does: a person who
+    # said "never" has not changed their mind because time passed, and a faded allergy would
+    # stop being a warning. They change it by saying so, which supersedes or forgets the fact.
     return {
         "cuisine_like": DecayPolicy(timedelta(days=180)),
         "cuisine_dislike": DecayPolicy(timedelta(days=180)),
-        "constraint": DecayPolicy(timedelta(days=365)),
+        "constraint": DecayPolicy(None),
         "place_rating": DecayPolicy(timedelta(days=90)),
     }
 

@@ -146,3 +146,57 @@ def test_scorer_is_off_by_default_and_read_from_the_environment() -> None:
 def test_a_hosted_scorer_without_a_model_is_a_config_error() -> None:
     with pytest.raises(ConfigError, match="MAKAN_SCORER_MODEL"):
         Config.from_env({"MAKAN_MODEL": "m", "MAKAN_SCORER_BACKEND": "jev"})
+
+
+# Accounts
+
+SUPABASE = {
+    "MAKAN_MODEL": "m",
+    "SUPABASE_URL": "https://project.supabase.test/",
+    "SUPABASE_ANON_KEY": "anon",
+    "SUPABASE_SERVICE_ROLE_KEY": "service",
+    "MAKAN_DATABASE_URL": "postgresql://host/db",
+}
+
+
+def test_accounts_are_off_without_a_supabase_url() -> None:
+    assert Config.from_env({"MAKAN_MODEL": "m"}).supabase is None
+    blank = {"MAKAN_MODEL": "m", "SUPABASE_URL": " ", "SUPABASE_ANON_KEY": "anon"}
+    assert Config.from_env(blank).supabase is None
+
+
+def test_accounts_read_the_supabase_settings() -> None:
+    supabase = Config.from_env(
+        {**SUPABASE, "MAKAN_AUTH_REDIRECT_URL": "https://makan.test/"}
+    ).supabase
+    assert supabase is not None
+    assert supabase.url == "https://project.supabase.test"  # no trailing slash
+    assert supabase.issuer == "https://project.supabase.test/auth/v1"
+    assert supabase.jwks_url == "https://project.supabase.test/auth/v1/.well-known/jwks.json"
+    assert (supabase.anon_key, supabase.service_role_key) == ("anon", "service")
+    assert supabase.redirect_url == "https://makan.test/"
+    assert Config.from_env(SUPABASE).supabase.redirect_url == ""  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    "missing", ["SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "MAKAN_DATABASE_URL"]
+)
+def test_accounts_need_every_setting_once_a_url_is_set(missing: str) -> None:
+    env = {k: v for k, v in SUPABASE.items() if k != missing}
+    with pytest.raises(ConfigError, match=missing):
+        Config.from_env(env)
+
+
+@pytest.mark.parametrize(
+    "override",
+    [{"SUPABASE_URL": "project.supabase.test"}, {"MAKAN_AUTH_REDIRECT_URL": "javascript:alert(1)"}],
+)
+def test_a_malformed_supabase_or_redirect_url_is_rejected(override: dict[str, str]) -> None:
+    with pytest.raises(ConfigError):
+        Config.from_env({**SUPABASE, **override})
+
+
+def test_the_service_role_key_is_not_leaked_by_repr() -> None:
+    config = Config.from_env({**SUPABASE, "SUPABASE_SERVICE_ROLE_KEY": "very-secret-service-key"})
+    assert "very-secret-service-key" not in repr(config)
+    assert "very-secret-service-key" not in repr(config.supabase)

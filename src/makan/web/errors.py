@@ -80,3 +80,15 @@ def _public(warning: str) -> str:
     if _FAILED_STEP.match(warning):
         return "Part of the search failed, so these results may be incomplete."
     return warning
+
+
+class ApiError(Exception):
+    """A failure a route raises on purpose. The message is safe to show the caller."""
+
+    def __init__(
+        self, status: int, code: str, message: str, headers: Mapping[str, str] | None = None
+    ) -> None:
+        super().__init__(message)
+        self.status = status
+        self.code = code
+        self.headers = headers

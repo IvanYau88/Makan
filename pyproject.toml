@@ -12,7 +12,7 @@ dependencies = ["httpx>=0.27"]
 
 [project.optional-dependencies]
 overture = ["duckdb>=1.1"]
-web = ["fastapi>=0.115", "uvicorn>=0.30"]
+web = ["fastapi>=0.115", "uvicorn>=0.30", "pyjwt[crypto]>=2.8"]
 postgres = ["psycopg[binary]>=3.2"]
 dev = [
     "pytest>=8",
@@ -22,6 +22,7 @@ dev = [
     "psycopg[binary]>=3.2",
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    "pyjwt[crypto]>=2.8",
     "httpx2>=2",
 ]
 

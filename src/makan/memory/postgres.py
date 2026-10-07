@@ -8,6 +8,7 @@ extra.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Collection, Sequence
 from datetime import datetime
 from typing import Any
@@ -29,11 +30,16 @@ _COLUMNS = (
 
 
 class PostgresMemoryStore:
-    def __init__(self, conn: psycopg.Connection[Any]) -> None:
+    """Pass `lock` when something else uses the same connection, so they take turns."""
+
+    def __init__(
+        self, conn: psycopg.Connection[Any], *, lock: threading.Lock | None = None
+    ) -> None:
         self._conn = conn
+        self._lock = lock or threading.Lock()
 
     def add(self, fact: MemoryFact, *, supersedes: Sequence[UUID] = ()) -> None:
-        with self._conn.transaction():
+        with self._lock, self._conn.transaction():
             self._conn.execute(
                 f"insert into memory_facts ({_COLUMNS}) "
                 "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
@@ -63,10 +69,11 @@ class PostgresMemoryStore:
                     raise ValueError("a fact to supersede is missing or already superseded")
 
     def get(self, fact_id: UUID) -> MemoryFact | None:
-        row = self._conn.execute(
-            f"select {_COLUMNS} from memory_facts where id = %s",
-            (fact_id,),
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                f"select {_COLUMNS} from memory_facts where id = %s",
+                (fact_id,),
+            ).fetchone()
         return None if row is None else _fact(row)
 
     def active(self, owner: Owner, kinds: Collection[MemoryKind] | None = None) -> list[MemoryFact]:
@@ -86,15 +93,31 @@ class PostgresMemoryStore:
             sql += " and kind = any(%s)"
             params.append(list(kinds))
         sql += " order by observed_at desc, id"
-        return [_fact(row) for row in self._conn.execute(sql, params).fetchall()]
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return [_fact(row) for row in rows]
 
     def reconfirm(self, fact_id: UUID, *, confidence: float, at: datetime) -> MemoryFact | None:
-        row = self._conn.execute(
-            "update memory_facts set confidence = %s, last_confirmed_at = %s "
-            f"where id = %s and superseded_by is null returning {_COLUMNS}",
-            (confidence, at, fact_id),
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "update memory_facts set confidence = %s, last_confirmed_at = %s "
+                f"where id = %s and superseded_by is null returning {_COLUMNS}",
+                (confidence, at, fact_id),
+            ).fetchone()
         return None if row is None else _fact(row)
+
+    def forget(self, fact_id: UUID, *, user_id: UUID) -> bool:
+        with self._lock:
+            deleted = self._conn.execute(
+                "with recursive history as ("
+                " select id from memory_facts where id = %s and user_id = %s"
+                " union"
+                " select f.id from memory_facts f join history h on f.superseded_by = h.id"
+                " where f.user_id = %s"
+                ") delete from memory_facts where id in (select id from history)",
+                (fact_id, user_id, user_id),
+            )
+        return deleted.rowcount > 0
 
 
 def _fact(row: tuple[Any, ...]) -> MemoryFact:

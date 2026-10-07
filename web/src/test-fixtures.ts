@@ -107,6 +107,7 @@ export const RESULT: Recommendation = {
   candidate_count: 3,
   truncated: false,
   explanation: "Try Mid Thai.",
+  greeting: null,
   warnings: [
     "Opening hours, menus, prices, and public reviews are unavailable; verify before going.",
   ],
@@ -184,5 +185,6 @@ export const BROWSE_RESULT: Recommendation = {
   runners_up: [],
   places: BROWSE_PLACES,
   explanation: "The places nearest to you come first. Makan made no recommendation.",
+  greeting: null,
   run: browseRun(),
 };
