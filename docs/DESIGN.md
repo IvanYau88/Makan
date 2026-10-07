@@ -552,14 +552,17 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   When nobody shared a taste there is no score to state, so it says that, and that the pick is the best match for the request and then the nearest place.
   The stated lowest score is rounded down to 2 decimals, so "nobody scored it below X" is true of the number shown, and everyone tied at the lowest score is named.
   Likes and dislikes appear only as counts, such as "liked by 2 of 3".
-- **Who sees what:** the result is for the host only, and it names a person next to a constraint they chose to share, because it must warn about the ones it cannot verify and say who refuses what.
+- **Who sees what:** the host's result names a person next to a constraint they chose to share, because it must warn about the ones it cannot verify and say who refuses what.
+  Once the host has closed the session, every participant also gets the result, in a second wording that names nobody next to what they shared: no least-happy name, no "Sam refuses seafood" (it says "refused by someone in the group: seafood"), allergies, diets, and budgets listed without a name, and the people with no taste counted rather than named.
+  The pick, the runners-up, the scores, and the exclusions are the same in both, because both come from one run of the workflow.
+  `GroupRecommendation` carries both explanations and each option carries both warning lists, so the second wording is built in the same step as the first and the two cannot drift.
   Anyone with the link sees who is in the session and whether each person has shared, and never what they shared.
   Everyone sees their own inputs when they send their participant token.
   `GroupInput` leaves participant ids out of its repr, so trace events never hold one.
   Step outputs in the trace do hold the inputs people shared, which stay tied to the session and go with it when it is purged.
 - **No new environment variables** for the logic itself.
   Model, loop, and graph settings apply as in the solo flow, and the session settings are under "Group session decisions".
-- **Follow-ups:** a way for participants to read the host's result, per-person weights, opening hours and menu data to verify more constraints, refusals checked against a place's full category taxonomy, stored memory for signed-in members with their consent, and the group page and its Open Graph card.
+- **Follow-ups:** per-person weights, opening hours and menu data to verify more constraints, refusals checked against a place's full category taxonomy, stored memory for signed-in members with their consent, and the group page's Open Graph card.
 
 ## Solo use
 
@@ -573,6 +576,7 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 
 - "Locate me" creates a shareable session link, and a group forms when the user shares it.
 - Friends open the link in a browser with no account and enter their own preferences.
+  The page for this is described under "Group page decisions".
 - The link carries an Open Graph preview card so it looks right in iMessage, SMS, RCS, and other chat apps.
 - The web app can be added to the home screen so it feels like an app.
 - Session data expires after a set period.
@@ -604,7 +608,7 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   Every server process runs its own loop, which is safe because the delete only touches rows already expired, so concurrent runs only race to delete the same rows.
   A host that stops the server between requests purges only while it runs, so the hosting choice must keep the process up long enough, or add a database-side job.
 - **Closing:** only the host can close, and closing twice keeps the first time.
-  A closed session still reads, and the host can still get its result, because closing freezes the inputs.
+  A closed session still reads, and its participants can still get its result, because closing freezes the inputs.
   Nobody can join it or change their inputs.
 - **Closing and expiry are atomic with the writes they guard:** the service checks the session first for a quick, clear error, but the store checks it again as part of each write, so a close or an expiry that lands in between cannot let a join or an update through.
   `add_participant`, `update_participant`, and `close` each take a `now` and raise `SessionExpired` or `SessionClosed` themselves.
@@ -628,15 +632,27 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   - `PUT /api/groups/{link_token}/me` replaces the caller's `constraints`, `preferences`, and optionally `display_name`, and rejects unknown fields.
   - `POST /api/groups/{link_token}/close` and `POST /api/groups/{link_token}/result` are for the host.
     The result runs the workflow and is a POST because each call costs a model call.
-    It holds `pick` and `runners_up` with `lowest_score`, `lowest_scorers`, `average_score`, and `warnings` for each, plus `excluded`, `explanation`, `warnings`, `participant_count`, `pending`, `uncounted`, `data_source`, `attribution`, `partial`, and `mode`.
+    It holds `pick` and `runners_up` with `lowest_score`, `lowest_scorers`, `average_score`, and `warnings` for each, plus `excluded`, `explanation`, `warnings`, `participant_count`, `pending`, `uncounted`, `data_source`, `attribution`, `partial`, `mode`, and `audience`.
+  - `GET /api/groups/{link_token}/result` is how a closed group's result is read.
+    Any participant of the session may call it with their token, and it answers 409 `session_open` until the host has closed the group, since until then the inputs can still change.
+    The host gets the same body as the POST.
+    Everyone else gets `audience: "member"`, with `lowest_scorers` left out, each exclusion holding `refused_terms` in place of `refusals`, option warnings without names, and `uncounted_count` in place of `uncounted`.
+    The page reads only this route, for the host and for friends alike, so the POST is kept for callers that want the host's result before closing.
+  - **The closed result is worked out once:** closing freezes the inputs, so the result cannot change, and a model call per reader per reload would be wasteful and could show two people different picks.
+    `GET .../result` keeps the recommendation in a small in-process cache keyed by session, holding up to 128 sessions.
+    Only a complete result is kept, so a search that partly failed is tried again on the next read.
+    An entry goes when its session expires, using the same clock as the session service, and the service still refuses an expired session before the cache is looked at.
+    The cache holds what people shared, so it is memory only, a restart empties it, and the next read computes it again.
+    With several server processes each has its own, which is correct and only costs one more run.
   - An unknown or malformed link is 404 `session_not_found`, an expired session is 410 `session_expired`, a closed one is 409 `session_closed`, and a full one is 409 `session_full`.
+    Asking for the result of a group that is still open is 409 `session_open`.
     A missing token is 401 `participant_required`, a token that is not in this session is 403 `not_a_participant`, and a guest asking for a host action is 403 `host_only`.
     Bad input is 422 `invalid_request`, and workflow failures map as they do for the solo endpoint.
     A score is null when nobody shared a taste.
   - Every group route is wrapped so that anything it does not answer for itself, such as a store whose connection dropped, is logged with its traceback and returned as 500 `server_error` in the same JSON shape, with no exception text.
     Session rule failures and bad input keep their own errors.
   - The shared error helpers moved to `makan.web.errors`, and the routes are plain functions that FastAPI runs in its thread pool, since the stores and the workflow are synchronous.
-- **Follow-ups:** the group page, the Open Graph preview card, a read endpoint for the host's result, and a connection pool.
+- **Follow-ups:** the Open Graph preview card, and a connection pool.
 
 ## Profiles and auth
 
@@ -805,7 +821,55 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   An empty result offers a search over the next larger radius.
   A Pick for me search with nothing typed is never filled in for the person: the form asks "Anything in mind, or no preference?", marks the box invalid, moves focus to it, and sends nothing.
   Every way to start a search (the button, Use my location, Search this area, Try again, and the wider search) asks the same question.
-- **Follow-ups:** a geocoder for typed addresses, sign-in, the group page for the shared link, request rate limits and daily caps, a configurable port for the one command start, retrying a rate limited model call, durable and authorized run history, and a CORS allow-list once hosting is chosen.
+- **Follow-ups:** a geocoder for typed addresses, sign-in, request rate limits and daily caps, a configurable port for the one command start, retrying a rate limited model call, durable and authorized run history, and a CORS allow-list once hosting is chosen.
+
+### Group page decisions
+
+The page serves the whole group path over the existing `/api/groups` routes, for guests with no account.
+It keeps the current look: the same tokens, buttons, fields, and notices, with no new palette or component library.
+
+- **A third tab, "Group":** with no group open it is the host's start form, and with one open it is the page behind a shared link.
+  Like the other pages it stays mounted while hidden, so a half-filled answer survives a tab switch.
+  A group nobody is looking at is not polled.
+- **The link is `/g/<link_token>`:** the page reads its own address on load and opens that group, and the address is the group's link only while the Group tab is showing, so a copied address always opens what is on screen.
+  The backend serves the built `index.html` at `/g/{link_token}`, with or without a trailing slash and with `Cache-Control: no-store`, only when a front end build exists.
+  There is still no router: one regular expression reads the path, and the history API replaces the address without adding entries.
+  In development Vite already falls back to `index.html` for any path.
+  A path link, not a query string or a fragment, so the Open Graph card can be added later with a server route on the same address.
+- **The participant token is kept on this device** in `localStorage` under `makan.group.<link_token>`, so a reload or a return visit is still the same person and the host can still close the group.
+  It is a credential for a session that expires, and nothing else reads it.
+  Storage can be missing or blocked, and then the person stays in the group until they reload.
+  A token the server says it does not know is dropped and the person sees the join form again.
+  It is only ever sent as `Authorization: Bearer`, never in a URL.
+- **Starting a group:** a request, a radius in miles, an optional name, and where.
+  The place is the Discover map's center when the map has one, else the browser's location, and if that fails the form opens typed coordinates, as the search bar does.
+  The center is rounded to about 0.1 mile before it is sent.
+- **Joining and answering are one form:** a friend opens the link, types a name and what they need and like, and one press joins them and sends the answers.
+  Joining on submit rather than on opening means the "who is in" list holds only people who chose to take part.
+  If the answers fail to send after joining, the token is already kept, so the retry only sends the answers.
+  The form is the same for the host, who is a participant like everyone else.
+- **The form says what the data can honestly do:** only "Places you won't go to" rules a place out, and each box says what it does.
+  Allergies, dietary needs, and a budget are said to be reminders for the group, as in the backend, and the page never says a place is safe.
+  Every list is one text box with commas, and the page checks the backend's limits before sending.
+  Every key is always sent, so "I have nothing to add" still counts as having shared.
+  The name box is never filled in with the stand-in name the server shows ("Guest 2"), since sending it back would turn the stand-in into a chosen name, so an empty box leaves the current name alone and its placeholder says how the person is shown now.
+- **Status by polling:** an open group asks `GET /api/groups/{link}` every 5 seconds while the tab is visible and the page is showing.
+  That keeps "who has shared" fresh for the host, and tells a friend when the host closes the group, with no websocket or server push to host.
+  A failed poll is ignored and the next one tries again, and only a group that has expired or gone is shown.
+  Polling stops once the group is closed.
+- **Closing asks first:** the host's "Close the group and pick" opens an inline confirmation naming how many people have not answered and that they will count with no preferences.
+  Closing cannot be undone, so one tap by mistake is not enough.
+- **Everyone reads the result from the same route:** a closed group's result is fetched with `GET .../result` as soon as a participant sees the group closed, so the host and the friends see the same pick with the explanation, the runners-up, what was ruled out, and what could not be checked.
+  The result comes first on the page once it exists, above the list of people.
+  The host's version names people, and everyone else's does not, as under "Group consensus decisions".
+  A person who was not in the group when it closed is told so and sees no result.
+- **The unhappy states each have a plain message, with focus moved to it:** an unknown or malformed link ("We can't find this group"), an expired group, a closed group for someone who never joined, a failed load with Try again, and a result that did not load with its own Try again.
+  A group that expires while the page is open turns into the expired message at the next poll.
+- **Distances are miles and feet** from `distanceLabel` and `radiusLabel`, and the backend's group result stays in meters.
+  A test fails if a meter or kilometer unit appears in a result.
+- **No trace events reach the page:** the group routes never returned any, and the result is the bounded JSON above.
+- **Not built here:** accounts, signing in to a group, the Open Graph card, a connection that pushes updates, kicking a person out, a host handing the group on, and a list of a person's earlier groups on the start page.
+  A host who closes the tab can come back through the link in their browser history, and the token on their device makes them the host again.
 
 ### Browse nearby decisions
 
@@ -836,8 +900,8 @@ Before this, a blank request was silently turned into "something good to eat" an
 
 ### Map and execution decisions
 
-- **Two pages, no router:** Discover is a search bar above a list beside a map, and Execution is the run inspector.
-  Both stay mounted and the inactive one is hidden, so the map keeps its position and the history survives a tab switch.
+- **Three pages, no router:** Discover is a search bar above a list beside a map, Group is the shared group flow (see "Group page decisions"), and Execution is the run inspector.
+  All stay mounted and the inactive ones are hidden, so the map keeps its position and the history survives a tab switch.
   A phone shows the map or the list, chosen by a Map and List toggle, and a place opens as a bottom sheet over the map or inline in its list row.
   The place sheet does not depend on a drag: it has Show more, Show less, and Close buttons.
   Closing a place with Escape or Close returns focus to the control that opened it, or to its row when a pin opened it, since pins are not in the tab order.

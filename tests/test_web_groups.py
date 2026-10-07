@@ -697,3 +697,133 @@ def test_a_blank_join_does_not_change_the_result_but_is_reported() -> None:
     assert after["participant_count"] == 2
     assert after["pending"] == ["Guest 2"] and after["uncounted"] == ["Guest 2"]
     assert "Guest 2 has not shared anything yet." in after["explanation"]
+
+
+# The closed group's result for everyone
+
+
+def finished_group(client: TestClient) -> tuple[str, str, str]:
+    """A group where Sam refuses seafood and is allergic to peanuts, closed by the host."""
+    link, host = host_session(client)
+    sam = join(client, link)
+    client.put(
+        f"/api/groups/{link}/me",
+        headers=auth(sam),
+        json={
+            "constraints": {"refuses": ["seafood"], "allergies": ["peanut"]},
+            "preferences": {"likes": ["ramen"], "dislikes": ["thai"]},
+        },
+    )
+    client.put(
+        f"/api/groups/{link}/me", headers=auth(host), json={"preferences": {"likes": ["thai"]}}
+    )
+    assert client.post(f"/api/groups/{link}/close", headers=auth(host)).status_code == 200
+    return link, host, sam
+
+
+def test_the_result_is_only_given_once_the_host_has_closed_the_group() -> None:
+    client = make()
+    link, host = host_session(client)
+    early = client.get(f"/api/groups/{link}/result", headers=auth(host))
+    assert early.status_code == 409 and error_code(early) == "session_open"
+    client.post(f"/api/groups/{link}/close", headers=auth(host))
+    assert client.get(f"/api/groups/{link}/result", headers=auth(host)).status_code == 200
+
+
+def test_the_host_reads_the_whole_result_and_a_friend_reads_it_with_no_one_named() -> None:
+    provider = classify()
+    client = make(provider=provider)
+    link, host, sam = finished_group(client)
+    as_host = client.get(f"/api/groups/{link}/result", headers=auth(host))
+    as_friend = client.get(f"/api/groups/{link}/result", headers=auth(sam))
+    assert as_host.status_code == as_friend.status_code == 200
+    whole, shared = as_host.json(), as_friend.json()
+    assert whole["audience"] == "host" and shared["audience"] == "member"
+
+    assert whole["pick"]["lowest_scorers"] == ["Alex"]
+    assert whole["excluded"][0]["refusals"] == [{"person": "Sam", "term": "seafood"}]
+    assert "Alex is least happy with it" in whole["explanation"]
+    assert whole["pick"]["warnings"] == ["Cannot verify Sam's allergy to peanut."]
+
+    # The same answer, worded so that nobody is named next to what they shared.
+    assert shared["pick"]["name"] == whole["pick"]["name"] == "Near Ramen"
+    assert [o["name"] for o in shared["runners_up"]] == [o["name"] for o in whole["runners_up"]]
+    assert shared["pick"]["lowest_score"] == whole["pick"]["lowest_score"]
+    assert "lowest_scorers" not in shared["pick"]
+    assert shared["pick"]["warnings"] == ["Cannot verify an allergy to peanut."]
+    assert shared["excluded"] == [
+        {
+            "id": "sea-palace",
+            "name": "Sea Palace",
+            "category": "seafood_restaurant",
+            "refused_terms": ["seafood"],
+        }
+    ]
+    assert "Nobody scored it below" in shared["explanation"]
+    assert "uncounted" not in shared and shared["uncounted_count"] == 0
+    for name in ("Alex", "Sam"):
+        assert name not in as_friend.text
+    assert sam not in as_friend.text and host not in as_friend.text
+
+
+def test_the_result_is_worked_out_once_and_every_participant_reads_that_answer() -> None:
+    provider = classify()  # one scripted answer: a second search would fail
+    client = make(provider=provider)
+    link, host, sam = finished_group(client)
+    first = client.get(f"/api/groups/{link}/result", headers=auth(sam)).json()
+    assert client.get(f"/api/groups/{link}/result", headers=auth(host)).status_code == 200
+    again = client.get(f"/api/groups/{link}/result", headers=auth(sam)).json()
+    assert again == first
+    assert len(provider.requests) == 1
+
+
+def test_a_result_that_only_partly_succeeded_is_not_kept() -> None:
+    class FlakyOnce(FakePlacesProvider):
+        broken = True
+
+        def search_nearby(self, query: Any) -> Any:
+            if query.cuisine and self.broken:
+                raise PlacesError("internal detail")
+            return super().search_nearby(query)
+
+    intent: dict[str, Any] = {"cuisine": "thai", "category": None, "requirements": []}
+    provider = FakeProvider([call(ToolCall.of("finish", answer=json.dumps(intent)))] * 2)
+    places = FlakyOnce([THAI, RAMEN])
+    client = make(provider=provider, places=places)
+    link, host = host_session(client)
+    client.post(f"/api/groups/{link}/close", headers=auth(host))
+    partial = client.get(f"/api/groups/{link}/result", headers=auth(host)).json()
+    assert partial["partial"] is True
+    places.broken = False
+    assert client.get(f"/api/groups/{link}/result", headers=auth(host)).json()["partial"] is False
+
+
+def test_the_result_needs_a_participant_of_that_session() -> None:
+    client = make()
+    link, host, _ = finished_group(client)
+    other_link, other_host = host_session(client)
+    missing = client.get(f"/api/groups/{link}/result")
+    assert missing.status_code == 401 and error_code(missing) == "participant_required"
+    stranger = client.get(f"/api/groups/{link}/result", headers=auth(other_host))
+    assert stranger.status_code == 403 and error_code(stranger) == "not_a_participant"
+    unknown = client.get(f"/api/groups/{uuid4()}/result", headers=auth(host))
+    assert unknown.status_code == 404 and error_code(unknown) == "session_not_found"
+    assert other_link != link
+
+
+def test_an_expired_group_no_longer_gives_its_result_even_when_it_was_cached() -> None:
+    clock = Clock()
+    client = make(clock=clock)
+    link, host, _ = finished_group(client)
+    assert client.get(f"/api/groups/{link}/result", headers=auth(host)).status_code == 200
+    clock.now = T0 + timedelta(hours=3)
+    gone = client.get(f"/api/groups/{link}/result", headers=auth(host))
+    assert gone.status_code == 410 and error_code(gone) == "session_expired"
+
+
+def test_a_failed_search_is_reported_by_the_result_route_as_the_solo_flow_does() -> None:
+    client = make(places=FakePlacesProvider([], error=PlacesError("down")))
+    link, host = host_session(client)
+    client.post(f"/api/groups/{link}/close", headers=auth(host))
+    response = client.get(f"/api/groups/{link}/result", headers=auth(host))
+    assert response.status_code == 502 and error_code(response) == "places_error"

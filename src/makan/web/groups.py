@@ -4,14 +4,19 @@ Anyone with a session's link token can read it and join it, with no account. Joi
 participant token, which the caller sends as `Authorization: Bearer <token>` to change their own
 inputs, and which the host needs to close the session or ask for the result. A reader sees who is
 in the session and whether they have shared anything, never what they shared. Only the host's
-result names a person's constraints, because it must warn about the ones it cannot verify.
+result names a person's constraints, because it must warn about the ones it cannot verify. Once
+the host has closed the session, every participant can read the group's result, worded without
+saying who shared what.
 """
 
 from __future__ import annotations
 
 import functools
 import logging
+import threading
+from collections import OrderedDict
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
@@ -25,6 +30,7 @@ from makan.consensus import (
     MAX_NOTE_CHARS,
     MAX_TERM_CHARS,
     MAX_TERMS,
+    Exclusion,
     InvalidInputs,
     floor_score,
 )
@@ -43,6 +49,7 @@ from makan.sessions import (
     SessionExpired,
     SessionFull,
     SessionNotFound,
+    SessionOpen,
     SessionView,
 )
 from makan.web.errors import error, public_warnings, workflow_failure
@@ -50,11 +57,15 @@ from makan.web.errors import error, public_warnings, workflow_failure
 log = logging.getLogger("makan.web")
 
 Mode = Literal["demo", "live"]
+Audience = Literal["host", "member"]
+
+MAX_CACHED_RESULTS = 128
 
 _STATUS: dict[type[SessionError], int] = {
     SessionNotFound: 404,
     SessionExpired: 410,
     SessionClosed: 409,
+    SessionOpen: 409,
     SessionFull: 409,
     ParticipantRequired: 401,
     NotAParticipant: 403,
@@ -116,6 +127,46 @@ class InputsBody(BaseModel):
     display_name: DisplayName | None = None
 
 
+@dataclass(frozen=True)
+class _Computed:
+    recommendation: GroupRecommendation
+    expires_at: datetime | None
+
+
+class _ResultCache:
+    """The result of each closed session, so the group reads one answer and the model is asked once.
+
+    Closing freezes the inputs, so the result of a closed session does not change, and the
+    participants and the host should see the same pick. Only a complete result is kept, so a search
+    that partly failed is tried again. It holds what people shared, so an entry is dropped when its
+    session expires, and the cache is bounded. A restart empties it, and the next read computes it.
+    """
+
+    def __init__(self, clock: Callable[[], datetime], size: int = MAX_CACHED_RESULTS) -> None:
+        self._clock = clock
+        self._size = size
+        self._items: OrderedDict[str, _Computed] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get(self, session: Session) -> GroupRecommendation | None:
+        with self._lock:
+            self._drop_expired()
+            item = self._items.get(str(session.id))
+            return None if item is None else item.recommendation
+
+    def put(self, session: Session, recommendation: GroupRecommendation) -> None:
+        with self._lock:
+            self._drop_expired()
+            self._items[str(session.id)] = _Computed(recommendation, session.expires_at)
+            while len(self._items) > self._size:
+                self._items.popitem(last=False)
+
+    def _drop_expired(self) -> None:
+        now = self._clock()
+        for key in [k for k, v in self._items.items() if v.expires_at and v.expires_at <= now]:
+            del self._items[key]
+
+
 def register_group_routes(
     app: FastAPI,
     sessions: GroupSessions,
@@ -127,6 +178,7 @@ def register_group_routes(
 ) -> None:
     """Add the group endpoints and their error handling to `app`, before any static mount."""
     router = APIRouter(prefix="/api/groups")
+    results = _ResultCache(sessions.now)
 
     @app.exception_handler(SessionError)
     async def session_error(_: Request, exc: SessionError) -> JSONResponse:
@@ -206,7 +258,27 @@ def register_group_routes(
         )
         if outcome.recommendation is None:
             return workflow_failure(outcome.graph)
-        return JSONResponse(_result_json(outcome.recommendation, outcome.graph.ok, mode))
+        return JSONResponse(_result_json(outcome.recommendation, outcome.graph.ok, mode, "host"))
+
+    @router.get("/{link_token}/result", response_model=None)
+    @guarded
+    def read_result(
+        link_token: str, authorization: Annotated[str | None, Header()] = None
+    ) -> JSONResponse:
+        """The closed group's result: whole for the host, with no one named for everyone else."""
+        session, participants, you = sessions.closed_inputs(link_token, _bearer(authorization))
+        audience: Audience = "host" if you.is_host else "member"
+        known = results.get(session)
+        if known is not None:
+            return JSONResponse(_result_json(known, True, mode, audience))
+        outcome = recommend_group(
+            session, participants, provider=provider, places=places, config=config
+        )
+        if outcome.recommendation is None:
+            return workflow_failure(outcome.graph)
+        if outcome.graph.ok:
+            results.put(session, outcome.recommendation)
+        return JSONResponse(_result_json(outcome.recommendation, outcome.graph.ok, mode, audience))
 
     app.include_router(router)
 
@@ -279,9 +351,9 @@ def _view_json(view: SessionView) -> dict[str, Any]:
     return body
 
 
-def _option_json(option: RankedOption) -> dict[str, Any]:
+def _option_json(option: RankedOption, audience: Audience) -> dict[str, Any]:
     p = option.place
-    return {
+    body: dict[str, Any] = {
         "id": p.id,
         "name": p.name,
         "category": p.category,
@@ -289,31 +361,44 @@ def _option_json(option: RankedOption) -> dict[str, Any]:
         "address": p.address,
         "reasons": list(option.reasons),
         "lowest_score": None if option.minimum is None else floor_score(option.minimum),
-        "lowest_scorers": list(option.least_happy),
         "average_score": None if option.average is None else round(option.average, 2),
-        "warnings": list(option.warnings),
     }
+    if audience == "host":
+        body["lowest_scorers"] = list(option.least_happy)
+        body["warnings"] = list(option.warnings)
+    else:
+        body["warnings"] = list(option.shared_warnings)
+    return body
 
 
-def _result_json(rec: GroupRecommendation, graph_ok: bool, mode: Mode) -> dict[str, Any]:
-    warnings, explanation = public_warnings(rec.warnings, rec.explanation)
-    return {
-        "pick": _option_json(rec.pick) if rec.pick else None,
-        "runners_up": [_option_json(o) for o in rec.runners_up],
-        "excluded": [
-            {
-                "id": e.place.id,
-                "name": e.place.name,
-                "category": e.place.category,
-                "refusals": [{"person": r.member, "term": r.term} for r in e.refusals],
-            }
-            for e in rec.excluded
-        ],
+def _excluded_json(excluded: Exclusion, audience: Audience) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "id": excluded.place.id,
+        "name": excluded.place.name,
+        "category": excluded.place.category,
+    }
+    if audience == "host":
+        body["refusals"] = [{"person": r.member, "term": r.term} for r in excluded.refusals]
+    else:
+        body["refused_terms"] = sorted({r.term for r in excluded.refusals})
+    return body
+
+
+def _result_json(
+    rec: GroupRecommendation, graph_ok: bool, mode: Mode, audience: Audience
+) -> dict[str, Any]:
+    """The result for `audience`. A member gets no name next to a constraint or a score."""
+    text = rec.explanation if audience == "host" else rec.shared_explanation
+    warnings, explanation = public_warnings(rec.warnings, text)
+    body: dict[str, Any] = {
+        "audience": audience,
+        "pick": _option_json(rec.pick, audience) if rec.pick else None,
+        "runners_up": [_option_json(o, audience) for o in rec.runners_up],
+        "excluded": [_excluded_json(e, audience) for e in rec.excluded],
         "explanation": explanation,
         "warnings": warnings,
         "participant_count": rec.participant_count,
         "pending": list(rec.pending),
-        "uncounted": list(rec.uncounted),
         "data_source": rec.data_source,
         "attribution": (
             "Places data: Overture Maps Foundation (CDLA Permissive 2.0)."
@@ -323,3 +408,8 @@ def _result_json(rec: GroupRecommendation, graph_ok: bool, mode: Mode) -> dict[s
         "partial": not graph_ok,
         "mode": mode,
     }
+    if audience == "host":
+        body["uncounted"] = list(rec.uncounted)
+    else:
+        body["uncounted_count"] = len(rec.uncounted)
+    return body

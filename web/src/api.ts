@@ -27,8 +27,8 @@ export class ApiError extends Error {
   }
 }
 
-const GENERIC = "Something went wrong on our side. Try again.";
-const UNREACHABLE = "Can't reach Makan. Check your connection and try again.";
+export const GENERIC = "Something went wrong on our side. Try again.";
+export const UNREACHABLE = "Can't reach Makan. Check your connection and try again.";
 
 export async function fetchConfig(signal?: AbortSignal): Promise<AppConfig | null> {
   try {
@@ -131,7 +131,9 @@ async function* lines(response: Response): AsyncGenerator<string> {
   if (buffer.trim()) yield buffer;
 }
 
-async function errorDetails(response: Response): Promise<{ message: string; code: string | null }> {
+export async function errorDetails(
+  response: Response,
+): Promise<{ message: string; code: string | null }> {
   // A proxy or gateway in front of the API can answer with HTML, so never trust the shape.
   try {
     const body: unknown = await response.json();

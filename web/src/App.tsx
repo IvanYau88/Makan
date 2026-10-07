@@ -3,6 +3,9 @@ import { ApiError, MODEL_BUSY, fetchConfig, recommend } from "./api";
 import { DiscoverView } from "./DiscoverView";
 import type { Status, View } from "./DiscoverView";
 import { ExecutionView } from "./ExecutionView";
+import { GroupCreate } from "./GroupCreate";
+import { GroupView } from "./GroupView";
+import { groupPath, linkFromPath, saveCredential } from "./groupLink";
 import { abandonRun, recordRun } from "./history";
 import type { HistoryEntry } from "./history";
 import { SEARCH_ZOOM, US_CENTER, roundCenter } from "./geo";
@@ -15,13 +18,33 @@ import { phaseText } from "./stages";
 import { DEFAULT_RADIUS_M, RADII } from "./SearchBar";
 import type { FormValues } from "./SearchBar";
 import { loadMode, saveMode } from "./searchMode";
-import type { AppConfig, Coordinates, Recommendation } from "./types";
+import type {
+  AppConfig,
+  Coordinates,
+  GroupCreated,
+  GroupView as GroupSnapshot,
+  Recommendation,
+} from "./types";
 
-type Page = "discover" | "execution";
+type Page = "discover" | "group" | "execution";
+
+const PAGES: { page: Page; label: string }[] = [
+  { page: "discover", label: "Discover" },
+  { page: "group", label: "Group" },
+  { page: "execution", label: "Execution" },
+];
 
 export function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
-  const [page, setPage] = useState<Page>("discover");
+  // A shared group link opens the page on the group it names.
+  const [groupLink, setGroupLink] = useState<string | null>(() =>
+    linkFromPath(window.location.pathname),
+  );
+  // The group a host just started, so its page opens without asking the server again.
+  const [startedGroup, setStartedGroup] = useState<GroupSnapshot | null>(null);
+  const [page, setPage] = useState<Page>(() =>
+    linkFromPath(window.location.pathname) ? "group" : "discover",
+  );
   const [form, setForm] = useState<FormValues>(() => ({
     mode: loadMode(),
     request: "",
@@ -64,6 +87,24 @@ export function App() {
   }, []);
 
   useEffect(() => () => inflight.current?.controller.abort(), []);
+
+  // The address is the group's link only while the group page is showing, so a copied address
+  // always opens what is on screen.
+  useEffect(() => {
+    const want = page === "group" && groupLink ? groupPath(groupLink) : "/";
+    if (window.location.pathname !== want) window.history.replaceState(null, "", want);
+  }, [page, groupLink]);
+
+  const groupCreated = (created: GroupCreated) => {
+    saveCredential(created.link_token, created.participant_token);
+    setStartedGroup({ session: created.session, you: created.you });
+    setGroupLink(created.link_token);
+  };
+
+  const leaveGroup = () => {
+    setGroupLink(null);
+    setStartedGroup(null);
+  };
 
   // The choice belongs to the device, so the next visit starts where this one left off.
   useEffect(() => saveMode(form.mode), [form.mode]);
@@ -276,7 +317,7 @@ export function App() {
       <header className="topbar">
         <h1 className="brand">Makan</h1>
         <nav aria-label="Pages" className="tabs">
-          {(["discover", "execution"] as const).map((p) => (
+          {PAGES.map(({ page: p, label }) => (
             <button
               key={p}
               type="button"
@@ -284,7 +325,7 @@ export function App() {
               aria-current={page === p ? "page" : undefined}
               onClick={() => setPage(p)}
             >
-              {p === "discover" ? "Discover" : "Execution"}
+              {label}
             </button>
           ))}
         </nav>
@@ -329,6 +370,19 @@ export function App() {
             onWiden={wider === undefined ? null : widen}
             focusSignal={focusHeading}
           />
+        </div>
+        <div hidden={page !== "group"}>
+          {groupLink ? (
+            <GroupView
+              key={groupLink}
+              link={groupLink}
+              initial={startedGroup}
+              onLeave={leaveGroup}
+              paused={page !== "group"}
+            />
+          ) : (
+            <GroupCreate mapCenter={mapCenter} placed={placed} onCreated={groupCreated} />
+          )}
         </div>
         <div hidden={page !== "execution"}>
           <ExecutionView history={history} onClear={() => setHistory([])} />

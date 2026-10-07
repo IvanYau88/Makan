@@ -296,6 +296,23 @@ def unverified_warnings(members: Sequence[Member]) -> tuple[str, ...]:
     return tuple(warnings)
 
 
+def shared_unverified_warnings(members: Sequence[Member]) -> tuple[str, ...]:
+    """The same warnings as `unverified_warnings`, with nobody's name next to their constraint.
+
+    This is what the group sees: that the data cannot check an allergy, a diet, or a budget, and
+    which ones were shared, but not who shared them. Repeats are dropped and the order is fixed.
+    """
+    constraints = [m.constraints for m in members]
+    allergies = sorted({a for c in constraints for a in c.allergies})
+    diets = sorted({d for c in constraints for d in c.diets})
+    budgets = sorted({c.budget for c in constraints if c.budget is not None})
+    return (
+        *(f"Cannot verify an allergy to {a}." for a in allergies),
+        *(f"Cannot verify a diet: {d}." for d in diets),
+        *(f"Cannot verify a budget: {b}." for b in budgets),
+    )
+
+
 # Scoring
 
 

@@ -27,6 +27,7 @@ from makan.sessions import (
     SessionExpired,
     SessionFull,
     SessionNotFound,
+    SessionOpen,
     SessionStore,
     purge_expired_sessions,
 )
@@ -283,6 +284,31 @@ def test_only_the_host_can_close_the_session_or_ask_for_the_result(
     found, people = groups.host_inputs(token(session), str(host.id))
     assert found.id == session.id
     assert [p.display_name for p in people] == ["Alex", "Sam"]
+
+
+def test_any_participant_can_read_the_result_inputs_once_the_session_is_closed(
+    groups: GroupSessions, clock: Clock
+) -> None:
+    session, host = start(groups)
+    _, friend = groups.join(token(session), display_name="Sam")
+    with pytest.raises(SessionOpen):
+        groups.closed_inputs(token(session), str(friend.id))
+    groups.close(token(session), str(host.id))
+    found, people, you = groups.closed_inputs(token(session), str(friend.id))
+    assert found.id == session.id and you.id == friend.id and not you.is_host
+    assert [p.display_name for p in people] == ["Alex", "Sam"]
+    assert groups.closed_inputs(token(session), str(host.id))[2].is_host
+    with pytest.raises(ParticipantRequired):
+        groups.closed_inputs(token(session), None)
+    with pytest.raises(NotAParticipant):
+        groups.closed_inputs(token(session), str(uuid4()))
+    # Being a participant is checked before the state, so a stranger learns nothing about it.
+    other, _ = start(groups)
+    with pytest.raises(NotAParticipant):
+        groups.closed_inputs(token(other), str(friend.id))
+    clock.advance(hours=3)
+    with pytest.raises(SessionExpired):
+        groups.closed_inputs(token(session), str(friend.id))
 
 
 def test_a_closed_session_reads_but_takes_no_more_people_or_changes(
