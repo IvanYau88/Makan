@@ -4,7 +4,7 @@ One endpoint turns a location and a request into a recommendation, and everythin
 plumbing around `makan.solo.recommend`. No account is needed: the session it creates has one
 participant, is never shared, and is not stored.
 
-Run it with `uvicorn --factory makan.web:create_app_from_env`. See the README for the run modes.
+Run it with `python -m makan.web` (see `makan.web.__main__`). See the README for the run modes.
 """
 
 from __future__ import annotations
@@ -316,6 +316,11 @@ def create_app(
     return app
 
 
+def demo_requested(env: Mapping[str, str]) -> bool:
+    """Whether `MAKAN_DEMO` asks for sample places and no key or network."""
+    return env.get("MAKAN_DEMO", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def create_app_from_env(env: Mapping[str, str] | None = None) -> FastAPI:
     """The uvicorn factory: demo mode when `MAKAN_DEMO` is set, otherwise real providers.
 
@@ -327,7 +332,7 @@ def create_app_from_env(env: Mapping[str, str] | None = None) -> FastAPI:
         load_dotenv()
     env = os.environ if env is None else env
     dist = Path(env.get("MAKAN_WEB_DIST", "").strip() or DEFAULT_WEB_DIST)
-    if env.get("MAKAN_DEMO", "").strip().lower() in ("1", "true", "yes", "on"):
+    if demo_requested(env):
         config = Config.from_env({**env, "MAKAN_MODEL": env.get("MAKAN_MODEL", "") or "demo"})
         return create_app(
             provider=DemoProvider(),
