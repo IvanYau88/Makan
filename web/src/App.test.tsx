@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { onTestFinished } from "vitest";
 import L from "leaflet";
 import { App } from "./App";
-import { BROWSE_RESULT, RESULT, browseRun, place, run, stage } from "./test-fixtures";
+import { BROWSE_RESULT, RESULT, browseRun, place, run, scoredRun, stage } from "./test-fixtures";
 import type { Recommendation, Run } from "./types";
 
 type Handler = (body: Record<string, unknown>) => Response | Promise<Response>;
@@ -1162,6 +1162,30 @@ describe("Search mode", () => {
       "this stage did not run and no model was called",
     );
   });
+
+  it("shows the signals stage as skipped in a browse run on a scorer backend", async () => {
+    const scoredBrowse = { ...BROWSE_RESULT, run: browseRun({}, true) };
+    stubApi(() => answer(scoredBrowse));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(browseNearby());
+    await user.click(browseHere());
+    await screen.findByRole("heading", { name: "Places nearby" });
+    await user.click(screen.getByRole("button", { name: "Execution" }));
+
+    expect(screen.getByRole("region", { name: "Run summary" })).toHaveTextContent(
+      "The other 8 stages were skipped, and no model was called.",
+    );
+    const stages = within(screen.getByRole("list", { name: "Stages" }));
+    expect(stages.getByRole("button", { name: /^Signals\s*skipped/ })).toBeInTheDocument();
+    expect(stages.getAllByText("skipped")).toHaveLength(8);
+    expect(document.querySelectorAll(".graph .node")).toHaveLength(9);
+
+    await user.click(stages.getByRole("button", { name: /^Signals/ }));
+    expect(screen.getByRole("region", { name: "Signals" })).toHaveTextContent(
+      "this stage did not run and no model was called",
+    );
+  });
 });
 
 describe("Execution", () => {
@@ -1189,6 +1213,88 @@ describe("Execution", () => {
       "Rank",
       "Explain",
     ]);
+  });
+
+  it("shows the signals stage in a finished run on a scorer backend", async () => {
+    const user = userEvent.setup();
+    stubApi(() => answer({ ...RESULT, run: scoredRun() }));
+    render(<App />);
+    await submit(user);
+    await screen.findByRole("heading", { name: "Nearby options" });
+    await openExecution(user);
+
+    const stages = within(screen.getByRole("list", { name: "Stages" })).getAllByRole("button");
+    expect(stages.map((b) => b.querySelector(".stage-name")?.textContent)).toEqual([
+      "Classify",
+      "Intent",
+      "Requested places",
+      "Nearby places",
+      "Memory",
+      "Signals",
+      "Merge",
+      "Rank",
+      "Explain",
+    ]);
+    expect(document.querySelectorAll(".graph .node")).toHaveLength(9);
+    expect(document.querySelectorAll(".graph .graph-edge")).toHaveLength(11);
+
+    await user.click(screen.getByRole("button", { name: /^Signals/ }));
+    expect(screen.getByRole("region", { name: "Signals" })).toHaveTextContent(
+      "Nothing: it starts the run",
+    );
+    await user.click(screen.getByRole("button", { name: /^Merge/ }));
+    expect(screen.getByRole("region", { name: "Merge" })).toHaveTextContent(
+      "Intent, Requested places, Nearby places, Memory, Signals",
+    );
+  });
+
+  it("follows a streamed run on a scorer backend through all nine stages", async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({ start: (c) => (controller = c) });
+    stubApi(() => new Response(body, { status: 200 }));
+    const user = userEvent.setup();
+    render(<App />);
+    await submit(user);
+
+    const waiting = { status: "waiting", duration_ms: null, started_ms: null } as const;
+    const live = scoredRun(
+      { status: "running", outcome: null, duration_ms: null, ended_at: null },
+      [
+        stage("classify"),
+        stage("intent"),
+        stage("requested_places", { status: "running", duration_ms: null }),
+        stage("nearby_places", { status: "running", duration_ms: null }),
+        stage("memory"),
+        stage("signals", { status: "running", duration_ms: null }),
+        stage("merge", waiting),
+        stage("rank", waiting),
+        stage("explain", waiting),
+      ],
+    );
+    await act(async () => {
+      controller.enqueue(encoder.encode(JSON.stringify({ type: "run", run: live }) + "\n"));
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Searching nearby places (3 of 9 stages done)",
+      ),
+    );
+    // The inspector is mounted beside Discover, so a stage it cannot draw would blank the page.
+    await openExecution(user);
+    expect(screen.getByRole("button", { name: /^Signals\s*running/ })).toBeInTheDocument();
+    expect(document.querySelectorAll(".graph .node")).toHaveLength(9);
+
+    await act(async () => {
+      controller.enqueue(
+        encoder.encode(
+          JSON.stringify({ type: "result", recommendation: { ...RESULT, run: scoredRun() } }) +
+            "\n",
+        ),
+      );
+      controller.close();
+    });
+    expect(screen.getByRole("button", { name: /^Signals\s*ok/ })).toBeInTheDocument();
   });
 
   it("lists a finished run and inspects a stage's input and output", async () => {

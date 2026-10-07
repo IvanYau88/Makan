@@ -893,6 +893,10 @@ Before this, a blank request was silently turned into "something good to eat" an
   An answer that arrives after a newer search began is ignored.
   A failed search says the results shown are from the previous search.
 - **Execution view:** it shows the eight real stages of the solo graph (and, for a browse run, the same eight with the unused ones skipped, below), `classify`, `intent`, `requested_places`, `nearby_places`, `memory`, `merge`, `rank`, and `explain`, with the dependencies the graph really has.
+  When the server has a scorer backend the graph has a ninth stage, `signals`, which starts the run beside `classify` and which `merge` waits for, and a browse run then shows eight skipped stages instead of seven.
+  The page has no way to know that before a run, so the empty inspector draws the eight stages every graph has, and the page copy says a ninth appears with a scorer backend.
+  Every stage name the server can report has an entry in `web/src/stages.ts` (title, order, position, phase text), because the inspector stays mounted beside Discover and one name it cannot draw blanks the whole page, which it did before `signals` was added.
+  `signals` sits in the first column, below `classify`, so the graph keeps its size and the eight-stage layout is unchanged.
   The dependency picture is hidden from assistive technology, and the stage list beside it is the accessible way to pick a stage and doubles as a timeline whose bars show the two searches overlapping.
   A stage is waiting (a stage before it has not ended), queued (its inputs are ready and it waits for a concurrency slot), running, ok, error, timeout, or skipped.
   Skipped means this search does not need the stage, so it never ran: it is not waiting and it did not fail.

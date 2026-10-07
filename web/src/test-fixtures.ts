@@ -37,10 +37,20 @@ const STAGES: Record<StageName, StageName[]> = {
   requested_places: ["intent"],
   nearby_places: ["intent"],
   memory: ["intent"],
+  signals: [],
   merge: ["intent", "requested_places", "nearby_places", "memory"],
   rank: ["merge"],
   explain: ["rank"],
 };
+
+/** The stages the server reports, in its order: the graph has a signals stage only with a scorer. */
+export function graphStages(scorer: boolean): Stage[] {
+  return (Object.keys(STAGES) as StageName[])
+    .filter((name) => scorer || name !== "signals")
+    .map((name) =>
+      stage(name, name === "merge" && scorer ? { after: [...STAGES.merge, "signals"] } : {}),
+    );
+}
 
 export function stage(name: StageName, extra: Partial<Stage> = {}): Stage {
   return {
@@ -77,7 +87,7 @@ export function run(extra: Partial<Run> = {}, stages?: Stage[]): Run {
     radius_m: 1609,
     data_source: "overture:2026-09-23.1",
     limits: { max_concurrency: 4, step_timeout_s: 30, max_iterations: 10, token_budget: 50000 },
-    stages: stages ?? (Object.keys(STAGES) as StageName[]).map((name) => stage(name)),
+    stages: stages ?? graphStages(false),
     ...extra,
   };
 }
@@ -127,8 +137,16 @@ const BROWSE_PLACES: Place[] = [
   }),
 ];
 
-/** A browse run: only the places search ran, and the other seven stages were skipped. */
-export function browseRun(extra: Partial<Run> = {}): Run {
+/** A run on a server with a scorer backend: the graph has the ninth, signals stage. */
+export function scoredRun(extra: Partial<Run> = {}, stages: Stage[] = graphStages(true)): Run {
+  return run(extra, stages);
+}
+
+/**
+ * A browse run: only the places search ran, and every other stage was skipped, seven of them or,
+ * with a scorer backend, eight.
+ */
+export function browseRun(extra: Partial<Run> = {}, scorer = false): Run {
   return run(
     {
       graph: "browse_nearby",
@@ -136,10 +154,11 @@ export function browseRun(extra: Partial<Run> = {}): Run {
       request: null,
       ...extra,
     },
-    (Object.keys(STAGES) as StageName[]).map((name) =>
-      name === "nearby_places"
-        ? stage(name, { after: [] })
-        : stage(name, {
+    graphStages(scorer).map((full) =>
+      full.name === "nearby_places"
+        ? stage(full.name, { after: [] })
+        : stage(full.name, {
+            after: full.after,
             status: "skipped",
             started_ms: null,
             duration_ms: null,
