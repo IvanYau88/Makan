@@ -85,6 +85,8 @@ export type StageName =
   | "requested_places"
   | "nearby_places"
   | "memory"
+  /** Only in a graph built with a scorer backend: it starts the run beside the classification. */
+  | "signals"
   | "merge"
   | "rank"
   | "explain";

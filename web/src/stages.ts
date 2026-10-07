@@ -27,6 +27,11 @@ export const STAGE_INFO: Record<StageName, { title: string; summary: string }> =
     summary:
       "Looks up stored tastes for signed-in users. Guests have none, so nothing is looked up.",
   },
+  signals: {
+    title: "Signals",
+    summary:
+      "Only present when a scorer backend is set. Reads soft hints in the request, such as a budget band, beside the classification. They are shown as estimates and never change the ranking, and hard requirements never depend on them.",
+  },
   merge: {
     title: "Merge",
     summary:
@@ -43,24 +48,33 @@ export const STAGE_INFO: Record<StageName, { title: string; summary: string }> =
   },
 };
 
+/** Every stage the server can report, in the order it reports them. */
 export const STAGE_ORDER: StageName[] = [
   "classify",
   "intent",
   "requested_places",
   "nearby_places",
   "memory",
+  "signals",
   "merge",
   "rank",
   "explain",
 ];
 
-/** The graph as it is wired, for the page before any run exists. */
+/**
+ * The stage that exists only when the server has a scorer backend. The page cannot know that before
+ * a run, so the empty inspector shows the eight stages every graph has.
+ */
+export const SCORER_STAGE: StageName = "signals";
+
+/** The graph as it is wired without a scorer, for the page before any run exists. */
 export const STAGE_AFTER: Record<StageName, StageName[]> = {
   classify: [],
   intent: ["classify"],
   requested_places: ["intent"],
   nearby_places: ["intent"],
   memory: ["intent"],
+  signals: [],
   merge: ["intent", "requested_places", "nearby_places", "memory"],
   rank: ["merge"],
   explain: ["rank"],
@@ -73,6 +87,7 @@ export const STAGE_POSITION: Record<StageName, { col: number; row: number }> = {
   requested_places: { col: 2, row: 0 },
   nearby_places: { col: 2, row: 1 },
   memory: { col: 2, row: 2 },
+  signals: { col: 0, row: 2 },
   merge: { col: 3, row: 1 },
   rank: { col: 4, row: 1 },
   explain: { col: 5, row: 1 },
@@ -110,7 +125,7 @@ export function outcomeLabel(run: Run): string {
 
 /** A blueprint run with every stage not started, for the empty inspector. */
 export function blueprintStages(): Stage[] {
-  return STAGE_ORDER.map((name) => ({
+  return STAGE_ORDER.filter((name) => name !== SCORER_STAGE).map((name) => ({
     name,
     after: STAGE_AFTER[name],
     status: "waiting",
@@ -131,6 +146,7 @@ const PHASE: Record<StageName, string> = {
   requested_places: "Searching nearby places",
   nearby_places: "Searching nearby places",
   memory: "Checking memory",
+  signals: "Reading request signals",
   merge: "Combining results",
   rank: "Ranking places",
   explain: "Writing the explanation",

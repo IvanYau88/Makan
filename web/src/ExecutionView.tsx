@@ -36,10 +36,11 @@ export function ExecutionView({ history, onClear }: Props) {
         <p className="eyebrow">Execution</p>
         <h2 className="page-title">The graph Makan actually runs</h2>
         <p className="lead">
-          Pick for me runs these eight stages. Browse nearby runs only the nearby places search and
-          marks the rest skipped, because it makes no model call. This page shows what the server
-          recorded for your searches in this tab, with real inputs, outputs, timings and errors.
-          History is kept in this tab only and is gone when you reload.
+          Pick for me runs these eight stages, and a ninth, Signals, when a scorer backend is set.
+          Browse nearby runs only the nearby places search and marks the rest skipped, because it
+          makes no model call. This page shows what the server recorded for your searches in this
+          tab, with real inputs, outputs, timings and errors. History is kept in this tab only and
+          is gone when you reload.
         </p>
       </header>
 
