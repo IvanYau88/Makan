@@ -486,7 +486,7 @@ It needs no account, and it runs as a session with a single participant whose li
   The counts and the filters stay in the trace for the execution view.
 - Apart from the map settings below and the optional scorer, no new environment variables are needed; existing model, loop, and graph settings apply.
   An optional scorer adds a `signals` step beside the classification and the settings under "Fixed-answer scorer decisions", and the graph is unchanged without one.
-  Follow-ups are additional evidence tools, provider-qualified stored place ratings when multiple places sources are used, and the already planned retry policy, channels, and auth.
+  Follow-ups are additional evidence tools, provider-qualified stored place ratings when multiple places sources are used, and the already planned retry policy and channels.
 
 ### Group consensus
 
@@ -997,7 +997,7 @@ It keeps the current look: the same tokens, buttons, fields, and notices, with n
 - **Distances are miles and feet** from `distanceLabel` and `radiusLabel`, and the backend's group result stays in meters.
   A test fails if a meter or kilometer unit appears in a result.
 - **No trace events reach the page:** the group routes never returned any, and the result is the bounded JSON above.
-- **Not built here:** accounts, signing in to a group, the Open Graph card, a connection that pushes updates, kicking a person out, a host handing the group on, and a list of a person's earlier groups on the start page.
+- **Not built here:** signing in to a group, the Open Graph card, a connection that pushes updates, kicking a person out, a host handing the group on, and a list of a person's earlier groups on the start page.
   A host who closes the tab can come back through the link in their browser history, and the token on their device makes them the host again.
 
 ### Browse nearby decisions
@@ -1023,7 +1023,7 @@ Before this, a blank request was silently turned into "something good to eat" an
 - **What is on screen belongs to the search that made it:** the results heading, the sort labels, and the pick chip follow `query.mode` of the answer, not the mode chosen since, so switching modes never relabels old results.
 - **A phone gives the room back after a search:** the two sentences hide once results exist, because the form, the choice, and the map already compete for 844 px.
   The choice stays, and the sentences were shown at entry.
-- **Not built here:** the profile questionnaire, profile storage, "something new" and "no preference" routes, ratings, "hide places I avoid", and any restyling.
+- **Not built here:** "something new" and "no preference" routes, ratings, "hide places I avoid", and any restyling.
   The empty-request question names "no preference" but only asks it, and the way to look around without a request is Browse nearby.
 - **Units are unchanged:** storage and the API stay in meters, and the page shows miles and feet at the edges.
 
