@@ -155,3 +155,111 @@ export interface Run {
   };
   stages: Stage[];
 }
+
+/** The JSON of /api/groups. A reader sees who is in and who has shared, never what they shared. */
+
+export interface GroupMember {
+  name: string;
+  is_host: boolean;
+  submitted: boolean;
+}
+
+export interface GroupSession {
+  request: string;
+  latitude: number;
+  longitude: number;
+  radius_m: number;
+  created_at: string;
+  /** Null when the session never expires. */
+  expires_at: string | null;
+  closed: boolean;
+  participants: GroupMember[];
+}
+
+export interface GroupConstraints {
+  refuses: string[];
+  allergies: string[];
+  diets: string[];
+  budget: string | null;
+}
+
+export interface GroupPreferences {
+  likes: string[];
+  dislikes: string[];
+}
+
+/** The caller's own row, sent only when they present their participant token. */
+export interface GroupYou {
+  name: string;
+  is_host: boolean;
+  submitted: boolean;
+  constraints: Partial<GroupConstraints>;
+  preferences: Partial<GroupPreferences>;
+}
+
+export interface GroupView {
+  session: GroupSession;
+  you: GroupYou | null;
+}
+
+/** What creating or joining adds: the credential for this person, which only they receive. */
+export interface GroupCredential extends GroupView {
+  participant_token: string;
+}
+
+export interface GroupCreated extends GroupCredential {
+  link_token: string;
+}
+
+export interface GroupInputs {
+  display_name?: string;
+  constraints: GroupConstraints;
+  preferences: GroupPreferences;
+}
+
+export interface GroupCreateRequest extends Coordinates {
+  request: string;
+  radius_m: number;
+  display_name?: string;
+}
+
+export interface GroupOption {
+  id: string;
+  name: string;
+  category: string;
+  distance_m: number;
+  address: string | null;
+  reasons: string[];
+  /** Null when nobody shared a taste, so nothing was scored. */
+  lowest_score: number | null;
+  average_score: number | null;
+  /** Who scored it lowest: the host's result only. */
+  lowest_scorers?: string[];
+  warnings: string[];
+}
+
+export interface GroupExcluded {
+  id: string;
+  name: string;
+  category: string;
+  /** Who refuses what: the host's result only. */
+  refusals?: { person: string; term: string }[];
+  /** What was refused, with no name: everyone else's result. */
+  refused_terms?: string[];
+}
+
+/** The closed group's result. The host's names a person next to what they shared, the rest do not. */
+export interface GroupResult {
+  audience: "host" | "member";
+  pick: GroupOption | null;
+  runners_up: GroupOption[];
+  excluded: GroupExcluded[];
+  explanation: string;
+  warnings: string[];
+  participant_count: number;
+  pending: string[];
+  data_source: string;
+  attribution: string | null;
+  partial: boolean;
+  mode: Mode;
+}

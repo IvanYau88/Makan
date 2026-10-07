@@ -6,8 +6,8 @@ It learns your taste and picks a spot that suits you, or that your whole group a
 
 > Work in progress.
 > The design is written down in [docs/DESIGN.md](docs/DESIGN.md).
-> The agent loop, the provider adapter, trace events, the nearby places tool, the data schema, memory, the graph workflow engine, the single-user recommendation, and the group consensus backend, and a web channel for solo use with a map and an execution view exist so far.
-> The group web page, accounts, and Telegram are not built yet.
+> The agent loop, the provider adapter, trace events, the nearby places tool, the data schema, memory, the graph workflow engine, the single-user recommendation, the group consensus backend, and a web channel with a map, an execution view, and the group page exist so far.
+> Accounts, the link preview card, and Telegram are not built yet.
 
 ## What it does
 
@@ -95,11 +95,20 @@ npm start       # builds the page and serves it with the API at http://localhost
 npm run dev     # backend with reload, and the Vite dev server at http://localhost:5173
 ```
 
-The page has two views.
+The page has three views.
 Discover is a map beside a list of nearby options: pins and rows share one numbering, selecting either opens the same detail, and the radius, category filter, and sort are on the page.
 Discover starts with a choice, "Pick for me" or "Browse nearby", remembered on the device.
 Pick for me asks for what you feel like and suggests a place.
 Browse nearby lists the places nearest you with no request, no suggestion, and no model call.
+Group is for eating with friends, with no account for anyone.
+The host says what the group wants and gets a link to share, which looks like `/g/<token>`.
+A friend opens it, adds their name, what they cannot eat, and what they like, and the host sees who has answered as they do.
+The host closes the group, and then everyone sees the pick, why it was picked, and the runners-up.
+The host's version names who refuses what.
+Everyone else's says the same without a name beside anyone's needs.
+Only "places you won't go to" rules a place out, since the places data has no menus or prices, so allergies, diets, and budgets show up as reminders to check.
+A group and everything shared in it is deleted when it expires, 24 hours after it starts by default.
+This works in demo mode too: open the link in a second browser profile to be a second person.
 Execution shows what the server recorded for each search made in this tab, stage by stage, with inputs, outputs, timings, and errors.
 Its history holds the last 10 runs, only in the tab, and a reload clears it.
 
@@ -164,5 +173,5 @@ The `search_nearby_places` tool is built too, backed by free Overture Maps data 
 Memory with a confidence-aware retrieval gate is built as well, with in-memory and Postgres stores.
 The single-user recommendation workflow is available through `makan.solo`, with offline end-to-end tests.
 The web channel serves it over HTTP and in a mobile first React page, for guests with no account.
-The group consensus workflow and saved, expiring group sessions with shared links are built too, served over `/api/groups`; the group web page is a follow-up.
+The group consensus workflow and saved, expiring group sessions with shared links are built too, served over `/api/groups` and used by the Group page.
 See [the group decisions](docs/DESIGN.md#group-consensus-decisions).

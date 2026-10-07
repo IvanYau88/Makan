@@ -9,7 +9,8 @@ ever lists another participant's id.
 Expiry is enforced here and not left to the purge. A session whose `expires_at` has passed is
 treated as gone for everything, and a null `expires_at` never expires. `retention` is how long a
 new session lives, and None creates sessions that never expire. A closed session still reads, but
-nobody can join it or change their inputs, and only the host can close it or ask for the result.
+nobody can join it or change their inputs, and only the host can close it. The host can ask for the
+result at any time, and once the session is closed every participant can.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from makan.sessions.errors import (
     SessionClosed,
     SessionExpired,
     SessionNotFound,
+    SessionOpen,
 )
 from makan.sessions.store import SessionStore
 
@@ -105,6 +107,10 @@ class GroupSessions:
         self._store.create(session, host)
         return session, host
 
+    def now(self) -> datetime:
+        """The time as this service reads it, so what is kept beside a session expires with it."""
+        return self._clock()
+
     def view(self, link_token: str, participant_token: str | None = None) -> SessionView:
         """Read a session by its link. An open or closed session reads, an expired one does not."""
         session = self._live(link_token)
@@ -173,6 +179,20 @@ class GroupSessions:
         session = self._live(link_token)
         self._host(session, participant_token)
         return session, self._store.participants(session.id)
+
+    def closed_inputs(
+        self, link_token: str, participant_token: str | None
+    ) -> tuple[Session, list[Participant], Participant]:
+        """The session, everyone in it, and the caller, for anyone in a closed session's result.
+
+        The group's result is only given once the host has closed the session, because until then
+        the inputs can still change. The caller must be a participant, host or not.
+        """
+        session = self._live(link_token)
+        you = self._member(session, _required(participant_token))
+        if session.closed_at is None:
+            raise SessionOpen("The host has not closed this group yet.")
+        return session, self._store.participants(session.id), you
 
     def purge_expired(self) -> int:
         """Delete every expired session. The web app runs this on a schedule (makan.web.purge)."""

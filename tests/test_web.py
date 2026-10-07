@@ -212,6 +212,16 @@ def test_static_front_end_is_served_after_the_api(tmp_path: Path) -> None:
     assert app.get("/api/health").status_code == 200
 
 
+def test_a_shared_group_link_opens_the_page_and_is_not_cached(tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text("<h1>Makan</h1>", encoding="utf-8")
+    app = client(static_dir=tmp_path)
+    page = app.get("/g/2d6c1b8e-0000-4000-8000-000000000000")
+    assert page.status_code == 200 and "<h1>Makan</h1>" in page.text
+    assert page.headers["Cache-Control"] == "no-store"
+    assert app.get("/g/2d6c1b8e-0000-4000-8000-000000000000/").status_code == 200
+    assert app.get("/api/groups/2d6c1b8e-0000-4000-8000-000000000000").status_code == 404
+
+
 def test_a_missing_front_end_build_leaves_only_the_api(tmp_path: Path) -> None:
     app = client(static_dir=tmp_path / "missing")
     assert app.get("/").status_code == 404

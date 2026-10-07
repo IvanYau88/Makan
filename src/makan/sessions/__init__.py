@@ -12,6 +12,7 @@ from makan.sessions.errors import (
     SessionExpired,
     SessionFull,
     SessionNotFound,
+    SessionOpen,
 )
 from makan.sessions.service import (
     DEFAULT_RETENTION,
@@ -37,6 +38,7 @@ __all__ = [
     "SessionExpired",
     "SessionFull",
     "SessionNotFound",
+    "SessionOpen",
     "SessionStore",
     "SessionView",
     "purge_expired_sessions",

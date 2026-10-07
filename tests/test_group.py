@@ -400,3 +400,35 @@ def test_no_user_memory_is_read_for_a_group() -> None:
     s = session()
     result = run(s, [who(s, "Alex", host=True)], [THAI])
     assert result.graph.results["memory"].value.decision.lookup is False
+
+
+def test_the_shared_explanation_says_what_was_shared_and_never_who_shared_it() -> None:
+    s = session()
+    people = [
+        who(s, "Alex", host=True, likes=("thai",)),
+        who(s, "Sam", dislikes=("thai",), likes=("ramen",), allergies=("peanut",), minutes=1),
+        who(s, "Kim", refuses=("seafood",), minutes=2),  # no taste, so left out of the scores
+    ]
+    rec = run(s, people, [THAI, NEAR_RAMEN, SEAFOOD]).recommendation
+    assert rec.pick.place.name == "Near Ramen"
+    assert "Alex is least happy with it" in rec.explanation
+    assert "Excluded before scoring: Sea Palace (Kim refuses seafood)" in rec.explanation
+    text = rec.shared_explanation
+    for name in ("Alex", "Sam", "Kim"):
+        assert name not in text
+        assert name not in " ".join(rec.pick.shared_warnings)
+    assert "Try Near Ramen" in text and "Runners-up: Mid Thai (lowest score" in text
+    assert "Nobody scored it below" in text and "The group average is" in text
+    assert "Excluded before scoring: Sea Palace (refused by someone in the group: seafood)" in text
+    assert "1 person who shared no taste preferences" in text
+    assert "Cannot verify an allergy to peanut." in text
+    assert rec.pick.shared_warnings == ("Cannot verify an allergy to peanut.",)
+    assert "safe" not in text.lower()
+
+
+def test_the_shared_explanation_holds_the_same_pick_and_scores_as_the_hosts() -> None:
+    s = session("thai please")
+    people = [who(s, "Alex", host=True), who(s, "Sam", minutes=1)]
+    rec = run(s, people, [NEAR_RAMEN, THAI], classifier("thai")).recommendation
+    assert "Nobody shared a taste preference" in rec.shared_explanation
+    assert rec.shared_explanation.startswith("Try Mid Thai")

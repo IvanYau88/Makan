@@ -23,7 +23,7 @@ from typing import Annotated, Any, Literal
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import (
     BaseModel,
@@ -301,6 +301,16 @@ def create_app(
     )
 
     if static_dir is not None and static_dir.is_dir():
+        index = static_dir / "index.html"
+
+        @app.get("/g/{link_token}", include_in_schema=False, response_model=None)
+        @app.get("/g/{link_token}/", include_in_schema=False, response_model=None)
+        def group_page(link_token: str) -> FileResponse | JSONResponse:
+            """A shared group link opens the same page. The page asks the API about the link."""
+            if not index.is_file():
+                return error(404, "not_found", "Not found.")
+            return FileResponse(index, headers={"Cache-Control": "no-store"})
+
         # Registered last so the API routes win. `html=True` serves index.html at "/".
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="web")
     return app

@@ -24,6 +24,10 @@ class SessionClosed(SessionError):
     code = "session_closed"
 
 
+class SessionOpen(SessionError):
+    code = "session_open"
+
+
 class SessionFull(SessionError):
     code = "session_full"
 

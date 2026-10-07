@@ -29,6 +29,7 @@ from makan.consensus import (
     request_match,
     score,
     score_options,
+    shared_unverified_warnings,
     taste,
     unverified_warnings,
 )
@@ -209,6 +210,24 @@ def test_unverified_constraints_are_warnings_by_person_and_never_claim_safety() 
     )
     assert not any("safe" in w.lower() for w in warnings)
     assert unverified_warnings([person("Kim")]) == ()
+
+
+def test_shared_warnings_say_what_was_shared_and_never_by_whom() -> None:
+    warnings = shared_unverified_warnings(
+        [
+            person("Sam", diets=("halal",), allergies=("peanut",)),
+            person("Alex", allergies=("peanut", "shellfish"), budget="under RM30"),
+            person("Kim", refuses=("seafood",)),
+        ]
+    )
+    assert warnings == (
+        "Cannot verify an allergy to peanut.",
+        "Cannot verify an allergy to shellfish.",
+        "Cannot verify a diet: halal.",
+        "Cannot verify a budget: under RM30.",
+    )
+    assert not any(name in " ".join(warnings) for name in ("Sam", "Alex", "Kim"))
+    assert shared_unverified_warnings([person("Kim")]) == ()
 
 
 # Scoring

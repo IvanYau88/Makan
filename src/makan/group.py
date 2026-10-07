@@ -29,6 +29,7 @@ from makan.consensus import (
     parse_constraints,
     parse_preferences,
     score_options,
+    shared_unverified_warnings,
     unverified_warnings,
 )
 from makan.graph import Graph, GraphResult, Step, StepContext, run_graph
@@ -68,7 +69,8 @@ class RankedOption:
     minimum: float | None  # the lowest score anyone gave it, which the pick is made on
     average: float | None  # both are None when nobody shared a taste, so no one scored it
     least_happy: tuple[str, ...]  # who gave it the minimum
-    warnings: tuple[str, ...]  # constraints that could not be verified for this option
+    warnings: tuple[str, ...]  # constraints that could not be verified for this option, by person
+    shared_warnings: tuple[str, ...]  # the same, with nobody named, for the rest of the group
 
 
 @dataclass(frozen=True)
@@ -76,7 +78,8 @@ class GroupRecommendation:
     pick: RankedOption | None
     runners_up: tuple[RankedOption, ...]
     excluded: tuple[Exclusion, ...]
-    explanation: str
+    explanation: str  # for the host: names a person next to what they shared
+    shared_explanation: str  # for the rest of the group: says what was shared, never by whom
     warnings: tuple[str, ...]  # about the whole search, not one option
     data_source: str
     participant_count: int
@@ -228,6 +231,7 @@ def _recommendation(
     source: str,
 ) -> GroupRecommendation:
     unverified = unverified_warnings(members)
+    shared_unverified = shared_unverified_warnings(members)
     pending = tuple(m.name for m in members if not m.submitted)
     uncounted = tuple(m.name for m in members if not m.has_taste)
     warnings = list(research.warnings)
@@ -235,42 +239,56 @@ def _recommendation(
         warnings.append(_REFUSAL_NOTE)
     warnings.extend(f"{name} has not shared anything yet." for name in pending)
 
-    options = tuple(_option(s, len(members), unverified) for s in result.ranked)
+    options = tuple(_option(s, len(members), unverified, shared_unverified) for s in result.ranked)
     pick, runners_up = (options[0] if options else None), options[1 : 1 + RUNNERS_UP]
-    parts: list[str] = []
-    if pick is not None:
-        parts.append(f"Try {pick.place.name}: {'; '.join(pick.reasons)}.")
-        parts.append(_least_misery(pick))
-        if runners_up:
-            parts.append("Runners-up: " + "; ".join(_runner_up(o) for o in runners_up) + ".")
-    elif nearby == 0:
-        parts.append("No places found within this search radius.")
-    else:
-        parts.append(
-            f"No place is left after hard constraints: all {nearby} nearby places match a "
-            "category someone refuses, so Makan has nothing to recommend. "
-            "Ask them to relax a refusal, or search a wider radius."
-        )
-    if result.excluded:
-        listed = result.excluded[:LISTED_EXCLUSIONS]
-        text = "; ".join(f"{e.place.name} ({_refusals(e)})" for e in listed)
-        more = len(result.excluded) - len(listed)
-        parts.append(f"Excluded before scoring: {text}" + (f"; and {more} more." if more else "."))
-    if uncounted:
-        parts.append(
-            f"Not counted in the scores, because they shared no taste preferences: "
-            f"{_join(uncounted)}. Their hard constraints still applied."
-        )
-    all_warnings = [*unverified, *warnings]
-    if all_warnings:
-        parts.append(" ".join(all_warnings))
-    if source.startswith("overture:"):
-        parts.append("Places data: Overture Maps Foundation (CDLA Permissive 2.0).")
+
+    def explain(*, named: bool) -> str:
+        parts: list[str] = []
+        if pick is not None:
+            parts.append(f"Try {pick.place.name}: {'; '.join(pick.reasons)}.")
+            parts.append(_least_misery(pick, named))
+            if runners_up:
+                listed = "; ".join(_runner_up(o, named) for o in runners_up)
+                parts.append(f"Runners-up: {listed}.")
+        elif nearby == 0:
+            parts.append("No places found within this search radius.")
+        else:
+            parts.append(
+                f"No place is left after hard constraints: all {nearby} nearby places match a "
+                "category someone refuses, so Makan has nothing to recommend. "
+                "Ask them to relax a refusal, or search a wider radius."
+            )
+        if result.excluded:
+            shown = result.excluded[:LISTED_EXCLUSIONS]
+            text = "; ".join(f"{e.place.name} ({_refusals(e, named)})" for e in shown)
+            more = len(result.excluded) - len(shown)
+            parts.append(
+                f"Excluded before scoring: {text}" + (f"; and {more} more." if more else ".")
+            )
+        if uncounted:
+            if named:
+                parts.append(
+                    f"Not counted in the scores, because they shared no taste preferences: "
+                    f"{_join(uncounted)}. Their hard constraints still applied."
+                )
+            else:
+                parts.append(
+                    f"Not counted in the scores: {_count(len(uncounted))} who shared no taste "
+                    "preferences. Their hard constraints still applied."
+                )
+        all_warnings = [*(unverified if named else shared_unverified), *warnings]
+        if all_warnings:
+            parts.append(" ".join(all_warnings))
+        if source.startswith("overture:"):
+            parts.append("Places data: Overture Maps Foundation (CDLA Permissive 2.0).")
+        return " ".join(parts)
+
     return GroupRecommendation(
         pick,
         runners_up,
         result.excluded,
-        " ".join(parts),
+        explain(named=True),
+        explain(named=False),
         tuple(warnings),
         source,
         len(members),
@@ -279,7 +297,9 @@ def _recommendation(
     )
 
 
-def _option(scored: Scored, people: int, unverified: tuple[str, ...]) -> RankedOption:
+def _option(
+    scored: Scored, people: int, unverified: tuple[str, ...], shared_unverified: tuple[str, ...]
+) -> RankedOption:
     place = scored.place
     reasons = [f"{distance_label(place.distance_m)} from the search point"]
     if place.request_fit:
@@ -298,35 +318,45 @@ def _option(scored: Scored, people: int, unverified: tuple[str, ...]) -> RankedO
         scored.average if counted else None,
         scored.least_happy,
         unverified,
+        shared_unverified,
     )
 
 
-def _least_misery(option: RankedOption) -> str:
+def _least_misery(option: RankedOption, named: bool) -> str:
     if option.minimum is None or option.average is None:
         return (
             "Nobody shared a taste preference, so there are no scores to compare. "
             "This is the best match for the request, and then the nearest place."
         )
     low = f"{floor_score(option.minimum):.2f}"
+    average = f"The group average is {option.average:.2f}."
+    if not named:
+        return f"Nobody scored it below {low} out of 1.00. {average}"
     verb = "is" if len(option.least_happy) == 1 else "are"
     return (
         f"{_join(option.least_happy)} {verb} least happy with it, scoring it {low} out of 1.00, "
-        f"so nobody scored it below {low}. The group average is {option.average:.2f}."
+        f"so nobody scored it below {low}. {average}"
     )
 
 
-def _runner_up(option: RankedOption) -> str:
+def _runner_up(option: RankedOption, named: bool) -> str:
     if option.minimum is None or option.average is None:
         return f"{option.place.name} ({distance_label(option.place.distance_m)})"
-    return (
-        f"{option.place.name} (lowest score {floor_score(option.minimum):.2f} "
-        f"from {_join(option.least_happy)}; average {option.average:.2f})"
-    )
+    low = f"{floor_score(option.minimum):.2f}"
+    who = f" from {_join(option.least_happy)}" if named else ""
+    return f"{option.place.name} (lowest score {low}{who}; average {option.average:.2f})"
+
+
+def _count(people: int) -> str:
+    return f"{people} {'person' if people == 1 else 'people'}"
 
 
 def _join(names: tuple[str, ...]) -> str:
     return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
-def _refusals(exclusion: Exclusion) -> str:
-    return "; ".join(f"{r.member} refuses {r.term}" for r in exclusion.refusals)
+def _refusals(exclusion: Exclusion, named: bool) -> str:
+    if named:
+        return "; ".join(f"{r.member} refuses {r.term}" for r in exclusion.refusals)
+    terms = sorted({r.term for r in exclusion.refusals})
+    return f"refused by someone in the group: {', '.join(terms)}"
