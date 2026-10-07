@@ -59,7 +59,7 @@ def _port(text: str) -> int:
 
 def missing_packages(*, demo: bool) -> list[str]:
     """The optional packages this run needs and the environment lacks."""
-    needed = ["fastapi", "uvicorn"] if demo else ["fastapi", "uvicorn", "duckdb"]
+    needed = ["fastapi", "uvicorn", "jwt"] if demo else ["fastapi", "uvicorn", "jwt", "duckdb"]
     return [name for name in needed if importlib.util.find_spec(name) is None]
 
 

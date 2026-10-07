@@ -49,3 +49,19 @@ def store(request: pytest.FixtureRequest) -> Any:
     from makan.sessions.postgres import PostgresSessionStore
 
     return PostgresSessionStore(request.getfixturevalue("db"))  # skips without a database
+
+
+@pytest.fixture(params=["memory", "postgres"])
+def account_store(request: pytest.FixtureRequest) -> Any:
+    """An account store with its memory store: in memory, and on Postgres when a database is set."""
+    if request.param == "memory":
+        from makan.accounts import InMemoryAccountStore
+
+        return InMemoryAccountStore()
+    from makan.accounts.postgres import PostgresAccountStore
+    from makan.memory.postgres import PostgresMemoryStore
+
+    conn = request.getfixturevalue("db")  # skips without a database
+    store = PostgresAccountStore(conn)
+    store.memory = PostgresMemoryStore(conn)  # type: ignore[attr-defined]
+    return store

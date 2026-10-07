@@ -6,8 +6,8 @@ It learns your taste and picks a spot that suits you, or that your whole group a
 
 > Work in progress.
 > The design is written down in [docs/DESIGN.md](docs/DESIGN.md).
-> The agent loop, the provider adapter, trace events, the nearby places tool, the data schema, memory, the graph workflow engine, the single-user recommendation, the group consensus backend, and a web channel with a map, an execution view, and the group page exist so far.
-> Accounts, the link preview card, and Telegram are not built yet.
+> The agent loop, the provider adapter, trace events, the nearby places tool, the data schema, memory, the graph workflow engine, the single-user recommendation, the group consensus backend, a web channel with a map, an execution view, and the group page, and optional accounts exist so far.
+> Google sign-in, the link preview card, and Telegram are not built yet.
 
 ## What it does
 
@@ -15,7 +15,7 @@ Tap "locate me" and Makan finds food nearby based on what you like.
 Eating alone, that is all it takes.
 You never need to share the session link, and no account is needed.
 Makan researches nearby options, ranks them for you, explains the pick, and shows the runners-up.
-If you sign in, it remembers your taste so the picks get better over time.
+If you sign in with an email and password, it calls you by name, remembers your taste so the picks get better over time, and never suggests a place you said you will not go to.
 
 Eating with others, send the session link to your friends.
 They open it in any browser, with no account, and add their own dietary needs, budget, and tastes.
@@ -66,7 +66,7 @@ npm --prefix web ci
 ```
 
 The `dev` extra includes DuckDB, which the Overture places provider needs, and FastAPI.
-For a runtime install, use `pip install ".[web,overture]"`.
+For a runtime install, use `pip install ".[web,overture,postgres]"`.
 
 Check commands, with the virtual environment active (`. .venv/bin/activate`, or `.venv\Scripts\activate` on Windows):
 
@@ -109,6 +109,27 @@ After applying `0003`, the project's security advisor no longer flags the two he
 Do not run the test suite's live Postgres tests against a hosted database, because they create and drop their own schema.
 Point `MAKAN_TEST_DATABASE_URL` at a local or throwaway Postgres instead.
 
+### Accounts
+
+Accounts are optional and off until Supabase is configured.
+Without them everyone is a guest, and nothing about searching or groups changes.
+They use the Supabase project from "Hosted database", with its Auth, so the steps below come after those.
+
+1. In the project's Auth settings, keep the email provider on.
+   If email confirmation is on, a new person gets a link to confirm before they can sign in.
+   Add the address the link should open (your site, or `http://localhost:8000` for the one command run) to the redirect allow list under URL configuration.
+2. Put these in your local `.env`, from the project's API settings.
+   `SUPABASE_URL` and `SUPABASE_ANON_KEY` are public.
+   `SUPABASE_SERVICE_ROLE_KEY` is not: only the backend uses it, to delete an account, so never put it in the web app, a log, or a commit.
+   `MAKAN_DATABASE_URL` from "Hosted database" is required too, and `MAKAN_AUTH_REDIRECT_URL` is optional (blank means the page's own address).
+3. Start the server as below.
+   A missing setting fails at startup and names it.
+   `python -m makan.web --demo` works with accounts too, using sample places and the real Auth and database.
+
+The backend checks Supabase's access tokens against the project's published signing keys (`/auth/v1/.well-known/jwks.json`), so no shared secret is needed.
+The Account page signs up, signs in and out, makes the profile (the name Makan greets you with, and the location history opt-in, which is off by default), takes the taste form, exports everything stored about you, and deletes your data and account.
+The taste form keeps a soft "skip" (a cuisine ranked lower) apart from a hard "never" (an allergy, a diet, or a place you will not go to), and a hard never does not fade with time.
+
 ### Web app
 
 The web channel is a FastAPI backend (`src/makan/web`) and a React front end (`web/`, Vite and TypeScript).
@@ -133,12 +154,12 @@ npm --prefix web run build
 
 `python -m makan.web` takes `--demo`, `--reload`, `--host` (default `127.0.0.1`), and `--port` (default `8000`).
 
-The page has three views.
+The page has three views, and a fourth, Account, when the server has accounts.
 Discover is a map beside a list of nearby options: pins and rows share one numbering, selecting either opens the same detail, and the radius, category filter, and sort are on the page.
 Discover starts with a choice, "Pick for me" or "Browse nearby", remembered on the device.
 Pick for me asks for what you feel like and suggests a place.
 Browse nearby lists the places nearest you with no request, no suggestion, and no model call.
-Group is for eating with friends, with no account for anyone.
+Group is for eating with friends, with no account for anyone, even when accounts are on.
 The host says what the group wants and gets a link to share, which looks like `/g/<token>`.
 A friend opens it, adds their name, what they cannot eat, and what they like, and the host sees who has answered as they do.
 The host closes the group, and then everyone sees the pick, why it was picked, and the runners-up.

@@ -45,7 +45,7 @@ The harness is the point.
 
 - Python 3.12 or newer, with a `src/makan` package layout and `pyproject.toml` as the single config file.
 - Build backend is `hatchling`, and the only required runtime dependency is `httpx`.
-  DuckDB is an optional runtime dependency in the `overture` extra, and FastAPI and uvicorn are in the `web` extra.
+  DuckDB is an optional runtime dependency in the `overture` extra, and FastAPI, uvicorn, and PyJWT are in the `web` extra.
   The `dev` extra includes all of them, plus `httpx2`, which Starlette's test client prefers over `httpx`.
 - Dev tools are `pytest` for tests, `ruff` for lint and format, and `mypy` in strict mode for types.
   They install through the `dev` extra: `pip install -e ".[dev]"`.
@@ -362,8 +362,11 @@ Implementation decisions:
   A repeated value reconfirms the active fact, while a changed value links the old row to its replacement.
   Values are compared by type as well as value, so a boolean never equals a number, while `20` and `20.0` are equal.
   Reconfirming refuses a superseded row in both stores.
-- Confidence is read-time exponential decay with a configurable half-life per kind: 180 days for cuisine preferences, 365 for constraints, and 90 for place ratings.
-  Every kind decays by default; the policy can set a kind's half-life to `None`, but hard constraints such as allergies remain an open product question.
+- Confidence is read-time exponential decay with a configurable half-life per kind: 180 days for cuisine preferences and 90 for place ratings.
+  The `constraint` kind has a half-life of `None`, so a hard constraint such as an allergy never decays and is never stale for age.
+  A person who said "never" has not changed their mind because time passed, and a faded allergy would stop being a warning.
+  They change it by saying so: the fact is superseded by a new value, or forgotten.
+  A constraint can still carry an `expires_at`, and then it is stale once expired.
 - A fact is stale when expired or when its decayed confidence falls below 0.5.
   The caller receives stale facts explicitly, and the prompt rendering tells the model to ask for confirmation before relying on them.
 - The initial retrieval gate is deterministic and skips only empty messages and messages made entirely of greetings, thanks, or acknowledgements.
@@ -374,6 +377,10 @@ Implementation decisions:
 - The rule gate reads words in any script.
   It used to match only ASCII letters, so a request such as "吃什么" had no words and was treated as empty, which skipped the lookup.
   Any letters or digits now count as content, and only a message with none is empty.
+- `Memory.forget(user_id, fact_id)` deletes a user's fact together with the facts it superseded.
+  Deleting only the newest fact would set the older one's `superseded_by` to null and put it back in force, so the history goes with it.
+  Superseding keeps history, and forgetting is the person taking something back, so it does not.
+  The store checks the fact belongs to that user, and the Postgres store does it in one recursive statement.
 - Memory lookup is performed by `recall_for_turn` before the core loop, and the loop can write facts through the existing `remember_fact` tool interface.
   There is no standalone read-memory tool, keeping retrieval behind the gate.
 - The content schema, confidence half-lives, stale threshold, prompt wording, and rule-gate behavior are initial settings to tune with usage and evals.
@@ -575,7 +582,8 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - "Locate me" runs the single-user research workflow directly.
   It runs as a session with one participant, and a solo user simply does not share the session link.
 - A guest gets a recommendation with no account, using only what they enter in that request, and the guest's solo session expires like any other session.
-- A signed-in user gets recommendations shaped by their stored memory and profile.
+- A signed-in user gets recommendations shaped by their stored memory and profile (see "Profiles and auth").
+  Their memory is read through `recall_for_turn` with their user id, so stored hard constraints are recalled on every request.
 - Every request, solo or group, is a session with one or more participants, so the schema needs no special case for solo use.
 
 ## Group sessions
@@ -672,8 +680,9 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 
 ## Profiles and auth
 
-- Supabase Auth provides email magic links and Google sign-in.
-  Sign in with Apple is skipped because it needs a paid Apple developer account.
+- Supabase Auth provides email and password sign-up and sign-in.
+  Google sign-in is deferred, and Sign in with Apple is skipped because it needs a paid Apple developer account.
+  Magic links were the earlier plan and were dropped, because a password is a plain, testable path and a link adds a second thing to depend on.
 - Accounts are additive.
   Guests are fully supported, both solo and through session links, so `user_id` is optional throughout the schema.
 - A profile holds account settings, the display name and the location history opt-in.
@@ -682,6 +691,103 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - Location is approximate and is not stored as a history unless the user opts in.
 - Users can export or delete all of their data.
 - A group session shares only the constraints and preferences each person chooses to share, never their full history.
+
+### Accounts decisions
+
+- **Who does what:** the browser talks to Supabase Auth directly for sign-up, sign-in, sign-out, and token refresh, using `@supabase/supabase-js` with the PKCE flow.
+  The backend never sees a password.
+  It checks the access token the browser sends as `Authorization: Bearer <token>`, and owns the profile, the taste form, export, and deletion.
+  `GET /api/config` hands the page the project URL, the public anon key, and the redirect address in an `auth` block, or `null` when accounts are off, so the page needs no build-time settings and one build works everywhere.
+  The anon key is public by design and row-level security protects the tables.
+  The service role key is never in that block, and a test checks no response carries it.
+- **Token verification:** the project signs access tokens with ES256 and publishes the public key at `<project>/auth/v1/.well-known/jwks.json`.
+  That was checked against the live project's settings and it has no shared secret in use, so the backend verifies with the published key and holds nothing that could mint a token.
+  `makan.accounts.tokens.TokenVerifier` accepts only the asymmetric algorithms `ES256`, `RS256`, and `EdDSA`, so a token cannot pass by naming `HS256`.
+  It requires the signature, `exp`, `iss` equal to `<project>/auth/v1`, `aud` equal to `authenticated`, the `authenticated` role, and a UUID `sub`, with 10 seconds of clock skew.
+  Keys are cached for 10 minutes.
+  A token with an unknown key id triggers one refetch, at most one every 30 seconds, so a rotated key is picked up and made-up key ids cannot turn into a stream of requests.
+  If Supabase cannot be reached, cached keys keep working, and with none cached the request is a 503 `auth_unavailable`.
+  Access tokens are not checked against the Auth server per request, so a token stays valid until it expires (an hour by default) even after sign-out.
+  A project that still signs with a shared secret is not supported on purpose: add the key set, not a secret in this app's environment.
+  PyJWT is in the `web` extra.
+- **Optional on searches:** `POST /api/recommendations` and its stream route read an optional bearer token.
+  No header is a guest and the request is exactly what it was before.
+  A header with a token that does not verify is a 401 with code `token_expired` or `invalid_token`, and never a silent downgrade to a guest, so a person whose session ran out is told, and does not just lose their remembered taste without knowing.
+  The page signs the person out and offers a guest search.
+  The request body still has no user id, and a header is ignored when accounts are off.
+  The group routes use bearer tokens too, but only their own participant tokens, and they never read or call the Supabase verifier, so the group flow is unchanged for everyone.
+  The group `session_expired` code is a session link and the account `token_expired` code is a sign-in, which is why they differ.
+- **First sign-in:** `GET /api/me` makes the `users` row if it is missing, and the profile row is made when the person saves a name.
+  Before the first row is made for someone new, the backend asks the Auth admin API whether the account still exists.
+  A deleted person's token stays valid until it expires, and without this check replaying it would recreate their rows.
+  It is one extra call, only on the first sign-in, and a deleted account gets 401 `account_deleted`.
+- **Profile:** the display name is required to create a profile, and on every save, because a profile cannot exist without one.
+  `makan.accounts.profile.clean_display_name` converts every whitespace character to a space, removes control and formatting characters (which include the bidirectional overrides that make text read backwards), normalizes to NFC, collapses runs of spaces, and trims.
+  A name that is empty after that, or longer than 40 characters, is a 422 with a message that says what to change, and a long name is never cut short.
+  The location history opt-in defaults to off, and a save that omits it leaves it as it was.
+  Nothing in this change stores location history, so the flag is the person's recorded choice for when something does.
+- **Greeting:** the name reaches the agent as data and never as instructions.
+  `SoloRequest.display_name` goes to `build_solo_graph`, which puts `Hey <name>! ` at the start of the explanation and returns the same as `Recommendation.greeting`.
+  It is code that composes that sentence.
+  The name is in no prompt, tool argument, trace event, or public run record, so a name such as "ignore previous instructions" is only ever shown back as a name, and tests check the model's requests and the run for it.
+  The name is cleaned again there, and one that cannot be used gives no greeting.
+  A guest has no name and no greeting, and so does a signed-in person who has not made a profile, and so does a browse search, which has no suggestion to greet around.
+  The page shows `greeting` above the results, and the explanation carries it for other callers.
+- **Memory for a signed-in search:** the web app passes the person's `Memory` and user id to `recommend`, so the existing `memory` step reads their facts.
+  Group sessions still use only what each person shares in that session, and no stored taste enters a group.
+- **Taste form:** it is five lists and every one is optional.
+  Cuisines the person likes are `cuisine_like` facts, and cuisines they would rather skip are `cuisine_dislike` facts: a soft skip only lowers a score, and anything can still win.
+  A hard never is a different thing, kept as `constraint` facts in the vocabulary of `makan.memory.hard`, with the key `<group>:<term>` and the value true.
+  `allergy` and `diet` cannot be checked against the places data, so they are a warning on every search ("Cannot verify stored constraint: allergy to peanut.") and never a guarantee.
+  `never_place` is a place the person will not go to: it is ruled out in plain code before ranking, whatever the retrieval gate says and however old the fact is, and a warning says which places were left out.
+  A term names a place when its words appear in order in the place's name, ignoring case and apostrophes, so `pizza hut` rules out `Pizza Hut Express` and not `Pizza Palace`.
+  No model and no scorer decides any of it.
+- **Saving the form:** it makes the stored facts match the form.
+  A new term is remembered, a repeated one is reconfirmed, and a term the person removed is forgotten, with its history, because removing is taking something back.
+  Remembering runs first, so a cuisine moved from liked to skipped supersedes its old fact and keeps the history.
+  Terms are trimmed, stripped of control characters, folded to lower case, and deduplicated, with at most 20 per list and 40 characters each.
+  A cuisine in both likes and skips is a 422 naming it, and nothing is half saved.
+  Facts this form does not own (place ratings, other constraints) are left alone.
+  Hard constraints are stored lower case, so the page shows them that way.
+- **Endpoints:** `GET /api/me` returns `{user: {id, email}, profile | null, taste}`, `PUT /api/me/profile` takes `{display_name, location_history_opt_in?}`, and `PUT /api/me/taste` takes the five lists.
+  `GET /api/me/export` is a JSON download with `Content-Disposition: attachment`, and `DELETE /api/me` answers 204.
+  Every one needs a valid token and is scoped to the token's user.
+  Errors use the same `{"error": {"code", "message"}}` shape as everywhere else.
+- **Export:** one SQL statement builds the whole export from one snapshot, using `to_jsonb` of each row.
+  It holds the `users` row, the profile, every memory fact including superseded history, the person's sessions, their participant rows, and their trace events.
+  A column added later is exported with no change here.
+  It leaves out other people's rows, such as the guests in a session the person hosted.
+- **Deletion:** the rows go first, with one `delete from users`, which cascades to everything the person owns, and then the Supabase auth account is deleted through the admin API.
+  If the auth call fails the person still has a working account and nothing stored, can try again, and gets 503 `auth_unavailable` meanwhile.
+  The other order could leave their data stored behind an account they can no longer sign in to.
+  An auth account that is already gone counts as deleted, so a retry is safe.
+- **The service role key:** `SUPABASE_SERVICE_ROLE_KEY` is read from the environment on the server only and is used for exactly two admin calls, checking an account exists and deleting one.
+  It is hidden from `repr`, sent only to Supabase, absent from every response, and no error or log line carries it, a request URL, or a response body.
+  A legacy JWT key is sent as `apikey` and `Authorization`, and a newer `sb_secret_` key as `apikey` only.
+- **Database and threads:** accounts use the privileged `MAKAN_DATABASE_URL` connection, which bypasses row-level security, so every query names the user the token proved.
+  One connection serves the account store and the memory store behind one lock, since a request can run in a worker thread and a graph step at once.
+  `PostgresMemoryStore` gained that lock, and a connection that drops is not reopened yet.
+- **Configuration:** setting `SUPABASE_URL` turns accounts on, and then `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `MAKAN_DATABASE_URL` are required, so a half configured server fails at startup naming the missing setting.
+  Blank means off.
+  `MAKAN_AUTH_REDIRECT_URL` is where the confirmation email sends the person, and blank means the page's own origin.
+  It must also be in the project's redirect allow list in the Supabase dashboard.
+  Accounts work in demo mode too when these are set, with sample places and a real Auth and database, which is how the full flow is tried without a model key.
+- **Email confirmation:** the hosted project requires it, so a sign-up returns a user and no session.
+  The page then says to check their email, and moves to the sign in form.
+  A sign-up for an address already registered looks the same, so the page cannot be used to find out who has an account.
+  A wrong password and an unknown address are both Supabase's `invalid_credentials` and share one message.
+  An unconfirmed address offers to send the link again, and a confirmation link that failed (expired or already used) is reported on the sign in form from the address it opened.
+- **Page:** an Account tab appears only when the server has accounts.
+  Signed out it shows the sign in and create account form, with a notice when the person was signed out against their wishes.
+  Signed in it shows the profile, the taste form, and export and delete, and a first profile is followed by the taste form with its heading focused.
+  Delete asks first in the page, says it cannot be undone, and after it the page is a guest again with a note.
+  A 401 from the API, or a sign-out Supabase made on its own, ends the session with the note "Your session expired", which also follows the person to the other pages until they sign in.
+  There is no router, so the Account page is a tab like the others.
+- **Tests:** Supabase is mocked everywhere.
+  The backend tests use generated keys with `httpx.MockTransport` for the key set and the admin API, and the page tests mock `@supabase/supabase-js`.
+  The Postgres variants of the store tests run when `MAKAN_TEST_DATABASE_URL` is set.
+  The hosted project is exercised only by hand, with the full flow in a real browser, and every test account and row is removed afterwards.
+- **No migration:** the tables and policies from `0001` to `0003` already hold everything, so none was added.
 
 ## Channels
 
@@ -767,9 +873,10 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
     A `recommend` search needs a `request` of 1 to 500 characters after trimming, and a blank or missing one is a 422 on `request`.
     A `browse` search takes no `request`, and sending one, even an empty string, is a 422 on `request`.
     The contract changed from "`request` always required" and it has one client, the page, which changed with it, so there is no compatibility shim and no default `mode`.
-    There is deliberately no `user_id`: signing in is a later change, and trusting a client-supplied user id would let anyone read another user's memory.
-    Every call is a guest request, and its one-participant session is built and dropped inside the call, never shared or stored.
-  - A 200 response holds `pick` (null when nothing was found), `runners_up`, `explanation`, `warnings`, `stale_facts`, `data_source`, `attribution`, `partial` (the graph did not finish cleanly, so the list may be incomplete), `mode`, and the fields the map needs.
+    There is deliberately no `user_id` in the body: trusting a client-supplied user id would let anyone read another user's memory.
+    Who is asking comes only from an optional, verified bearer token (see "Accounts decisions"), and no token is a guest.
+    Either way the one-participant session is built and dropped inside the call, never shared or stored.
+  - A 200 response holds `pick` (null when nothing was found), `runners_up`, `explanation`, `greeting` (null for a guest), `warnings`, `stale_facts`, `data_source`, `attribution`, `partial` (the graph did not finish cleanly, so the list may be incomplete), `mode`, and the fields the map needs.
     `query` echoes the search as it ran, with `mode`, the rounded center, the radius, and `request` (null when browsing).
     A browse answer has the same shape with `pick` null, `runners_up` empty, `intent` null, `stale_facts` empty, and every place `matched` false, so the page needs no second renderer.
     Its `places` are nearest first and `rank` is that position, so pins and rows still agree.
@@ -784,7 +891,8 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
     Bad input is still a 422 before the stream starts.
     The page uses the stream, and the plain route stays for any other caller.
     A browser that leaves does not cancel the run: threads cannot be stopped, so the server finishes it and drops the answer.
-  - `GET /api/config` reports `{"mode", "map": {"tile_url", "attribution", "attribution_url"}}`, which the page needs before it can draw the map.
+  - `GET /api/config` reports `{"mode", "map": {"tile_url", "attribution", "attribution_url"}, "auth"}`, which the page needs before it can draw the map and know whether there are accounts.
+    `auth` is `{"url", "anon_key", "redirect_url"}` or null.
   - `GET /api/health` reports `{"status": "ok", "mode": "demo" | "live"}`, which the page uses to show the demo banner.
   - Every error uses `{"error": {"code", "message"}}` with a message safe to show.
     Bad input is 422 `invalid_request`.
@@ -839,7 +947,7 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   An empty result offers a search over the next larger radius.
   A Pick for me search with nothing typed is never filled in for the person: the form asks "Anything in mind, or no preference?", marks the box invalid, moves focus to it, and sends nothing.
   Every way to start a search (the button, Use my location, Search this area, Try again, and the wider search) asks the same question.
-- **Follow-ups:** a geocoder for typed addresses, sign-in, request rate limits and daily caps, a configurable port for the one command start, retrying a rate limited model call, durable and authorized run history, and a CORS allow-list once hosting is chosen.
+- **Follow-ups:** a geocoder for typed addresses, request rate limits and daily caps, a configurable port for the one command start, retrying a rate limited model call, durable and authorized run history, and a CORS allow-list once hosting is chosen.
 
 ### Group page decisions
 
@@ -1019,10 +1127,12 @@ Before this, a blank request was silently turned into "something good to eat" an
 - Enable GitHub secret scanning and push protection on the repository.
 - If a key ever reaches a commit or a chat, revoke it and issue a new one, because deleting the commit is not enough.
 - Set a credit limit on any provider key so a leak or a runaway loop cannot cost much.
+- `SUPABASE_SERVICE_ROLE_KEY` can do anything to the project's users.
+  It is used by the backend only, never sent to a client, never logged, and never put in a fixture, a test, or the repository.
+  Only the public anon key reaches the browser.
 
 ## Open questions
 
-- Whether hard constraints such as allergies should be exempt from confidence decay.
 - Which backend, if any, is accurate and calibrated enough on Makan's decisions, and what margins, coverage, clarification rate, latency, and cost are acceptable for each.
   Nothing live has been measured, so the thresholds and every backend are unvalidated.
 - Whether the logprob scorer works on any free OpenRouter endpoint, which needs a key and a capped test run.
@@ -1035,3 +1145,7 @@ Before this, a blank request was silently turned into "something good to eat" an
 - Whether a day is the right retention for session data.
   It defaults to 24 hours and is set by `MAKAN_SESSION_RETENTION_HOURS`.
 - Whether local development uses a local database or the hosted Supabase project.
+- Whether to check access tokens against the Auth server, or to keep a short revocation list, so a signed-out or deleted person's token stops working before it expires.
+  Today it stays valid until `exp`, and the first sign-in check only stops it bringing deleted rows back.
+- Whether a dropped database connection should be reopened.
+  The shared connection for accounts and for group sessions is opened once at startup, and a pooler that closes an idle connection would fail requests until a restart.

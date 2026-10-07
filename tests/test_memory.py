@@ -41,9 +41,11 @@ def make_memory() -> tuple[Memory, InMemoryStore, Clock, Owner]:
     return Memory(store, clock=clock), store, clock, Owner(user_id=uuid4())
 
 
-def test_every_fact_kind_decays_by_age() -> None:
+def test_every_soft_fact_kind_decays_by_age() -> None:
     memory, _, clock, owner = make_memory()
     for kind in MEMORY_KINDS:
+        if kind == "constraint":
+            continue  # a hard constraint never decays, see the next test
         content = cast(
             dict[str, Any],
             {
@@ -58,6 +60,17 @@ def test_every_fact_kind_decays_by_age() -> None:
         recalled = next(r for r in memory.recall(owner) if r.fact.id == fact.id)
         assert recalled.confidence < fact.confidence
         assert recalled.stale == "low_confidence"
+
+
+def test_a_hard_constraint_never_decays_or_goes_stale() -> None:
+    memory, _, clock, owner = make_memory()
+    fact = memory.remember(owner, "constraint", {"key": "allergy:peanut", "value": True}).fact
+    clock.now += timedelta(days=365 * 20)
+
+    recalled = memory.recall(owner)[0]
+
+    assert recalled.confidence == fact.confidence
+    assert recalled.stale is None
 
 
 def test_reconfirm_resets_decay_and_starts_a_new_confirmation_period() -> None:
@@ -138,13 +151,18 @@ def test_stale_expired_facts_are_returned_as_stale() -> None:
     assert "STALE (expired)" in (turn.text or "")
 
 
-def test_default_policy_decays_every_kind_and_allows_kind_specific_override() -> None:
+def test_default_policy_decays_every_kind_but_constraints_and_allows_overrides() -> None:
     policy = MemoryPolicy()
-    assert all(policy.decay[cast(MemoryKind, kind)].half_life is not None for kind in MEMORY_KINDS)
+    assert policy.decay["constraint"].half_life is None
+    assert all(
+        policy.decay[cast(MemoryKind, kind)].half_life is not None
+        for kind in MEMORY_KINDS
+        if kind != "constraint"
+    )
     configured = dict(policy.decay)
-    configured["constraint"] = DecayPolicy(None)
+    configured["constraint"] = DecayPolicy(timedelta(days=365))
     custom = MemoryPolicy(decay=configured)
-    assert custom.decay["constraint"].half_life is None
+    assert custom.decay["constraint"].half_life == timedelta(days=365)
 
 
 def test_rule_gate_skips_pleasantries_and_retrieves_for_food_requests() -> None:

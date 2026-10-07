@@ -34,9 +34,10 @@ export async function fetchConfig(signal?: AbortSignal): Promise<AppConfig | nul
   try {
     const response = await fetch("/api/config", { signal });
     const body = (await response.json()) as Partial<AppConfig>;
-    const { mode, map } = body;
+    const { mode, map, auth } = body;
     if ((mode !== "demo" && mode !== "live") || typeof map?.tile_url !== "string") return null;
-    return { mode, map };
+    const usable = typeof auth?.url === "string" && typeof auth.anon_key === "string";
+    return { mode, map, auth: usable ? auth : null };
   } catch {
     return null;
   }
@@ -47,18 +48,23 @@ export async function fetchConfig(signal?: AbortSignal): Promise<AppConfig | nul
  *
  * The server sends one JSON object per line: `run` snapshots while the graph works, then a
  * `result` or an `error`. `onRun` gets each snapshot. Aborting stops listening only: the server
- * cannot cancel work that has started.
+ * cannot cancel work that has started. A signed-in person's `token` is sent as a bearer
+ * credential, and a guest sends none.
  */
 export async function recommend(
   body: RecommendRequest,
   onRun: (run: Run) => void,
   signal?: AbortSignal,
+  token?: string | null,
 ): Promise<Recommendation> {
   let response: Response;
   try {
     response = await fetch("/api/recommendations/stream", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
       body: JSON.stringify(body),
       signal,
     });

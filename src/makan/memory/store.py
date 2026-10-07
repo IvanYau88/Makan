@@ -59,6 +59,14 @@ class MemoryStore(Protocol):
         """
         ...
 
+    def forget(self, fact_id: UUID, *, user_id: UUID) -> bool:
+        """Delete a user's fact and the history behind it, which is every fact it superseded.
+
+        The history goes too: deleting only the newer fact would set the older one's link to
+        null and put it back in force. False if the user has no such fact.
+        """
+        ...
+
 
 class InMemoryStore:
     """A store in a dict, with the same behavior as the Postgres one. Thread safe."""
@@ -108,3 +116,34 @@ class InMemoryStore:
             updated = dataclasses.replace(fact, confidence=confidence, last_confirmed_at=at)
             self._facts[fact_id] = updated
             return updated
+
+    def forget(self, fact_id: UUID, *, user_id: UUID) -> bool:
+        with self._lock:
+            fact = self._facts.get(fact_id)
+            if fact is None or fact.user_id != user_id:
+                return False
+            gone = {fact_id}
+            grew = True
+            while grew:
+                older = {
+                    f.id
+                    for f in self._facts.values()
+                    if f.user_id == user_id and f.superseded_by in gone and f.id not in gone
+                }
+                grew = bool(older)
+                gone |= older
+            for fact_id_ in gone:
+                del self._facts[fact_id_]
+            return True
+
+    def all_for_user(self, user_id: UUID) -> list[MemoryFact]:
+        """Every fact a user owns, superseded ones included, oldest first. For export."""
+        with self._lock:
+            facts = [f for f in self._facts.values() if f.user_id == user_id]
+        return sorted(facts, key=lambda f: (f.created_at, str(f.id)))
+
+    def delete_user(self, user_id: UUID) -> None:
+        """Delete every fact a user owns, as deleting the user does in the database."""
+        with self._lock:
+            for fact in [f for f in self._facts.values() if f.user_id == user_id]:
+                del self._facts[fact.id]

@@ -13,11 +13,14 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+from makan.accounts.errors import InvalidProfile
+from makan.accounts.profile import clean_display_name
 from makan.config import Config
 from makan.graph import Graph, GraphResult, Step, StepContext, StepFailed, run_graph
 from makan.memory.content import claim
 from makan.memory.context import TurnMemory, recall_for_turn
 from makan.memory.gate import GateDecision, RetrievalGate, RuleGate
+from makan.memory.hard import names_place, parse_hard
 from makan.memory.service import Memory, RecalledFact, utc_now
 from makan.memory.store import Owner
 from makan.models import Participant, Session
@@ -38,6 +41,7 @@ class SoloRequest:
     radius_m: int = 1000
     user_id: UUID | None = None
     expires_at: datetime | None = None
+    display_name: str | None = None  # a signed-in person's name, used only to greet them
 
     def __post_init__(self) -> None:
         PlaceQuery.near(self.latitude, self.longitude, self.radius_m)
@@ -134,6 +138,7 @@ class Recommendation:
     intent: Intent | None = None  # what the request was read as
 
     soft_signals: SoftSignals = field(default_factory=SoftSignals)
+    greeting: str | None = None  # "Hey Bob!" for a signed-in person, None for a guest
 
     def trace_summary(self) -> dict[str, Any]:
         return {
@@ -183,6 +188,16 @@ def _intent(answer: str) -> Intent:
         raw["category"].strip() if raw["category"] else None,
         tuple(r.strip() for r in requirements),
     )
+
+
+def _greeting(display_name: str | None) -> str:
+    """`Hey Bob! ` for a signed-in person, and nothing for a guest or a name that cannot be used."""
+    if display_name is None:
+        return ""
+    try:
+        return f"Hey {clean_display_name(display_name)}! "
+    except InvalidProfile:
+        return ""
 
 
 def research_steps(
@@ -273,11 +288,28 @@ def research_steps(
             turn = recalled.unwrap()
         else:
             warnings.append(f"Memory {recalled.status}: {recalled.error}")
+        never = [
+            hard.term
+            for r in turn.facts
+            if (hard := parse_hard(r.fact.content)) and hard.group == "never_place"
+        ]
         for r in turn.facts:
+            hard = parse_hard(r.fact.content) if r.fact.kind == "constraint" else None
+            if hard is not None and hard.group == "never_place":
+                continue  # enforced below, so there is nothing to verify
             if r.stale:
                 warnings.append(f"Confirm stale memory {r.fact.id}: {r.fact.kind} {r.fact.content}")
             elif r.fact.kind == "constraint":
-                warnings.append(f"Cannot verify stored constraint: {r.fact.content}.")
+                what = hard.describe() if hard else r.fact.content
+                warnings.append(f"Cannot verify stored constraint: {what}.")
+        # A place the person will never go to is ruled out in code, stale or not, before ranking.
+        left_out = [c for c in candidates.values() if any(names_place(t, c.name) for t in never)]
+        for c in left_out:
+            del candidates[c.id]
+        if left_out:
+            names = ", ".join(c.name for c in left_out[:3])
+            more = f" and {len(left_out) - 3} more" if len(left_out) > 3 else ""
+            warnings.append(f"Left out {names}{more}, because you said you will not go there.")
         signals = SoftSignals()
         if scorer is not None:
             read = ctx.inputs["signals"]
@@ -333,12 +365,18 @@ def build_solo_graph(
     memory: Memory | None = None,
     gate: RetrievalGate | None = None,
     scorer: Scorer | None = None,
+    display_name: str | None = None,
 ) -> Graph:
     """Classify, search in parallel, merge, rank, and explain.
 
     The places provider must support concurrent searches (the built-in providers do).
     Input is a Session made by `recommend`; guests never read stored memory.
+
+    A `display_name` greets the person at the start of the explanation. It is data: the code
+    puts it in that one sentence and no prompt, trace event, or tool argument ever carries it,
+    so a name that reads like an instruction is only ever shown back as a name.
     """
+    greeting = _greeting(display_name)
 
     def rank(ctx: StepContext) -> tuple[Research, tuple[RankedCandidate, ...]]:
         research: Research = ctx.inputs["merge"].unwrap()
@@ -385,7 +423,7 @@ def build_solo_graph(
     def explain(ctx: StepContext) -> Recommendation:
         research, ranked = ctx.inputs["rank"].unwrap()
         pick = ranked[0] if ranked else None
-        explanation = (
+        explanation = greeting + (
             f"Try {pick.place.name}: {'; '.join(pick.reasons)}."
             if pick
             else "No places found within this search radius."
@@ -414,6 +452,7 @@ def build_solo_graph(
             research.truncated,
             research.intent,
             research.signals,
+            greeting.strip() or None,
         )
 
     return Graph(
@@ -482,6 +521,7 @@ def recommend(
             memory=memory,
             gate=gate,
             scorer=scorer,
+            display_name=request.display_name,
         ),
         session,
         limits=config.graph_limits,

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { sessionEnded } from "./accountApi";
+import { AccountView } from "./AccountView";
 import { ApiError, MODEL_BUSY, fetchConfig, recommend } from "./api";
 import { DiscoverView } from "./DiscoverView";
 import type { Status, View } from "./DiscoverView";
@@ -18,6 +20,7 @@ import { phaseText } from "./stages";
 import { DEFAULT_RADIUS_M, RADII } from "./SearchBar";
 import type { FormValues } from "./SearchBar";
 import { loadMode, saveMode } from "./searchMode";
+import { SESSION_EXPIRED, useAuth } from "./useAuth";
 import type {
   AppConfig,
   Coordinates,
@@ -26,16 +29,19 @@ import type {
   Recommendation,
 } from "./types";
 
-type Page = "discover" | "group" | "execution";
+type Page = "discover" | "group" | "execution" | "account";
 
 const PAGES: { page: Page; label: string }[] = [
   { page: "discover", label: "Discover" },
   { page: "group", label: "Group" },
   { page: "execution", label: "Execution" },
+  { page: "account", label: "Account" },
 ];
 
 export function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const auth = useAuth(config?.auth ?? null);
+  const { token: authToken, endSession } = auth;
   // A shared group link opens the page on the group it names.
   const [groupLink, setGroupLink] = useState<string | null>(() =>
     linkFromPath(window.location.pathname),
@@ -156,6 +162,8 @@ export function App() {
       const { seq, signal } = started ?? begin("Starting the search…");
       setStatus({ kind: "working", text: "Starting the search…" });
       try {
+        // A guest has no token and sends none. A signed-in person's is refreshed if it ran out.
+        const token = await authToken();
         const answer = await recommend(
           {
             mode: values.mode,
@@ -169,6 +177,7 @@ export function App() {
             setStatus({ kind: "working", text: phaseText(run) });
           },
           signal,
+          token,
         );
         if (!finishIdle(seq)) return;
         if (answer.run) {
@@ -193,16 +202,24 @@ export function App() {
         // A run that never reported its end, such as a dropped connection, is one we lost sight of.
         if (failedRun) setHistory((h) => recordRun(h, seq, failedRun));
         else setHistory((h) => abandonRun(h, seq));
+        // A token the server refused means the sign-in is over. Say so, and sign out here too, so
+        // trying again is a plain guest search and not another refusal.
+        const ended = sessionEnded(error);
+        if (ended) void endSession(SESSION_EXPIRED);
         setStatus({
           kind: "failed",
-          message: error instanceof ApiError ? error.message : "Something went wrong. Try again.",
+          message: ended
+            ? "Your session expired and you are signed out. Search again to continue as a guest, or sign in on the Account page."
+            : error instanceof ApiError
+              ? error.message
+              : "Something went wrong. Try again.",
           busy: error instanceof ApiError && error.code === MODEL_BUSY,
         });
         setFocusHeading((n) => n + 1);
         inflight.current = null;
       }
     },
-    [begin],
+    [begin, authToken, endSession],
   );
 
   const goTo = (center: Coordinates, radiusM: number | null) => {
@@ -317,19 +334,29 @@ export function App() {
       <header className="topbar">
         <h1 className="brand">Makan</h1>
         <nav aria-label="Pages" className="tabs">
-          {PAGES.map(({ page: p, label }) => (
-            <button
-              key={p}
-              type="button"
-              className="tab"
-              aria-current={page === p ? "page" : undefined}
-              onClick={() => setPage(p)}
-            >
-              {label}
-            </button>
-          ))}
+          {PAGES.filter(({ page: p }) => p !== "account" || auth.state.status !== "off").map(
+            ({ page: p, label }) => (
+              <button
+                key={p}
+                type="button"
+                className="tab"
+                aria-current={page === p ? "page" : undefined}
+                onClick={() => setPage(p)}
+              >
+                {label}
+              </button>
+            ),
+          )}
         </nav>
       </header>
+      {auth.state.status === "out" && auth.state.notice && page !== "account" && (
+        <p className="notice notice-warn session-note" role="status">
+          {auth.state.notice}{" "}
+          <button type="button" className="button button-link" onClick={() => setPage("account")}>
+            Sign in
+          </button>
+        </p>
+      )}
 
       <main>
         <div hidden={page !== "discover"}>
@@ -387,6 +414,7 @@ export function App() {
         <div hidden={page !== "execution"}>
           <ExecutionView history={history} onClear={() => setHistory([])} />
         </div>
+        {page === "account" && <AccountView auth={auth} />}
       </main>
     </>
   );

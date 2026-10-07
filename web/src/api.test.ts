@@ -105,6 +105,33 @@ describe("recommend", () => {
   });
 });
 
+describe("recommend with an account", () => {
+  const line = JSON.stringify({ type: "result", recommendation: {} }) + "\n";
+
+  it("sends the bearer token when signed in and no Authorization header for a guest", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(line));
+    vi.stubGlobal("fetch", fetchMock);
+    await recommend(BODY, () => undefined, undefined, "tok-123");
+    await recommend(BODY, () => undefined);
+    const headers = (call: number) =>
+      (fetchMock.mock.calls[call]?.[1] as RequestInit).headers as Record<string, string>;
+    expect(headers(0).Authorization).toBe("Bearer tok-123");
+    expect(headers(1)).not.toHaveProperty("Authorization");
+  });
+
+  it("keeps the code of a refused token so the page can sign the person out", async () => {
+    const body = { error: { code: "token_expired", message: "Your session ended." } };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 401 })),
+    );
+    await expect(recommend(BODY, () => undefined, undefined, "old")).rejects.toMatchObject({
+      code: "token_expired",
+      message: "Your session ended.",
+    });
+  });
+});
+
 describe("fetchConfig", () => {
   it("returns the mode and the map tiles", async () => {
     const config = {
@@ -112,7 +139,25 @@ describe("fetchConfig", () => {
       map: { tile_url: "https://t/{z}/{x}/{y}.png", attribution: "© T", attribution_url: null },
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(config))));
-    await expect(fetchConfig()).resolves.toEqual(config);
+    await expect(fetchConfig()).resolves.toEqual({ ...config, auth: null });
+  });
+
+  it("passes the public auth settings through, and treats a malformed block as no accounts", async () => {
+    const base = {
+      mode: "live",
+      map: { tile_url: "https://t/{z}/{x}/{y}.png", attribution: "© T", attribution_url: null },
+    };
+    const auth = { url: "https://p.supabase.test", anon_key: "anon", redirect_url: null };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ ...base, auth }))),
+    );
+    await expect(fetchConfig()).resolves.toMatchObject({ auth });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ ...base, auth: { url: 1 } }))),
+    );
+    await expect(fetchConfig()).resolves.toMatchObject({ auth: null });
   });
 
   it("gives null for anything it cannot use", async () => {

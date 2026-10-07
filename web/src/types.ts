@@ -45,6 +45,8 @@ export interface Recommendation {
   /** A search hit its limit, so more places may lie within the radius. */
   truncated: boolean;
   explanation: string;
+  /** "Hey Bob!" for a signed-in person who has a profile, null for a guest. */
+  greeting: string | null;
   warnings: string[];
   stale_facts: StaleFact[];
   data_source: string;
@@ -62,9 +64,40 @@ export interface MapConfig {
   attribution_url: string | null;
 }
 
+/** What the page needs to talk to Supabase Auth. The anon key is public by design. */
+export interface AuthSettings {
+  url: string;
+  anon_key: string;
+  /** Where the confirmation email sends the person, or null for this page's own address. */
+  redirect_url: string | null;
+}
+
 export interface AppConfig {
   mode: Mode;
   map: MapConfig;
+  /** Null when the server has no accounts, so everyone is a guest and there is no Account page. */
+  auth: AuthSettings | null;
+}
+
+export interface Profile {
+  display_name: string;
+  location_history_opt_in: boolean;
+}
+
+/** The lists on the taste form. The soft "skip" is `dislikes`, and the hard "never" is the rest. */
+export interface Taste {
+  likes: string[];
+  dislikes: string[];
+  allergies: string[];
+  diets: string[];
+  never_places: string[];
+}
+
+export interface Me {
+  user: { id: string; email: string | null };
+  /** Null until the person has made one: a name is required to create it. */
+  profile: Profile | null;
+  taste: Taste;
 }
 
 export interface Coordinates {

@@ -114,6 +114,10 @@ class Memory:
             raise ValueError("no such fact in force")
         return self._reconfirm(fact, source, self._clock())
 
+    def forget(self, user_id: UUID, fact_id: UUID) -> bool:
+        """The user takes a fact back. It and its history are deleted, not kept as superseded."""
+        return self.store.forget(fact_id, user_id=user_id)
+
     def _reconfirm(self, fact: MemoryFact, source: MemorySource, now: datetime) -> MemoryFact:
         # Never lower what the fact is worth now, and never go below what this source earns.
         confidence = max(
