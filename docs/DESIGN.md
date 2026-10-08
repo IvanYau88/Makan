@@ -1109,11 +1109,24 @@ Before this, a blank request was silently turned into "something good to eat" an
   The server stores nothing, so there is no endpoint that reads another person's run, and the "no location stored" promise still holds.
   Durable cross-user history needs authorization, scope, retention, and redaction decisions of its own, and is a follow-up.
   A run the page stopped following because a newer search began is marked so, since the server may still finish it.
-- **Palette:** a cool white and mint surface with teal for everything interactive, replacing the earlier brown and orange after review.
-  Light tokens are `#f6fafb` (page), `#ffffff` (surface), `#eaf5f2` (sunk), `#173238` (text), `#526970` (muted), and `#087e83` (accent).
-  Dark mode has its own teal and slate tokens, not the old scheme inverted.
-  Body text, muted text, accent text, and text on the accent all pass 4.5:1 in both, checked by script.
-  Information and warnings are a soft blue or mint and errors a soft red, with no orange.
+- **Palette:** a warm cream page with paprika for everything interactive and basil green for success, replacing the teal scheme.
+  The earlier brown and orange was muddy, so this one keeps the warmth but uses a clean chili orange-red on cream, which reads as food without looking brown.
+  Light tokens are `#fbf6ee` (page), `#fffdf9` (surface), `#f5ebdc` (sunk), `#2a1c14` (text), `#675446` (muted), `#b63e17` (accent, `#982f0f` on hover), and `#37661f` (ok).
+  Dark mode has its own espresso and apricot tokens, not the old scheme inverted: `#1a1310` (page), `#251b17` (surface), `#30241e` (sunk), `#f7ede4` (text), `#c4ae9d` (muted), `#ff8c5a` (accent), and `#a2d77c` (ok).
+  Information is a soft sage, warnings turmeric, and errors raspberry (`#9c1a3a` light, `#ffb9c7` dark), which sits far enough from the accent that an error is never mistaken for a button, and every error also says so in words.
+  Every token lives in the `:root` block at the top of `web/src/styles.css`, light then dark, and nothing else in the app holds a color of its own except the white ring on the map center.
+  Body text, muted text, accent text, text on the accent, and each notice pair pass 4.5:1 in both, checked by script.
+- **Motion and materials:** the app has no gesture-driven surface, so there is no drag physics, and the motion is press feedback and arrivals.
+  A control dips to 0.97 on pointer-down in 90ms and springs back on release, so the response is on the press and not on the click.
+  The spring is a `linear()` easing curve in the `--spring` token, critically damped (damping 1, response 0.3s), with no overshoot.
+  A bouncier one (damping 0.8) belongs only to motion that follows a flick, which nothing here has yet.
+  They are CSS transitions, so a press released mid-dip retargets from where the control is, and no spring library is added.
+  Hover styles apply only where a pointer can hover, so a tap does not leave a control stuck in its hover state.
+  Surfaces that float over the map, which are the place sheet, the "Updating" chip, and the zoom buttons, use a translucent material with a blur, a bright top edge, and a shadow that deepens with size.
+  The place sheet rises from the edge it docks to.
+  The page chrome and the lists stay solid, so no translucent layer sits on another.
+  `prefers-reduced-motion` drops the dip and the arrivals and keeps color and opacity changes, `prefers-reduced-transparency` and `prefers-contrast: more` make the materials solid, and more contrast also darkens borders and muted text.
+  Headings are tracked tighter as they grow and small text slightly wider, with balanced wrapping on headings.
 
 ## Hosting
 
