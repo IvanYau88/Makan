@@ -1,7 +1,7 @@
 import { useId, useState } from "react";
 import type { FormEvent } from "react";
-import { toTaste, validateTaste, valuesFrom } from "./tasteForm";
-import type { TasteErrors, TasteValues } from "./tasteForm";
+import { toTaste, validateTaste, valuesFrom } from "./tasteFormModel";
+import type { TasteErrors, TasteValues } from "./tasteFormModel";
 import type { Taste } from "./types";
 
 interface Props {
