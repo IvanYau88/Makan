@@ -1,52 +1,99 @@
 :root {
   color-scheme: light dark;
-  --bg: #f6fafb;
-  --surface: #ffffff;
-  --surface-sunk: #eaf5f2;
-  --text: #173238;
-  --muted: #526970;
-  --border: #cbdedb;
-  --accent: #087e83;
-  --accent-hover: #066569;
+
+  /* The palette. Warm cream, paprika for everything interactive, basil for success. Every token
+     is defined here and nowhere else, light then dark, and text pairs are checked at 4.5:1. */
+  --bg: #fbf6ee;
+  --surface: #fffdf9;
+  --surface-sunk: #f5ebdc;
+  --text: #2a1c14;
+  --muted: #675446;
+  --border: #e3d4c0;
+  --accent: #b63e17;
+  --accent-hover: #982f0f;
   --on-accent: #ffffff;
-  --focus: #245edb;
-  --info-bg: #eaf5f2;
-  --info-text: #17484a;
-  --warn-bg: #edf6fb;
-  --warn-text: #28576d;
-  --error-bg: #fff0f1;
-  --error-text: #9f243c;
-  --ok: #176b59;
-  --park: #d8eee3;
-  --pin-idle: #ffffff;
-  --map-center: #245edb;
-  --shadow: 0 1px 3px rgb(23 50 56 / 0.18), 0 4px 14px rgb(23 50 56 / 0.1);
+  --focus: #1f5fd0;
+  --info-bg: #edf2dd;
+  --info-text: #33461e;
+  --warn-bg: #fff0c9;
+  --warn-text: #6a4200;
+  --error-bg: #fdebee;
+  --error-text: #9c1a3a;
+  --ok: #37661f;
+  --park: #e6edd2;
+  --pin-idle: #fffdf9;
+  --map-center: #1f5fd0;
+  --shadow: 0 1px 3px rgb(42 28 20 / 0.16), 0 4px 14px rgb(42 28 20 / 0.1);
+  --shadow-lift: 0 2px 6px rgb(42 28 20 / 0.14), 0 14px 36px rgb(42 28 20 / 0.2);
+
+  /* Floating layers over the map: a translucent material, never one stacked on another. */
+  --material: rgb(255 253 249 / 0.84);
+  --material-edge: rgb(255 255 255 / 0.7);
+  --blur: blur(18px) saturate(160%);
+
   --radius: 10px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Springs as easing curves, so a press that is let go mid-flight retargets from where it is.
+     --spring is critically damped (damping 1, response 0.3s). Add a bouncier one (damping 0.8)
+     only for motion that follows a gesture with momentum, which nothing here has yet. */
+  --spring-time: 0.45s;
+  --spring: linear(
+    0,
+    0.06,
+    0.186,
+    0.329,
+    0.466,
+    0.584,
+    0.682,
+    0.76,
+    0.821,
+    0.868,
+    0.903,
+    0.929,
+    0.949,
+    0.963,
+    0.973,
+    0.981,
+    0.986,
+    0.99,
+    0.993,
+    0.995,
+    0.997,
+    0.998,
+    0.998,
+    0.999,
+    1
+  );
+  --press: 0.97;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0d191c;
-    --surface: #142428;
-    --surface-sunk: #1a2f33;
-    --text: #e4f1f0;
-    --muted: #9fb8b9;
-    --border: #2f4a4e;
-    --accent: #55c8c4;
-    --accent-hover: #7ad9d5;
-    --on-accent: #06282b;
+    --bg: #1a1310;
+    --surface: #251b17;
+    --surface-sunk: #30241e;
+    --text: #f7ede4;
+    --muted: #c4ae9d;
+    --border: #4b3b32;
+    --accent: #ff8c5a;
+    --accent-hover: #ffa57c;
+    --on-accent: #2a1106;
     --focus: #8ab4ff;
-    --info-bg: #1a2f33;
-    --info-text: #c4e6e3;
-    --warn-bg: #16303b;
-    --warn-text: #bfe3f5;
-    --error-bg: #3a1b22;
-    --error-text: #ffc4cd;
-    --ok: #63d3b1;
-    --pin-idle: #142428;
+    --info-bg: #252f1a;
+    --info-text: #d6e7b9;
+    --warn-bg: #3a2b0f;
+    --warn-text: #ffdb8f;
+    --error-bg: #44202b;
+    --error-text: #ffb9c7;
+    --ok: #a2d77c;
+    --park: #2a2a1c;
+    --pin-idle: #251b17;
     --map-center: #8ab4ff;
     --shadow: 0 1px 3px rgb(0 0 0 / 0.5), 0 4px 14px rgb(0 0 0 / 0.35);
+    --shadow-lift: 0 2px 6px rgb(0 0 0 / 0.5), 0 14px 36px rgb(0 0 0 / 0.55);
+    --material: rgb(37 27 23 / 0.9);
+    --material-edge: rgb(255 255 255 / 0.12);
   }
 }
 
@@ -67,6 +114,9 @@ body {
   font-family: var(--font);
   font-size: 1rem;
   line-height: 1.5;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent; /* the press states below are the feedback */
 }
 
 h1,
@@ -130,7 +180,7 @@ main > div {
 .brand {
   font-size: 1.75rem;
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   color: var(--accent);
   line-height: 1.1;
 }
@@ -153,8 +203,10 @@ main > div {
   cursor: pointer;
 }
 
-.tab:hover {
-  border-color: var(--accent);
+@media (hover: hover) {
+  .tab:hover {
+    border-color: var(--accent);
+  }
 }
 
 .tab[aria-current="page"] {
@@ -222,8 +274,10 @@ input[aria-invalid="true"] {
   touch-action: manipulation;
 }
 
-.button:hover:not(:disabled) {
-  border-color: var(--accent);
+@media (hover: hover) {
+  .button:hover:not(:disabled) {
+    border-color: var(--accent);
+  }
 }
 
 .button:disabled {
@@ -271,9 +325,11 @@ input[aria-invalid="true"] {
   color: var(--on-accent);
 }
 
-.button-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+@media (hover: hover) {
+  .button-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
 }
 
 .button-secondary {
@@ -302,6 +358,7 @@ input[aria-invalid="true"] {
 .hint {
   color: var(--muted);
   font-size: 0.875rem;
+  letter-spacing: 0.006em;
 }
 
 .notice {
@@ -327,7 +384,10 @@ input[aria-invalid="true"] {
 
 .section-title {
   font-size: 1.125rem;
+  line-height: 1.3;
   font-weight: 700;
+  letter-spacing: -0.012em;
+  text-wrap: balance;
 }
 
 .section-title:focus {
@@ -343,7 +403,7 @@ input[aria-invalid="true"] {
 .subtitle {
   font-size: 0.8125rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--muted);
 }
 
@@ -650,16 +710,20 @@ input[aria-invalid="true"] {
   position: absolute;
   top: 0.75rem;
   left: 50%;
-  transform: translateX(-50%);
+  translate: -50% 0;
   z-index: 2;
   display: flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.375rem 0.875rem;
   border-radius: 999px;
-  background: var(--surface);
+  background: var(--material);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  box-shadow:
+    var(--shadow),
+    inset 0 1px 0 var(--material-edge);
   color: var(--text);
-  box-shadow: var(--shadow);
   font-size: 0.9375rem;
 }
 
@@ -667,9 +731,10 @@ input[aria-invalid="true"] {
   position: absolute;
   top: 0.75rem;
   left: 50%;
-  transform: translateX(-50%);
+  translate: -50% 0; /* not transform, which the press state below owns */
   z-index: 3;
   box-shadow: var(--shadow);
+  animation: float-in var(--spring-time) var(--spring) both;
 }
 
 .map-fallback {
@@ -691,9 +756,17 @@ input[aria-invalid="true"] {
   max-height: 70%;
   scroll-margin-bottom: 0.5rem; /* keep a gap under the sheet when it is scrolled into view */
   overflow: auto;
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
+  border-radius: calc(var(--radius) + 4px);
+  /* The biggest floating surface, so the thickest material: the most blur and the deepest shadow.
+     It rises from its bottom edge, the way a sheet is pulled up from where it docks. */
+  background: var(--material);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  box-shadow:
+    var(--shadow-lift),
+    inset 0 1px 0 var(--material-edge);
+  transform-origin: 50% 100%;
+  animation: sheet-in var(--spring-time) var(--spring) both;
 }
 
 @media (min-width: 56rem) {
@@ -707,6 +780,7 @@ input[aria-invalid="true"] {
 }
 
 .map-attribution {
+  letter-spacing: 0.01em;
   padding: 0.375rem max(1rem, env(safe-area-inset-right)) 0.5rem
     max(1rem, env(safe-area-inset-left));
   background: var(--surface);
@@ -798,9 +872,12 @@ input[aria-invalid="true"] {
 
 .leaflet-bar a,
 .leaflet-touch .leaflet-bar a {
-  background-color: var(--surface);
+  background-color: var(--material);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
   color: var(--text);
   border-bottom-color: var(--border);
+  transition: background-color 0.2s ease-out;
 }
 
 .leaflet-bar a:hover,
@@ -811,6 +888,7 @@ input[aria-invalid="true"] {
 
 .leaflet-touch .leaflet-bar {
   border: 1px solid var(--border);
+  box-shadow: var(--shadow);
 }
 
 .leaflet-bar a,
@@ -894,9 +972,14 @@ input[aria-invalid="true"] {
   cursor: pointer;
 }
 
-.row-hover .row-button,
-.row-button:hover {
+.row-hover .row-button {
   background: var(--surface-sunk);
+}
+
+@media (hover: hover) {
+  .row-button:hover {
+    background: var(--surface-sunk);
+  }
 }
 
 .row-selected .row-button {
@@ -994,6 +1077,7 @@ input[aria-invalid="true"] {
   font-size: 1.25rem;
   line-height: 1.25;
   font-weight: 800;
+  letter-spacing: -0.015em;
   overflow-wrap: anywhere;
 }
 
@@ -1079,6 +1163,7 @@ input[aria-invalid="true"] {
 .source {
   color: var(--muted);
   font-size: 0.8125rem;
+  letter-spacing: 0.01em;
 }
 
 .skeleton {
@@ -1110,17 +1195,20 @@ input[aria-invalid="true"] {
   color: var(--accent);
   font-size: 0.8125rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .page-title {
   font-size: 1.75rem;
-  line-height: 1.2;
+  line-height: 1.15;
   font-weight: 800;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
 }
 
 .lead {
+  text-wrap: pretty;
   max-width: 48rem;
   margin-top: 0.5rem;
   color: var(--muted);
@@ -1232,7 +1320,7 @@ input[aria-invalid="true"] {
 
 .node {
   position: absolute;
-  transform: translate(-50%, -50%);
+  translate: -50% -50%; /* not transform, which the press state below owns */
   display: grid;
   gap: 0.125rem;
   width: 14%;
@@ -1820,4 +1908,169 @@ input[type="password"] {
 .greeting {
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+
+/*
+ * Motion and materials.
+ *
+ * A control answers the press itself, on pointer-down, not on release: it dips in 90ms and springs
+ * back when let go. These are transitions, so a press released mid-dip retargets from where the
+ * control is. They are a spring-shaped curve on transform and a short ease on color.
+ */
+
+.tab,
+.button,
+.row-button,
+.run-button,
+.stage-button,
+.node,
+.mode-body,
+select,
+input[type="text"],
+input[type="email"],
+input[type="password"] {
+  touch-action: manipulation; /* no double-tap-to-zoom wait on the tap */
+}
+
+.tab,
+.button,
+.row-button,
+.run-button,
+.stage-button,
+.node,
+.mode-body {
+  transition:
+    transform var(--spring-time) var(--spring),
+    background-color 0.2s ease-out,
+    border-color 0.2s ease-out,
+    color 0.2s ease-out,
+    opacity 0.2s ease-out;
+}
+
+.tab:active,
+.button:active:not(:disabled):not(.button-link),
+.run-button:active,
+.stage-button:active,
+.node:active,
+.mode:active .mode-body {
+  transform: scale(var(--press));
+  transition:
+    transform 90ms ease-out,
+    background-color 0.2s ease-out,
+    border-color 0.2s ease-out,
+    color 0.2s ease-out,
+    opacity 0.2s ease-out;
+}
+
+/* A row spans the pane, so it dips less and shows the press as a tint too. */
+.row-button:active {
+  transform: scale(0.985);
+  background: var(--surface-sunk);
+  transition:
+    transform 90ms ease-out,
+    background-color 0.2s ease-out;
+}
+
+.rows,
+.filters {
+  transition: opacity 0.25s ease-out;
+}
+
+/* Things arrive from where they came from, on the same spring. */
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem) scale(0.96);
+    -webkit-backdrop-filter: blur(0) saturate(100%);
+    backdrop-filter: blur(0) saturate(100%);
+  }
+}
+
+@keyframes float-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.375rem) scale(0.92);
+  }
+}
+
+@keyframes pin-grow {
+  from {
+    transform: scale(1);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.map-busy {
+  animation: float-in var(--spring-time) var(--spring) both;
+}
+
+.pin-selected span {
+  animation: pin-grow var(--spring-time) var(--spring);
+}
+
+/* Reduced motion keeps the feedback and drops the movement: color and opacity only. */
+@media (prefers-reduced-motion: reduce) {
+  .tab,
+  .button,
+  .row-button,
+  .run-button,
+  .stage-button,
+  .node,
+  .mode-body {
+    transition:
+      background-color 0.2s ease-out,
+      border-color 0.2s ease-out,
+      color 0.2s ease-out,
+      opacity 0.2s ease-out;
+  }
+  .tab:active,
+  .button:active:not(:disabled):not(.button-link),
+  .row-button:active,
+  .run-button:active,
+  .stage-button:active,
+  .node:active,
+  .mode:active .mode-body {
+    transform: none;
+  }
+  .map-detail,
+  .map-search-area,
+  .map-busy {
+    animation: fade-in 0.2s ease-out both;
+  }
+  .pin-selected span {
+    animation: none;
+  }
+}
+
+/* Reduced transparency and more contrast turn the materials into solid surfaces. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .map-detail,
+  .map-busy,
+  .leaflet-bar a,
+  .leaflet-touch .leaflet-bar a {
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --border: var(--muted);
+  }
+  .map-detail,
+  .map-busy {
+    border: 1px solid var(--text);
+  }
+  .hint,
+  .source,
+  .map-attribution {
+    color: var(--text);
+  }
 }
