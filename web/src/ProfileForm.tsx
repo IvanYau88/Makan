@@ -1,6 +1,6 @@
 import { useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { MAX_NAME_CHARS } from "./tasteForm";
+import { MAX_NAME_CHARS } from "./tasteFormModel";
 import type { Profile } from "./types";
 
 interface Props {

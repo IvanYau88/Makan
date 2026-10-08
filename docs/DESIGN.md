@@ -1085,6 +1085,9 @@ Before this, a blank request was silently turned into "something good to eat" an
   Zero places, filters that hide everything, and a failed search are three different messages with three different ways out.
   An answer that arrives after a newer search began is ignored.
   A failed search says the results shown are from the previous search.
+- **Module names:** no two files in `web/src` share a name apart from case or extension, so a component is `TasteForm.tsx` and its helpers are `tasteFormModel.ts`, never `tasteForm.ts`.
+  An import has no extension, so on a case-insensitive filesystem (Windows, macOS) `./TasteForm` resolves to `tasteForm.ts`, the import fails, and the page is blank while Linux and CI stay green, which it did before the rename.
+  `web/src/moduleNames.test.ts` fails on a collision.
 - **Execution view:** it shows the eight real stages of the solo graph (and, for a browse run, the same eight with the unused ones skipped, below), `classify`, `intent`, `requested_places`, `nearby_places`, `memory`, `merge`, `rank`, and `explain`, with the dependencies the graph really has.
   When the server has a scorer backend the graph has a ninth stage, `signals`, which starts the run beside `classify` and which `merge` waits for, and a browse run then shows eight skipped stages instead of seven.
   The page has no way to know that before a run, so the empty inspector draws the eight stages every graph has, and the page copy says a ninth appears with a scorer backend.

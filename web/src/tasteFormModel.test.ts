@@ -1,8 +1,8 @@
-import { toTaste, validateTaste, valuesFrom } from "./tasteForm";
+import { toTaste, validateTaste, valuesFrom } from "./tasteFormModel";
 
 const EMPTY = { likes: "", dislikes: "", allergies: "", diets: "", never_places: "" };
 
-describe("tasteForm", () => {
+describe("tasteFormModel", () => {
   it("round trips the lists through comma separated boxes", () => {
     const taste = {
       likes: ["thai", "ramen"],
