@@ -850,8 +850,71 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - **Offline only:** `python -m makan.evals` runs the `fake` and `rule` backends and offers no others.
   Comparing live backends needs a key, a budget, and the captain's go-ahead, so it is not wired.
   When it is, it should use `BoundedScorer`, repeated trials, an explicit model and route, and an archived report, and it should record outages and quota as availability results and not as regressions.
-- **Not yet in the sets:** option and label permutations, long labels, and shared-prefix labels, which matter for the logprob scorer and need a live model to be informative.
+- **Not yet in the three decision sets:** option and label permutations, long labels, and shared-prefix labels, which matter for the logprob scorer and need a live model to be informative.
+  The taste-fit and router contract below has its own permutation harness.
   The fake scorer's accuracy is a plumbing check and says nothing about model quality.
+
+### Taste-fit and router evaluation contract
+
+This is step 1 of Makan's own replacement for paid Jev: the decision definitions, draft labels, and offline harness that later numbers are tuned and compared against.
+It changes nothing a user sees.
+Nothing in the solo workflow, the group workflow, the web app, ranking, or any backend asks these questions yet.
+The 70 percent routing threshold, the taste-fading speed, and the model choice are all open, and each is to be set from this data and not guessed.
+
+- **Decisions:** `makan.decisions` has `TASTE_FIT` (`strong`, `partial`, `poor`, `unknown`), `PRIMARY_INTENT` (`cuisine_search`, `attribute_search`, `discovery`, `history_lookup`, `group_planning`, `mood`, `other`), and six `intent_presence.<kind>` questions (`present`, `absent`), one per named intent.
+  All are version 1 with fixed option ids and descriptions that say what each answer means.
+  They live in `CONTRACT_DECISIONS` and not in `DECISIONS`, so `python -m makan.evals`, the signals, and the solo workflow keep running exactly the three existing decisions with their meanings and thresholds.
+  The other decision points in the scout note (tag relation, restaurant similarity, attribute evidence) are skipped for now.
+- **One message, several intents:** a single seven-way distribution cannot say two intents are both true, so each named intent is its own present/absent question.
+  Their probabilities are kept as they are and are never summed, multiplied, or renormalized into one whole.
+  The primary question answers a different thing, which reading organizes the request, and it is calibrated apart from the presence questions.
+- **Top-probability acceptance:** `makan.evals.threshold.accepted_choice(result, threshold)` accepts the top option only when its own probability reaches the threshold.
+  It gets the choice from `confident_choice(0.0)`, which requires an `ok` result with a complete distribution, then validates that distribution again and compares the top probability.
+  A margin of 0.70 is a different and much stricter rule, so 0.70 is never passed to `confident_choice`.
+  A degraded, unsupported, or failed result, a verbalized confidence, a tie for the top, and a choice that is not the distribution's top are all not accepted, so option order never breaks a tie into a decision.
+  The router default is `ROUTER_MIN_PROBABILITY = 0.70`, provisional, and every report takes the threshold as an argument.
+  The margin acceptance in `makan.evals.harness` is unchanged and still decides the existing decisions.
+- **Reports:** `run_threshold_eval` reports accuracy, coverage, accepted error rate, per-class scores, Brier score, log loss, reliability bins with counts and Wilson intervals, ECE, a coverage and accepted-error sweep over 0.50 to 0.95, and status counts.
+  A failed result counts as an availability failure and as wrong, and is never dropped.
+  A multiclass question is binned on its top probability and a presence question on its `present` probability.
+  `run_router_eval` asks the primary question and the six presence questions for every message and reports each separately, plus how many messages commit and how many would get one clarifying question, how often the commit or clarify action matches the case, and how often the accepted-present intents equal the gold set.
+  The harness never trains or fits a calibrator, and ECE is a summary next to the bins.
+- **Draft cases:** `taste_fit.jsonl` and `router.jsonl` are in `src/makan/evals/sets/contract/`, apart from the three existing sets, with all three splits and a `#` comment header that says plainly they are a first draft for the captain to review and grow, not a certified benchmark.
+  There are about 30 of each, against the 120 of each the scout note suggests as a start, and one annotator wrote them.
+  The tags cover every challenge in the note: a brand-new user, identical ratings, low and high rating habits, zero dishes, decimal ratings, a low dish at a liked and at a disliked restaurant, tag negation, sparse and conflicting facts, a restaurant that only offers a weakened taste, every intent alone and combined, an ambiguous history name, Malay, Chinese, code-switching, out-of-domain text, and prompt injection.
+  The worked Thai and Malaysian case is `taste_fit-01`, and the worked cozy Thai request is `router-10`.
+  The annotation rules are in the docstring of `makan.evals.contract_cases`.
+  A user, a restaurant (the candidate and every visited one), and a paraphrase family each stay on one split, and the loader rejects a set that breaks this.
+- **Taste state:** a taste case is rendered by `render_taste_state` from an allowlist: stated likes and dislikes, the visits so far with the restaurant slider and each dish's decimal rating out of 10 and the user's own tags, the user's own average ratings, and the candidate's dated and sourced soft facts, with anything missing flagged `Unsure` and never guessed.
+  A brand-new user has no visits and is judged on the stated preferences alone.
+  The user's own average is written by hand in the case.
+  Deriving it, the contextual dish weighting, and the fading are deterministic arithmetic in plain code that comes later, and the scorer only judges fit.
+- **Router state:** a router case keeps the full message and lists its hard spans by hand.
+  `soft_view` replaces each span with a marker of its general kind (`[distance or time limit]`, `[price limit]`, `[food restriction]`), so the scorer learns that a limit was stated, which is what attribute search needs, and never what it was.
+  A span that is missing or repeated is an error, so a stale annotation cannot leave hard text in.
+  The gold action is `commit` when one reading is clear and `clarify` when the message is truly ambiguous, with the readings one question would separate.
+  A composite message is not ambiguous: the cozy Thai request commits to one plan.
+- **Hard constraints stay out:** allergies, diets, budget ceilings, and travel bounds are separate fields that only plain code reads, and prices and distances are display-only.
+  Tests assert on every case, and on every question a full eval run asks, that no hard term and nothing shaped like a number with a unit, a price, or an allergen word reaches `Question.state`.
+  The checks themselves are tested against a state that does leak.
+- **Allergen warning:** `makan.menu_warnings.allergen_warnings` is a plain function with no model or scorer in its imports or its signature.
+  A menu text that mentions a stated allergen as a whole word keeps the restaurant and gets the warning "Peanuts appear on this restaurant's menu, which conflicts with your no-peanuts requirement; we cannot verify ingredients for your order or cross-contact.", followed by the source and its date, or "date unknown".
+  A menu that does not mention it gets no warning from this function, because that proves nothing either way, and the existing "Cannot verify" warnings still cover it.
+  The tests get the same warning with the scorer off, wrong, failing, and crashing.
+  Nothing calls it from a recommendation yet.
+- **Order permutations:** `makan.evals.permutation` re-asks each case under deterministic arrangements, each an option order plus a letter assignment, and maps every result back to the stable option ids.
+  A question of up to four options gets every order and every letter assignment.
+  The seven-way question gets the identity, the reversal, every rotation, letter reversals and rotations, and a seeded sample of random pairs.
+  It reports argmax flips, threshold-crossing flips (accepted or not, or which option, changed), the largest probability change, the largest Jensen-Shannon divergence, unavailable results, and the worst cases.
+  A tie counts every tied option as the top, so tie-breaking by order is not a flip.
+  The real logprob scorer labels by position, so for it order and letter move together.
+  A scorer that can take explicit labels offers `score_lettered`, and only then are letter-only rearrangements exercised, which the report states in `letters_exercised`.
+  Tests prove the harness with the order-invariant fake and with a scripted scorer that favors early positions or the letter A, which it catches.
+  No tolerance is set, because there is no model to hold to one yet.
+- **Running it:** `python -m makan.evals.contract [--split S] [--threshold T] [--permutations]` prints the taste and router reports for the fake scorer, offline.
+  It is evidence that the plumbing works, and says nothing about any model.
+- **Not in this step:** deterministic taste arithmetic, visit and dish capture, any backend adapter (local Qwen, Laya, or Gemini), the clarification flow, restaurant research, the weekly list, and the user-report and outreach safety system.
+  The scorer is never given Jev, Laya, Qwen, Gemini, or OpenRouter here, and no variable was added to `.env.example`.
 
 ## Web stack
 
