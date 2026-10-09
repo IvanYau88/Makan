@@ -13,6 +13,7 @@ from typing import Any
 from uuid import UUID
 
 from makan.models import Profile
+from makan.visits.postgres import VISITS_EXPORT
 
 try:
     import psycopg
@@ -23,7 +24,8 @@ _PROFILE = "user_id, display_name, location_history_opt_in, created_at, updated_
 
 # One statement, so every part of the export comes from one snapshot. `to_jsonb` of a row keeps
 # every column, so a column added by a later migration is exported without a change here.
-_EXPORT = """
+_EXPORT = (
+    """
 select jsonb_build_object(
   'user', (select to_jsonb(u) from users u where u.id = %(id)s),
   'profile', (select to_jsonb(p) from profiles p where p.user_id = %(id)s),
@@ -35,8 +37,11 @@ select jsonb_build_object(
                             from participants q where q.user_id = %(id)s), '[]'::jsonb),
   'trace_events', coalesce((select jsonb_agg(to_jsonb(t) order by t.ts, t.run_id, t.seq)
                             from trace_events t where t.user_id = %(id)s), '[]'::jsonb)
-)
+) || ("""
+    + VISITS_EXPORT
+    + """)
 """
+)
 
 
 class PostgresAccountStore:

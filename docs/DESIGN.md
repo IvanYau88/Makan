@@ -214,7 +214,7 @@ It runs on any Postgres 13 or newer, including Supabase, and it does not referen
 This keeps the open question of a local database versus a hosted Supabase project open.
 Supabase can run the same files through its own migration tooling.
 
-- Tables are `users`, `profiles`, `sessions`, `participants`, `memory_facts`, and `trace_events`.
+- Tables are `users`, `profiles`, `sessions`, `participants`, `memory_facts`, and `trace_events`, and, from migration `0004`, `going_here`, `visits`, `visit_dishes`, and `visit_tags` (see "Visit logging decisions").
   `makan.models` has one frozen dataclass per table, and on a live Postgres `tests/test_schema.py` fails if a model and the migrated tables drift apart.
 - Every request is a session, and a solo request is a session with one participant, the host, whose link is never shared.
   There is no solo flag.
@@ -757,6 +757,7 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
   It holds the `users` row, the profile, every memory fact including superseded history, the person's sessions, their participant rows, and their trace events.
   A column added later is exported with no change here.
   It leaves out other people's rows, such as the guests in a session the person hosted.
+  Visit logging added its own tables to the same statement.
 - **Deletion:** the rows go first, with one `delete from users`, which cascades to everything the person owns, and then the Supabase auth account is deleted through the admin API.
   If the auth call fails the person still has a working account and nothing stored, can try again, and gets 503 `auth_unavailable` meanwhile.
   The other order could leave their data stored behind an account they can no longer sign in to.
@@ -790,7 +791,135 @@ This merge step is the strongest demonstration of graph-workflow logic in the pr
 - **Tried by hand:** the full flow ran in a real browser against the hosted project in demo mode: a wrong password, sign in, profile, taste, a search that greeted the person by name and read their memory, a place left out, sign out and in, export, and delete, after which the tables and the Auth user list were empty.
   Sign-up itself was only seen failing, with "cannot be used" for a reserved address and "too many attempts" when the project's built-in email limit was hit, because the confirmation email could not be sent.
   The test user was made through the admin API, already confirmed, and the sign-up success path is covered by the mocked tests only.
-- **No migration:** the tables and policies from `0001` to `0003` already hold everything, so none was added.
+- **No migration:** the tables and policies from `0001` to `0003` already held everything accounts needed, so none was added.
+  Visit logging later added `0004`, and export and deletion cover it (see "Visit logging decisions").
+
+## Visit logging
+
+A signed-in person records a meal at a restaurant: the restaurant, an overall rating, whether it was solo or with others, the date, a description, the dishes they tried, and the people they ate with.
+Visit logging is for accounts only.
+A guest keeps searching and getting recommendations exactly as before, and nothing here changes recommendations, ranking, or any existing screen.
+This is the backend slice: the stored data, the rules, and the API.
+The screens and the delivery of the reminder notification are separate work.
+Makan has no way to know a meal happened except what the person does in the app, so "going here" is the only trigger and there is no location tracking.
+
+### Visit logging decisions
+
+- **Code:** `makan.visits` holds the rules (`service.py`), the cleaning of what a person types (`content.py`), the stores (`store.py` in memory, `postgres.py` on Postgres), and the errors (`errors.py`).
+  `makan.web.visits` is the thin HTTP adapter, registered next to the `/api/me` routes and only when accounts are configured.
+  The store protocol follows the other stores: a store keeps and finds rows and the rules are in the service.
+  The few changes that must happen together are one store call so they are atomic: logging a visit with its dishes, saving an edit, and answering a tag.
+- **Tables:** migration `0004_visit_logging.sql` adds `going_here`, `visits`, `visit_dishes`, and `visit_tags`, and `makan.models` has one dataclass for each.
+  Every row has an owner who is a user, so none of it exists for a guest.
+  Deleting a user cascades to all of it.
+- **Ratings:** every rating is `numeric(3,1)` checked from 0 to 10, never a float and never an integer.
+  That is one decimal place, which is what a slider with decimals gives and what the example 5.7 shows.
+  `parse_rating` takes a number or a string, refuses anything not finite or outside 0 to 10 (checked before rounding, so 10.04 is refused), and rounds half up to one place, so 5.75 is 5.8 and 9.96 is 10.0.
+  It never goes through a binary float.
+  The API sends ratings as JSON numbers, which round-trip exactly at one decimal place.
+- **Rating origin:** every rating, the restaurant's and each dish's, carries `rating_origin`, which is `fresh` or `confirmed`.
+  It is `confirmed` only when a tagged person took the tagger's value as it was.
+  A value the person typed is `fresh`, including a changed rating on a tagged visit.
+  A rating that comes back unchanged in an edit keeps its origin.
+  This reading of "confirmed from a tagged visit" is one function, `makan.visits.service._origin`, so it is cheap to change if the project owner means that a changed rating also counts as confirmed.
+- **Restaurant identity:** a visit stores `place_source` and `place_id` together, copied from a search result.
+  `place_source` is the places provider family, the part of the provider's `name` before the colon, so `overture:2026-09-23.1` is `overture`.
+  The release is a version of the data and not part of what the venue is, so it is dropped.
+  `place_id` is that provider's own id.
+  The pair is the identity, so two venues with one name never merge, and the same id from two providers never merges either.
+  No existing code qualified ids this way (`Place.id` is only stable within one provider, and memory facts store the bare id), so this is the first place the pair is used.
+  The name and address are copied in so a visit still reads after the places data moves on.
+  Any place Makan can show can be logged, and nothing checks that it was recommended.
+  The client sends `place: {data_source, id, name, address?}` straight from the search response.
+- **Going here:** `going_here` holds the marker with `started_at`, `remind_at` (48 hours later), and `planned_on`, the person's own calendar day, which defaults to the day it was marked and is what a visit logged from it starts with.
+  Marking a place that already has an open marker returns that marker and does not restart the window, which a partial unique index also guarantees.
+  A marker is open until a reminder is recorded, a visit is logged for it, or it is cancelled.
+  `GET /api/me/going-here/due` returns the open markers whose window has ended and sends nothing and changes nothing.
+  Whatever sends the notification then calls `POST /api/me/going-here/{id}/reminded`, which sets `reminded_at` and drops the marker, so there is one reminder and then no more.
+  The two steps are separate so a reminder that failed to send is still due next time.
+- **Reminder grace (open point, chosen):** a reminder more than seven days overdue is no longer due (`REMINDER_GRACE`), so one that was never sent is not sent weeks late.
+  A visit can still be logged by hand at any time, whatever happened to the reminder.
+- **Logging by hand ends the reminder (open point, chosen):** logging a visit closes the marker it names, and any other open marker of the same person at the same place, so a meal that was logged is not asked about again.
+  A marker must be for the same place as the visit, and a marker that already has a visit or was cancelled cannot be used again.
+- **Dates:** `visited_on` is a date.
+  It defaults to the marker's `planned_on`, or today in UTC, and is editable.
+  A visit cannot be dated after tomorrow, which leaves a day for zones ahead of UTC.
+- **Dishes:** a visit has zero or more.
+  A visit with no dishes is valid and is a visit like any other.
+  The API shows it as `dishes: []` with `dish_count: 0`, and the wording for it ("no dishes logged" or nothing at all) is the screens' choice (open point, left to the screens).
+  A dish name and its tags are kept as typed: only the ends are trimmed, control and formatting characters are removed, and the text is normalized to NFC.
+  Case, inner spacing, order, and repeats are kept, so `spicy, not spicy, lunch` comes back as that.
+  `tags` is a Postgres `text[]`, which keeps order.
+  Text that is too long is refused and never cut short.
+  Editing a visit with a list of dishes replaces the list, and a dish that names an existing `id` keeps that identity.
+- **Tags are requests:** `visit_tags` has the tagger's visit, both people, and a `status` of `pending`, `accepted`, or `declined`.
+  A tag moves once, from pending to accepted or declined.
+  The service enforces it and a trigger (`makan_guard_visit_tag`, with its search path pinned) enforces it in the database, so no other path exists even for a direct client.
+  Answering the same way again returns the same result and changes nothing, and answering the other way is a 409.
+  Tagging someone who already has a tag on that visit returns the existing one, so a declined request is not sent a second time.
+  The tagger may withdraw a request only while it is pending.
+- **Who can be tagged:** only a Makan user, by their user id, which `GET /api/me` already returns.
+  A person who is not on Makan is covered by the solo-or-with-others field alone.
+  There is no search for people yet, so how one person learns another's id (for example a share-my-id control on the Account page) is for the screens.
+  A visit marked solo cannot have tags, and a visit with pending or accepted tags cannot be marked solo.
+- **Telling the tagger:** the API refuses to tag unless the request says `acknowledged_sharing: true`, so the notice is enforced in code and not only drawn by a screen.
+  The sentence the screens must show is `TAG_SHARING_NOTICE`: "The people you tag will see your ratings, dishes and notes for this visit if they accept."
+  `GET /api/me/visits` returns it as `sharing_notice`, and it is the message of the 422 when the flag is missing.
+- **A pending or declined tag counts as nothing:** it shares nothing, creates no row for the tagged person, and does not appear as a companion on the tagger's visit.
+  The request the tagged person sees holds the restaurant, the date, and who tagged them, and no rating, dish, note, or id of the tagger's visit.
+- **Accepting:** it creates a real `visits` row owned by the tagged person, in one transaction with the status change.
+  The row copies the restaurant and date, is `with_others`, and has `tagged_by_user_id` set to the tagger.
+  It has no rating, no dishes, and no description yet, because the tagger's ratings never count for the tagged person.
+  The tagger's visit is not copied into it.
+- **What the tagged person sees:** `GET /api/me/visits/{id}` on that visit returns a `shared` block read through the tag: the tagger's rating, description, and dishes as they are now, each dish marked with the tagged person's answer to it.
+  The read follows the accepted tag whose `accepted_visit_id` is that visit and whose tagged person owns it, and then the tagger's own visit, so no id from a request is trusted.
+  Nothing outside an accepted tag shares anything, and no row-level security policy lets a tagged person read the tagger's visit or dishes, so only the backend shares them.
+  An unconfirmed dish shows the tagger's current value, and a confirmed one is the tagged person's own copy.
+- **Tagger's description (open point, chosen):** it is shown to the tagged person after acceptance, because they get the same view.
+  `SHARE_TAGGER_DESCRIPTION` in `makan.visits.service` turns it off with no other change.
+- **Confirming:** `PUT /api/me/visits/{id}/confirmation` takes an answer for the restaurant rating (`same` or `change` with a value) and an answer for each of the tagger's dishes (`same`, `change` with a rating, or `skip`).
+  `same` copies the tagger's value at that moment and records `confirmed`.
+  `change` records the person's value as `fresh`.
+  `skip` removes their answer to that dish.
+  A dish they had that was different is a dish of their own, added by editing the visit, with no link to the tagger's dishes.
+  Answering again replaces the answer and never adds a second one, since a unique index allows one answer per tagger dish.
+  Everything is checked before anything is stored.
+  A confirmed dish copies the tagger's name and rating only.
+  Its tags and comment are whatever the person sends, so the tagger's tags and notes are not stored on the tagged side.
+- **Each side counts its own:** the tagged person's rows are theirs and the tagger's are the tagger's.
+  A later edit by the tagger changes what the tagged person is shown for dishes they have not answered, and never changes a rating the tagged person already confirmed.
+- **The tagger deletes later:** the tag and the tagger's dishes go with their visit, and the tagged person's visit and dishes stay as they were.
+  Their dishes lose the link to the deleted dish (`on delete set null`), the `shared` block disappears, and confirming is a 409 because there is nothing left to answer.
+  Their entry stays editable like any visit.
+  If the tagged person deletes their own visit, the tag stays accepted with no visit, and accepting again does not make a second one.
+  If the tagger's account is deleted, the tagged person's visit stays and no longer names them.
+- **Tagged visits keep their restaurant:** the restaurant and `with_others` of a visit made from a tag cannot be edited, so it stays the meal that was shared.
+  The date, rating, description, and dishes can.
+- **Unrated tagged visit:** its `rating` is null with a null `rating_origin` until the person confirms or changes it, and a check requires the two to be null together.
+  Every other visit is created with a rating.
+- **Privacy and errors:** every lookup is by the owner, so another person's visit, dish, marker, or tag is a 404 exactly like one that never existed, and a stranger cannot learn that it exists.
+  Errors use the usual `{"error": {"code", "message"}}`: 401 `sign_in_required`, 422 `invalid_request`, 404 `not_found`, and 409 `conflict`, and an unexpected failure is the documented 500 without its text.
+- **Guests:** a request with no `Authorization` header is refused with 401 `sign_in_required`, and a message that says searching works without an account, so a guest is told what to do and is not taken for someone whose session ended.
+  A token that fails is the usual `invalid_token` or `token_expired`.
+  The service takes the user id as its first argument and raises `SignInRequired` for none, so no code path makes a row for a guest.
+  Like `/api/me`, the routes do not exist when accounts are not configured.
+- **Endpoints**, all under `/api/me` and scoped to the token's user:
+  - `POST /going-here`, `GET /going-here` (open markers), `GET /going-here/due`, `POST /going-here/{id}/reminded`, `DELETE /going-here/{id}` (cancel).
+  - `POST /visits`, `GET /visits`, `GET /visits/{id}`, `PATCH /visits/{id}` (only the fields sent change, and `dishes` replaces the list), `DELETE /visits/{id}`.
+    `POST /visits` also takes `companions` and `acknowledged_sharing`, so a visit can be logged and tagged in one call.
+  - `POST /visits/{id}/tags`, `DELETE /visits/{id}/tags/{tag_id}` (withdraw a pending request).
+  - `GET /tag-requests?status=pending|accepted|declined|all` (pending by default), `POST /tag-requests/{id}/accept`, `POST /tag-requests/{id}/decline`.
+  - `PUT /visits/{id}/confirmation`.
+  The body never carries a user id for the owner.
+- **Export:** the one export statement gained `going_here`, `visits`, `visit_dishes`, and `visit_tags` (the tags the person made), each as `to_jsonb` of the row, so a later column is exported with no change.
+  It also gained `tag_requests`: the requests addressed to the person, with only what the request showed them (who tagged them, the restaurant, the date, and the state), and not the tagger's visit id, ratings, dishes, or notes.
+- **Deletion:** the existing `delete from users` cascades to all four tables.
+  A tag the person made goes with their visit, a tag addressed to them goes with them, and a visit made from someone's tag stays with that someone and loses only the name of the person who tagged them.
+- **Tests:** `tests/test_visits.py` runs every rule against the in-memory store and, when `MAKAN_TEST_DATABASE_URL` is set, Postgres.
+  `tests/test_visit_schema.py` checks the migration on Postgres: exact ratings and their range, row-level security, the tag moves, and the cascades.
+  `tests/test_web_visits.py` covers the HTTP behavior, including guests, isolation, and export and deletion, and `tests/test_visit_content.py` covers rating parsing and rounding and text cleaning.
+  All run offline.
+- **Not done:** the screens, the notification that carries the reminder, finding another person to tag, and any use of visits in taste, scoring, or ranking.
 
 ## Channels
 
