@@ -1,12 +1,12 @@
 """Hard constraints stay in plain code: no scorer text holds one, and warnings need no scorer."""
 
-import ast
 import inspect
+import subprocess
+import sys
 from datetime import date
 
 import pytest
 
-import makan.menu_warnings as menu_warnings
 from makan.decisions import CONTRACT_DECISIONS, LIMIT_MARKERS
 from makan.evals.contract_cases import (
     HardFacts,
@@ -153,18 +153,28 @@ def test_the_allergen_warning_is_identical_with_the_scorer_off_wrong_or_failing(
     assert got == fit
 
 
-def test_the_warning_helper_has_no_model_dependency() -> None:
-    imported = {
-        node.module or ""
-        for node in ast.walk(ast.parse(inspect.getsource(menu_warnings)))
-        if isinstance(node, ast.ImportFrom)
-    } | {
-        a.name
-        for node in ast.walk(ast.parse(inspect.getsource(menu_warnings)))
-        if isinstance(node, ast.Import)
-        for a in node.names
-    }
-    assert not {m for m in imported if m.startswith("makan")}
+def test_the_warning_helper_works_with_scorer_and_provider_modules_blocked() -> None:
+    script = """
+import sys
+from datetime import date
+
+class Blocker:
+    def find_spec(self, name, path=None, target=None):
+        if name.startswith(("makan.providers", "makan.evals", "makan.decisions")):
+            raise ImportError(f"blocked: {name}")
+
+sys.meta_path.insert(0, Blocker())
+from makan.menu_warnings import MenuText, allergen_warnings
+
+menu = [MenuText("Peanut sauce", "restaurant menu", date(2026, 9, 30))]
+print(allergen_warnings(["peanuts"], menu)[0])
+"""
+    done = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, check=False
+    )
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip().startswith("Peanuts appear on this restaurant's menu")
+    assert "Source: restaurant menu, 2026-09-30." in done.stdout
     assert "scorer" not in inspect.signature(allergen_warnings).parameters
 
 
