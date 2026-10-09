@@ -1,6 +1,6 @@
 """Draft labelled cases for the taste-fit and intent-router decisions.
 
-These are a first draft written by hand for the captain to review and grow. They are not a
+These are a first draft written by hand for the project owner to review and grow. They are not a
 certified benchmark, and their counts are a starting workload, not a statistical release gate.
 
 The two sets live in `sets/contract/`, apart from the three decision sets that `load_cases`

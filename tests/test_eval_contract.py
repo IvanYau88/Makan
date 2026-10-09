@@ -106,7 +106,7 @@ def test_the_instructions_say_what_the_scorer_must_and_must_not_do() -> None:
 def test_each_set_says_it_is_a_first_draft_and_not_a_benchmark(name: str) -> None:
     text = header(name)
     assert "FIRST DRAFT" in text and "not a certified benchmark" in text
-    assert "captain to review" in text
+    assert "project owner to review" in text
 
 
 def test_the_sets_are_separate_from_the_three_existing_decision_sets() -> None:

@@ -1,5 +1,5 @@
 # Draft intent-router cases (primary_intent and intent_presence.* version 1).
-# FIRST DRAFT. These labels were written by hand as a starting point for the captain to review,
+# FIRST DRAFT. These labels were written by hand as a starting point for the project owner to review,
 # correct, and grow. They are not a certified benchmark: the counts are small, one annotator wrote
 # them, and no label has been double-checked. Do not tune a threshold or pick a model from them
 # alone. The rules for the format are in the docstring of makan/evals/contract_cases.py.
