@@ -10,12 +10,14 @@ from __future__ import annotations
 import dataclasses
 import json
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any, Protocol
 from uuid import UUID
 
 from makan.memory.store import InMemoryStore
 from makan.models import Profile, User
+from makan.visits.store import InMemoryVisitStore
 
 
 class AccountStore(Protocol):
@@ -37,7 +39,11 @@ class AccountStore(Protocol):
         ...
 
     def export(self, user_id: UUID) -> dict[str, Any]:
-        """Every row stored for the user, as JSON-ready data, read as one snapshot."""
+        """Every row stored for the user, as JSON-ready data, read as one snapshot.
+
+        That includes their visits, dishes, going-here markers, the tags they made, and the tag
+        requests addressed to them.
+        """
         ...
 
     def delete_user(self, user_id: UUID) -> None:
@@ -46,8 +52,11 @@ class AccountStore(Protocol):
 
 
 class InMemoryAccountStore:
-    def __init__(self, memory: InMemoryStore | None = None) -> None:
+    def __init__(
+        self, memory: InMemoryStore | None = None, visits: InMemoryVisitStore | None = None
+    ) -> None:
         self.memory = memory or InMemoryStore()
+        self.visits = visits or InMemoryVisitStore()
         self._users: dict[UUID, User] = {}
         self._profiles: dict[UUID, Profile] = {}
         self._lock = threading.Lock()
@@ -97,6 +106,7 @@ class InMemoryAccountStore:
             "sessions": [],
             "participants": [],
             "trace_events": [],
+            **_json_value(self.visits.export(user_id)),
         }
 
     def delete_user(self, user_id: UUID) -> None:
@@ -104,15 +114,22 @@ class InMemoryAccountStore:
             self._users.pop(user_id, None)
             self._profiles.pop(user_id, None)
         self.memory.delete_user(user_id)
+        self.visits.delete_user(user_id)
 
 
 def _json(row: Any) -> Any:
     if row is None:
         return None
-    return json.loads(json.dumps(dataclasses.asdict(row), default=_default))
+    return _json_value(dataclasses.asdict(row))
 
 
-def _default(value: object) -> str:
-    if isinstance(value, datetime):
+def _json_value(value: Any) -> Any:
+    return json.loads(json.dumps(value, default=_default))
+
+
+def _default(value: object) -> object:
+    if isinstance(value, datetime | date):
         return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)  # as Postgres writes a numeric into JSON
     return str(value)

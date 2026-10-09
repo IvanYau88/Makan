@@ -32,6 +32,8 @@ from makan.config import Config, ConfigError, SupabaseConfig
 from makan.memory import Memory
 from makan.memory.postgres import PostgresMemoryStore
 from makan.models import Profile
+from makan.visits import VisitError, Visits
+from makan.visits.postgres import PostgresVisitStore
 from makan.web.errors import ApiError, error
 
 log = logging.getLogger("makan.web")
@@ -49,6 +51,7 @@ class AccountServices:
     accounts: Accounts
     verifier: TokenVerifier
     supabase: SupabaseConfig
+    visits: Visits
 
     def public_config(self) -> dict[str, Any]:
         """What the browser needs to talk to Supabase Auth. The anon key is public by design,
@@ -80,13 +83,17 @@ def build_account_services(config: Config) -> AccountServices | None:
         raise ConfigError(
             f"could not connect to MAKAN_DATABASE_URL ({type(exc).__name__})"
         ) from None
-    lock = threading.Lock()  # one connection, so the two stores take turns
+    lock = threading.Lock()  # one connection, so the stores take turns
+    account_store = PostgresAccountStore(conn, lock=lock)
     accounts = Accounts(
-        PostgresAccountStore(conn, lock=lock),
+        account_store,
         Memory(PostgresMemoryStore(conn, lock=lock)),
         SupabaseAdmin(supabase.url, supabase.service_role_key),
     )
-    return AccountServices(accounts, TokenVerifier(supabase.jwks_url, supabase.issuer), supabase)
+    visits = Visits(PostgresVisitStore(conn, lock=lock), account_store)
+    return AccountServices(
+        accounts, TokenVerifier(supabase.jwks_url, supabase.issuer), supabase, visits
+    )
 
 
 def bearer_token(authorization: str | None) -> str | None:
@@ -265,7 +272,7 @@ def guarded[**P](route: Callable[P, Any]) -> Callable[P, Any]:
     def run(*args: P.args, **kwargs: P.kwargs) -> Any:
         try:
             return route(*args, **kwargs)
-        except (AccountGone, AuthUnavailable, InvalidProfile, ApiError):
+        except (AccountGone, AuthUnavailable, InvalidProfile, ApiError, VisitError):
             raise
         except Exception:
             log.exception("account route failed")

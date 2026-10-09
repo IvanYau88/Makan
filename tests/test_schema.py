@@ -11,8 +11,8 @@ import dataclasses
 import re
 import types
 import typing
-from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
@@ -23,15 +23,19 @@ from makan import models
 from makan.models import (
     MEMORY_KINDS,
     MEMORY_SOURCES,
+    GoingHere,
     MemoryFact,
     Participant,
     Profile,
     Session,
     TraceEventRow,
     User,
+    Visit,
+    VisitDish,
+    VisitTag,
 )
 from makan.trace import JsonlSink, TraceEvent, read_jsonl
-from tests.helpers import migration_files
+from tests.helpers import act_as, count, migration_files
 
 TABLE_MODELS: dict[str, type] = {
     "users": User,
@@ -40,6 +44,10 @@ TABLE_MODELS: dict[str, type] = {
     "participants": Participant,
     "memory_facts": MemoryFact,
     "trace_events": TraceEventRow,
+    "going_here": GoingHere,
+    "visits": Visit,
+    "visit_dishes": VisitDish,
+    "visit_tags": VisitTag,
 }
 
 SQL_TO_PYTHON: dict[str, type] = {
@@ -50,6 +58,8 @@ SQL_TO_PYTHON: dict[str, type] = {
     "integer": int,
     "smallint": int,
     "double precision": float,
+    "date": date,
+    "numeric": Decimal,
 }
 
 
@@ -75,7 +85,11 @@ def test_every_migration_function_pins_its_search_path() -> None:
     pinned = set(
         re.findall(r"^alter function (\w+)\([^)]*\)\s+set search_path\b", sql, re.M | re.I)
     )
-    assert created == {"makan_current_user_id", "makan_touch_updated_at"}
+    assert created == {
+        "makan_current_user_id",
+        "makan_touch_updated_at",
+        "makan_guard_visit_tag",
+    }
     assert created <= pinned
 
 
@@ -129,37 +143,6 @@ def test_jsonl_trace_lines_load_as_rows(tmp_path: Path) -> None:
 # Live Postgres checks. These skip unless MAKAN_TEST_DATABASE_URL is set.
 
 
-@pytest.fixture
-def app_role(db: Any) -> Iterator[str]:
-    """An ordinary role, so row-level security applies, as it does for a signed-in user."""
-    role = f"makan_test_{uuid4().hex[:8]}"
-    schema = db.execute("select current_schema()").fetchone()[0]
-    try:
-        db.execute(f"create role {role} nologin")
-    except Exception:
-        pytest.skip("cannot create a role on this database")
-    try:
-        db.execute(f"grant usage on schema {schema} to {role}")
-        db.execute(f"grant all on all tables in schema {schema} to {role}")
-        db.execute(f"grant execute on all functions in schema {schema} to {role}")
-        yield role
-    finally:
-        db.execute("reset role")
-        db.execute(f"drop owned by {role}")
-        db.execute(f"drop role {role}")
-
-
-def act_as(db: Any, role: str, user_id: UUID | None) -> None:
-    claims = "" if user_id is None else f'{{"sub": "{user_id}"}}'
-    db.execute("reset role")
-    db.execute(f"set role {role}")
-    db.execute("select set_config('request.jwt.claims', %s, false)", (claims,))
-
-
-def count(db: Any, table: str) -> int:
-    return int(db.execute(f"select count(*) from {table}").fetchone()[0])
-
-
 def test_every_table_enforces_row_level_security_with_a_policy(db: Any) -> None:
     for table in TABLE_MODELS:
         enabled = db.execute(
@@ -179,7 +162,11 @@ def test_helper_functions_have_a_pinned_search_path(db: Any) -> None:
         "select proname, proconfig from pg_proc "
         "where pronamespace = current_schema()::regnamespace and proname like 'makan\\_%%'"
     ).fetchall()
-    assert {name for name, _ in rows} == {"makan_current_user_id", "makan_touch_updated_at"}
+    assert {name for name, _ in rows} == {
+        "makan_current_user_id",
+        "makan_touch_updated_at",
+        "makan_guard_visit_tag",
+    }
     for name, config in rows:
         assert config == ['search_path=""'], name
 
@@ -242,6 +229,8 @@ def test_database_columns_match_models(db: Any) -> None:
                 assert base is Any or typing.get_origin(base) is dict, f"{table}.{name}"
             elif typing.get_origin(base) is Literal:
                 assert data_type == "text", f"{table}.{name}"
+            elif data_type == "ARRAY":
+                assert typing.get_origin(base) is tuple, f"{table}.{name}"
             else:
                 assert base is SQL_TO_PYTHON[data_type], f"{table}.{name} type"
 
@@ -294,6 +283,7 @@ def test_each_user_reads_only_their_own_rows(db: Any, app_role: str) -> None:
     a = db.execute("select id from users order by id limit 1").fetchone()[0]
     expected = {"users": 1, "profiles": 1, "sessions": 1, "participants": 1}
     expected |= {"memory_facts": 1, "trace_events": 1}
+    expected |= {"going_here": 0, "visits": 0, "visit_dishes": 0, "visit_tags": 0}
     act_as(db, app_role, a)
     for table, rows in expected.items():
         assert count(db, table) == rows, table

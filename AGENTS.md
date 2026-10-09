@@ -20,6 +20,8 @@ Read `docs/DESIGN.md` before making architectural decisions.
 - Every function a migration creates pins `search_path` (see migration `0003`), so Supabase's security advisor stays clean.
 - Show people miles and feet, never meters or kilometers.
   Storage and the API stay in meters, and conversion happens at the display and input edges (`web/src/units.ts`, `distance_label` in `makan/places/base.py`).
+- Visits, dishes, ratings and tags are private to their owner.
+  A tagged person sees the tagger's visit only through an accepted tag, read by the backend in `makan.visits.service`, so never add a row-level security policy or a query that reads another person's visit.
 - Never send raw trace events to a client.
   They hold the session link token and exception text, so the web channel sends only the bounded view from `makan.web.runs`.
   A type decides what a trace may hold through `trace_summary()`.

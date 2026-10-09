@@ -65,3 +65,33 @@ def account_store(request: pytest.FixtureRequest) -> Any:
     store = PostgresAccountStore(conn)
     store.memory = PostgresMemoryStore(conn)  # type: ignore[attr-defined]
     return store
+
+
+@pytest.fixture(params=["memory", "postgres"])
+def world(request: pytest.FixtureRequest) -> Any:
+    """The visit rules over an in-memory store, and over Postgres when a database is set."""
+    from tests.visit_helpers import World
+
+    if request.param == "memory":
+        return World.in_memory()
+    return World.on_postgres(request.getfixturevalue("db"))  # skips without a database
+
+
+@pytest.fixture
+def app_role(db: Any) -> Iterator[str]:
+    """An ordinary role, so row-level security applies, as it does for a signed-in user."""
+    role = f"makan_test_{uuid4().hex[:8]}"
+    schema = db.execute("select current_schema()").fetchone()[0]
+    try:
+        db.execute(f"create role {role} nologin")
+    except Exception:
+        pytest.skip("cannot create a role on this database")
+    try:
+        db.execute(f"grant usage on schema {schema} to {role}")
+        db.execute(f"grant all on all tables in schema {schema} to {role}")
+        db.execute(f"grant execute on all functions in schema {schema} to {role}")
+        yield role
+    finally:
+        db.execute("reset role")
+        db.execute(f"drop owned by {role}")
+        db.execute(f"drop role {role}")

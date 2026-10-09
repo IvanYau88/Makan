@@ -67,6 +67,7 @@ from makan.web.errors import ApiError, error, public_warnings, workflow_failure
 from makan.web.groups import register_group_routes
 from makan.web.purge import purge_forever
 from makan.web.runs import Outcome, RunRecorder, SearchMode
+from makan.web.visits import register_visit_routes
 
 log = logging.getLogger("makan.web")
 
@@ -192,6 +193,7 @@ def create_app(
     app.state.accounts = accounts
     if accounts is not None:
         register_account_routes(app, accounts)
+        register_visit_routes(app, accounts)
 
     # The stages of the full solo graph, so a browse run can show the ones it skipped.
     plan = tuple(

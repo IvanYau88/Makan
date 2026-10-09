@@ -134,6 +134,11 @@ The backend checks Supabase's access tokens against the project's published sign
 The Account page signs up, signs in and out, makes the profile (the name Makan greets you with, and the location history opt-in, which is off by default), takes the taste form, exports everything stored about you, and deletes your data and account.
 The taste form keeps a soft "skip" (a cuisine ranked lower) apart from a hard "never" (an allergy, a diet, or a place you will not go to), and a hard never does not fade with time.
 
+Signed-in people can also log visits through the API: mark a restaurant as "going here", log the meal with a rating, dishes and the people they ate with, and answer tags from friends.
+It is backend only so far, under `/api/me/visits`, `/api/me/going-here` and `/api/me/tag-requests`, and needs migration `0004` applied like the others.
+Guests are told to sign in and keep searching as before.
+See "Visit logging decisions" in `docs/DESIGN.md`.
+
 ### Web app
 
 The web channel is a FastAPI backend (`src/makan/web`) and a React front end (`web/`, Vite and TypeScript).

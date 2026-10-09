@@ -2,6 +2,7 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from makan.places import Place
 from makan.tools import Tool
@@ -130,3 +131,15 @@ def synthetic_database_url(password: str) -> str:
     """
     scheme, user, host = "postgresql", "makan_user", "db.invalid:5432/none"
     return "://".join([scheme, "@".join([":".join([user, password]), host])])
+
+
+def act_as(db: Any, role: str, user_id: UUID | None) -> None:
+    """Run the connection as `role`, as the user the token names (None is a guest)."""
+    claims = "" if user_id is None else f'{{"sub": "{user_id}"}}'
+    db.execute("reset role")
+    db.execute(f"set role {role}")
+    db.execute("select set_config('request.jwt.claims', %s, false)", (claims,))
+
+
+def count(db: Any, table: str) -> int:
+    return int(db.execute(f"select count(*) from {table}").fetchone()[0])

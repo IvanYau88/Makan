@@ -18,6 +18,7 @@ from makan.accounts.supabase import SupabaseAdmin
 from makan.accounts.tokens import TokenVerifier
 from makan.config import SupabaseConfig
 from makan.memory import Memory
+from makan.visits import Visits
 from makan.web.accounts import AccountServices
 
 URL = "https://project.supabase.test"
@@ -103,8 +104,9 @@ def services(
         store, Memory(store.memory), SupabaseAdmin(URL, SERVICE_KEY, client=fake.client())
     )
     verifier = TokenVerifier(JWKS_URL, ISSUER, client=fake.client())
+    visits = Visits(store.visits, store)
     return (
-        AccountServices(accounts, verifier, SupabaseConfig(URL, ANON_KEY, SERVICE_KEY)),
+        AccountServices(accounts, verifier, SupabaseConfig(URL, ANON_KEY, SERVICE_KEY), visits),
         fake,
         store,
     )
