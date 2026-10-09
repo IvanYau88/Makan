@@ -886,6 +886,7 @@ Makan has no way to know a meal happened except what the person does in the app,
   Everything is checked before anything is stored.
   A confirmed dish copies the tagger's name and rating only.
   Its tags and comment are whatever the person sends, so the tagger's tags and notes are not stored on the tagged side.
+  An answer that omits `tags` or `comment` keeps the ones already saved on that answer (empty for a first answer), and a provided `null` or empty comment clears the comment.
 - **Each side counts its own:** the tagged person's rows are theirs and the tagger's are the tagger's.
   A later edit by the tagger changes what the tagged person is shown for dishes they have not answered, and never changes a rating the tagged person already confirmed.
 - **The tagger deletes later:** the tag and the tagger's dishes go with their visit, and the tagged person's visit and dishes stay as they were.
