@@ -148,7 +148,7 @@ def _report(
     n = len(outcomes)
     accepted = [o for o in outcomes if o.accepted]
     labels = [o.id for o in DECISIONS[decision].options]
-    per_class = {label: _class_scores(label, outcomes) for label in labels}
+    per_class = {label: class_scores(label, outcomes) for label in labels}
     f1s = [s.f1 if s.f1 is not None else 0.0 for s in per_class.values()]
     scored = [o for o in outcomes if o.result.distribution is not None]
     near_ties = [o for o in outcomes if "near_tie" in o.case.tags]
@@ -170,21 +170,21 @@ def _report(
         ),
         macro_f1=math.fsum(f1s) / len(f1s),
         per_class=per_class,
-        brier=_mean(_brier(o) for o in scored),
-        log_loss=_mean(_log_loss(o) for o in scored),
+        brier=mean(outcome_brier(o) for o in scored),
+        log_loss=mean(outcome_log_loss(o) for o in scored),
         statuses=dict(Counter(o.result.status.value for o in outcomes)),
         near_tie_cases=len(near_ties),
-        near_tie_accuracy=_mean(float(o.correct) for o in near_ties),
-        near_tie_mean_margin=_mean(near_margins),
-        latency_p50_s=_percentile(latencies, 0.50),
-        latency_p95_s=_percentile(latencies, 0.95),
+        near_tie_accuracy=mean(float(o.correct) for o in near_ties),
+        near_tie_mean_margin=mean(near_margins),
+        latency_p50_s=percentile(latencies, 0.50),
+        latency_p95_s=percentile(latencies, 0.95),
         tokens=sum(o.result.usage.total_tokens for o in outcomes),
         cost=math.fsum(costs) if costs else None,
         cost_unreported=n - len(costs),
     )
 
 
-def _class_scores(label: str, outcomes: list[CaseOutcome]) -> ClassScores:
+def class_scores(label: str, outcomes: list[CaseOutcome]) -> ClassScores:
     predicted = [o for o in outcomes if o.result.choice == label]
     actual = [o for o in outcomes if o.case.label == label]
     hits = sum(o.correct for o in predicted)
@@ -196,29 +196,29 @@ def _class_scores(label: str, outcomes: list[CaseOutcome]) -> ClassScores:
     return ClassScores(precision, recall, 2 * precision * recall / (precision + recall))
 
 
-def _probabilities(outcome: CaseOutcome) -> dict[str, float]:
+def outcome_probabilities(outcome: CaseOutcome) -> dict[str, float]:
     distribution = outcome.result.distribution
     assert distribution is not None
     return dict(distribution.probabilities)
 
 
-def _brier(outcome: CaseOutcome) -> float:
+def outcome_brier(outcome: CaseOutcome) -> float:
     return math.fsum(
         (p - (1.0 if option == outcome.case.label else 0.0)) ** 2
-        for option, p in _probabilities(outcome).items()
+        for option, p in outcome_probabilities(outcome).items()
     )
 
 
-def _log_loss(outcome: CaseOutcome) -> float:
-    return -math.log(max(_probabilities(outcome)[outcome.case.label], _EPSILON))
+def outcome_log_loss(outcome: CaseOutcome) -> float:
+    return -math.log(max(outcome_probabilities(outcome)[outcome.case.label], _EPSILON))
 
 
-def _mean(values: Iterable[float]) -> float | None:
+def mean(values: Iterable[float]) -> float | None:
     items = list(values)
     return math.fsum(items) / len(items) if items else None
 
 
-def _percentile(sorted_values: list[float], q: float) -> float:
+def percentile(sorted_values: list[float], q: float) -> float:
     """Nearest rank, so a p95 is a latency that really happened."""
     if not sorted_values:
         return 0.0
