@@ -696,6 +696,21 @@ def test_answering_again_changes_the_answer_without_duplicating(world: World) ->
     assert [(d.rating, d.rating_origin) for d in same.dishes] == [(Decimal("7.5"), "confirmed")]
 
 
+def test_answering_again_keeps_tags_and_comment_unless_given(world: World) -> None:
+    _, bob, view, mine = accepted(world)
+    soup = view.dishes[0]
+    first = world.visits.confirm(
+        bob, mine.visit.id, dishes=[DishAnswer(soup.id, "same", tags=["spicy"], comment="good")]
+    )
+    assert (first.dishes[0].tags, first.dishes[0].comment) == (("spicy",), "good")
+    again = world.visits.confirm(bob, mine.visit.id, dishes=[DishAnswer(soup.id, "change", 2)])
+    assert (again.dishes[0].tags, again.dishes[0].comment) == (("spicy",), "good")
+    cleared = world.visits.confirm(
+        bob, mine.visit.id, dishes=[DishAnswer(soup.id, "same", tags=[], comment=None)]
+    )
+    assert (cleared.dishes[0].tags, cleared.dishes[0].comment) == ((), None)
+
+
 def test_a_bad_answer_stores_nothing(world: World) -> None:
     alice, bob, view, mine = accepted(world)
     soup = view.dishes[0]

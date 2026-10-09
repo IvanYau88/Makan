@@ -397,7 +397,13 @@ def register_visit_routes(app: FastAPI, services: AccountServices) -> None:
                 None if body.rating is None else RatingAnswer(body.rating.action, body.rating.value)
             ),
             dishes=[
-                DishAnswer(d.source_dish_id, d.action, d.rating, d.tags, d.comment)
+                DishAnswer(
+                    d.source_dish_id,
+                    d.action,
+                    d.rating,
+                    d.tags if "tags" in d.model_fields_set else UNSET,
+                    d.comment if "comment" in d.model_fields_set else UNSET,
+                )
                 for d in body.dishes
             ],
         )

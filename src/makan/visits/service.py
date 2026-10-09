@@ -115,8 +115,8 @@ class DishAnswer:
     source_dish_id: UUID
     action: Literal["same", "change", "skip"]
     rating: object = None
-    tags: Sequence[str] = ()
-    comment: str | None = None
+    tags: Sequence[str] | _Unset = UNSET
+    comment: str | _Unset | None = UNSET
 
 
 @dataclass(frozen=True)
@@ -558,16 +558,22 @@ class Visits:
                 score = original.rating
             else:
                 score = parse_rating(answer.rating, f"rating for {original.name}")
-            fields = {
+            fields: dict[str, object] = {
                 "name": original.name,
                 "rating": score,
                 "rating_origin": _origin(answer.action),
-                "tags": clean_dish_tags(answer.tags),
-                "comment": clean_optional(
-                    answer.comment, "comment", max_chars=MAX_DISH_COMMENT_CHARS, multiline=True
-                ),
                 "updated_at": now,
             }
+            if not isinstance(answer.tags, _Unset):
+                fields["tags"] = clean_dish_tags(answer.tags)
+            elif current is None:
+                fields["tags"] = ()
+            if not isinstance(answer.comment, _Unset):
+                fields["comment"] = clean_optional(
+                    answer.comment, "comment", max_chars=MAX_DISH_COMMENT_CHARS, multiline=True
+                )
+            elif current is None:
+                fields["comment"] = None
             if current is not None:
                 rows = [dataclasses.replace(d, **fields) if d.id == current.id else d for d in rows]  # type: ignore[arg-type]
             else:

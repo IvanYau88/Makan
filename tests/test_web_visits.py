@@ -524,6 +524,39 @@ def test_the_whole_tagged_visit_flow() -> None:
     assert (stuck.status_code, code(stuck)) == (409, "conflict")
 
 
+def test_answering_again_keeps_tags_and_comment_unless_sent() -> None:
+    api = Api()
+    _, alice = api.person("Alice")
+    bob_id, bob = api.person("Bob")
+    visit = api.visit(alice, rating=9, dishes=[SOUP])
+    [soup] = visit["dishes"]
+    tag(api, alice, visit, bob_id)
+    [request] = api.client.get("/api/me/tag-requests", headers=bob).json()["requests"]
+    mine = api.client.post(f"/api/me/tag-requests/{request['id']}/accept", headers=bob).json()[
+        "visit"
+    ]
+    url = f"/api/me/visits/{mine['id']}/confirmation"
+
+    def answer(**fields: Any) -> dict[str, Any]:
+        sent = api.client.put(
+            url, json={"dishes": [{"source_dish_id": soup["id"], **fields}]}, headers=bob
+        )
+        assert sent.status_code == 200, sent.text
+        dish: dict[str, Any] = sent.json()["visit"]["dishes"][0]
+        return dish
+
+    first = answer(action="same", tags=["spicy", "lunch"], comment="loved it")
+    assert (first["tags"], first["comment"]) == (["spicy", "lunch"], "loved it")
+    again = answer(action="change", rating=3)
+    assert (again["rating"], again["tags"], again["comment"]) == (
+        3.0,
+        ["spicy", "lunch"],
+        "loved it",
+    )
+    assert answer(action="same", comment=None)["comment"] is None
+    assert answer(action="same", tags=[])["tags"] == []
+
+
 def test_only_the_tagged_person_can_answer_a_request() -> None:
     api = Api()
     alice_id, alice = api.person("Alice")
