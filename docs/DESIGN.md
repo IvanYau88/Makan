@@ -1062,7 +1062,7 @@ The 70 percent routing threshold, the taste-fading speed, and the model choice a
   CI runs the front end lint, test, and build in a second job, so Python and Node failures show up separately.
 - **One origin:** in production-style runs FastAPI serves the built `web/dist` next to the API, so the app is one process with no CORS.
   In development Vite proxies `/api` to the backend.
-  Where the deployed backend and static files are hosted is still the open hosting question, and a split deployment would add a CORS allow-list then.
+  The first public deployment keeps that shape on Vercel (see "Vercel deployment decisions"), and a split deployment would add a CORS allow-list then.
 - **API shape:**
   - `POST /api/recommendations` takes `mode`, `latitude`, `longitude`, an optional `request`, and optional `radius_m` (100 to 5000, default 1000), and rejects unknown fields.
     `mode` is required and is `recommend` or `browse`, so the server never guesses what a search is for.
@@ -1087,9 +1087,12 @@ The 70 percent routing threshold, the taste-fading speed, and the model choice a
     Bad input is still a 422 before the stream starts.
     The page uses the stream, and the plain route stays for any other caller.
     A browser that leaves does not cancel the run: threads cannot be stopped, so the server finishes it and drops the answer.
-  - `GET /api/config` reports `{"mode", "map": {"tile_url", "attribution", "attribution_url"}, "auth"}`, which the page needs before it can draw the map and know whether there are accounts.
+  - `GET /api/config` reports `{"mode", "map": {"tile_url", "attribution", "attribution_url"}, "auth", "features": {"recommend", "groups", "accounts"}}`, which the page needs before it can draw the map and know what the server offers.
     `auth` is `{"url", "anon_key", "redirect_url"}` or null.
-  - `GET /api/health` reports `{"status": "ok", "mode": "demo" | "live"}`, which the page uses to show the demo banner.
+    `features` says which screens exist, so the page shows none that would only fail: without `recommend` there is no Pick for me, without `groups` no Group tab, and without `accounts` no Account tab.
+    A server that omits `features` is read as offering everything, which is what every server did before it said.
+  - `GET /api/health` reports `{"status": "ok", "mode": "demo" | "live" | "places"}`.
+    It touches no database and no places data, so a host can poll it freely.
   - Every error uses `{"error": {"code", "message"}}` with a message safe to show.
     Bad input is 422 `invalid_request`.
     A rate limited or temporarily unavailable model (HTTP 429 or 5xx from the provider) is 503 `model_busy`, with a `Retry-After: 60` header, and says the model is busy and to try again in a minute.
@@ -1111,6 +1114,14 @@ The 70 percent routing threshold, the taste-fading speed, and the model choice a
   Demo responses carry `mode: "demo"` and the page says the venues are not real.
   Without `MAKAN_DEMO`, the app is live: it needs `MAKAN_MODEL` and `OPENROUTER_API_KEY` and uses OpenRouter and the cached Overture provider.
   A missing setting fails at startup with a message that points at demo mode, never on the first request.
+  `MAKAN_PLACES_ONLY=1` is the third run mode, `places`: real Overture places, Browse nearby only, and no model, scorer, or key at all (see "Vercel deployment decisions" for why it exists).
+  `MAKAN_DEMO` wins when both are set, since invented data is the explicit choice.
+  The data and the model are separate facts, so the mode names both: `demo` is sample places and a keyword stand-in, `places` is real places and no model, and `live` is real places and a real model.
+  A `recommend` search in `places` mode is refused before any work starts, with 422 `recommendations_unavailable` on both routes, and the provider is an `UnavailableProvider` that raises if anything ever calls it.
+  `MAKAN_GROUPS_ENABLED` and `MAKAN_ACCOUNTS_ENABLED` switch those features off in any mode (blank is on, `0` or `false` is off, anything else is a startup error so a typo cannot leave a feature on).
+  Off means no routes, no page, no sessions, and no purge task for groups, and no Supabase validation or connection for accounts, whatever else the environment holds.
+  Anything under `/api/groups` or `/api/me` that is switched off answers 404 `not_found` to every method, not the static mount's 405, which would suggest the route exists.
+  `places` mode also has no groups, since a group needs the model to pick.
   `MAKAN_WEB_DIST` overrides the front end build directory, and `MAKAN_API_URL` is read only by the Vite dev server.
 - **Environment file:** the uvicorn factory (`create_app_from_env` with no argument) loads `.env` itself with a small parser in `makan.env`, so starting the app takes no shell script and no `set -a`.
   It reads `.env` in the current directory, or the file named by `MAKAN_ENV_FILE` in the real environment, and a named file that is missing is an error.
@@ -1332,6 +1343,61 @@ Before this, a blank request was silently turned into "something good to eat" an
   The project pauses after about a week of inactivity, so a scheduled keep-alive ping is needed once friends depend on it.
 - Function timeouts are a real risk for long parallel research runs.
   Check the current limits in the Vercel dashboard, then stream responses and split long work into steps.
+
+### Vercel deployment decisions
+
+The first public deployment is a guest-only site on Vercel Hobby, built from this one repository, with real nearby places and no model.
+Nothing was deployed to prepare this: every check below ran locally, and what only Vercel can show is listed under "Not verified".
+
+- **One project:** the React build in `web/` and the FastAPI backend deploy together.
+  The root `app.py` exports `app`, which is where Vercel's FastAPI detection looks, so no `tool.vercel` setting is needed.
+  FastAPI serves `web/dist` through its static mount, and Vercel may promote those files to its CDN, which changes nothing for the app.
+  `app.py` adds `src/` to the import path when `makan` is not installed, because Vercel installs the dependencies and not the package.
+- **Public defaults:** `makan.web.public.create_public_app` is `create_app_from_env` with groups off, accounts off, places-only mode, and `/tmp/makan-duckdb` as DuckDB's directory, each used only when the variable is unset or blank.
+  A variable set to anything is kept, so `MAKAN_DEMO=1` gives the sample places, `MAKAN_GROUPS_ENABLED=1` turns groups back on, and `MAKAN_PLACES_ONLY=0` with a model and a key gives the live app.
+  It never reads `.env`, because the host has none and a stray file must not change a public site.
+- **Importing is inert:** Vercel imports `app.py` while it builds, so building the app opens nothing.
+  DuckDB is imported on the first search, the release lookup and the `httpfs` download wait for it too, no database is connected, and no key is needed.
+  A test imports the root file with every key unset and the network blocked.
+  A missing `web/dist` at import is a logged warning and not an error, because the order of Vercel's build command and its import cannot be checked from here, and the site would then serve only the API.
+- **Python and dependencies:** `.python-version` pins 3.12, the version CI runs, and `requirements.txt` lists the pinned production dependencies: `httpx`, `fastapi`, `pyjwt[crypto]`, and `duckdb`.
+  It leaves out `uvicorn`, tests, linters, and `psycopg`, and a test keeps it in step with `pyproject.toml`.
+  `makan.web.accounts` used to import the Postgres stores, and so `psycopg`, at startup even with accounts off, so `makan.web` could not be imported with the `web` and `overture` extras alone.
+  It now imports them inside `build_account_services`, after the check for `SUPABASE_URL`, and a test builds the public app with `psycopg` and `uvicorn` blocked.
+  Resolving it for Python 3.12 on Linux gave about 95 MB installed, and `src/` and the built page add about 3 MB, against a 500 MB function limit.
+  `pyjwt` and `cryptography` stay because `makan.accounts.tokens` is imported at startup even with accounts off.
+- **`vercel.json`:** a build command that runs `npm ci` and `npm run build` in `web/`, `MAKAN_WEB_DIST=web/dist` (also what `app.py` falls back to), `maxDuration` 60 for `app.py`, and `excludeFiles` for `.venv`, `.git`, tests, docs, data, migrations, `web/node_modules` and `web/src`.
+  `web/dist` stays in the function so the app can serve the page itself.
+  Sixty seconds is far under the 300 seconds Fluid compute allows and well over the 20 second places deadline and 30 second step timeout, so the application, not the host, ends a slow request.
+  `.vercelignore` keeps `.env` files and local environments out of the upload.
+- **Proposed project settings:** root directory is the repository root, framework preset is FastAPI or Other, Node.js 22.x (the web app needs 22.12 or newer), Fluid compute on, and no environment variable is required.
+  Optional ones are `MAKAN_DEMO=1` for the sample places, `MAKAN_OVERTURE_RELEASE` to pin a release and skip the catalog lookup, and the `MAKAN_DUCKDB_*` and `MAKAN_PLACES_DEADLINE_SECONDS` bounds.
+- **Real places are the default:** the captain wants to try real nearby results in the preview, so a public site with no setting browses real Overture places.
+  Setting `MAKAN_DEMO=1` is the one change that falls back to the sample places.
+- **Honest banners:** `demo` keeps its banner, "Demo mode: sample places, not real venues or a real language model."
+  `places` has its own, in the page's neutral colors and not the warning color: "Real places from Overture Maps, nearest first. This site only browses: it makes no recommendations and calls no language model."
+  The Execution page names the mode as "Demo", "Live", or "Real places, no model".
+  Results carry the Overture attribution as before.
+  Pick for me is not offered in `places` mode and the device's remembered choice is left alone, so the choice a person made on a deployment that has a model is not overwritten.
+- **Bounded DuckDB work:** `DuckDbLimits` sets 2 threads, 1024 MB of memory, 256 MB of spill, an `httpfs` timeout of 10 seconds with one retry, and a 20 second application deadline.
+  The deadline is a timer that interrupts the running query, because the graph's step timeout (30 seconds) abandons a thread without stopping it, and that timeout stays as the backstop.
+  The release lookup has its own 5 second timeout.
+  Each is a variable (`MAKAN_DUCKDB_THREADS`, `MAKAN_DUCKDB_MEMORY_MB`, `MAKAN_PLACES_DEADLINE_SECONDS`, `MAKAN_DUCKDB_DIR`), and a failed or late query is a `PlacesError`, which the page shows as the plain "places data is unavailable" message.
+  Installing the extension cannot be interrupted, so a stalled download is bounded only by the graph's timeout and the host's.
+- **`httpfs` on a read-only host:** DuckDB installs extensions under the home directory by default, which a read-only deployment cannot write.
+  `MAKAN_DUCKDB_DIR` sets `extension_directory` and `temp_directory` explicitly, and the code runs `LOAD httpfs` first and installs only when that fails, so an extension copied into that directory ahead of time needs no download.
+  Checked locally on 2026-10-13 with an empty scratch directory: the install put `httpfs` into it, a cold search near Kuala Lumpur took 13.6 seconds including the release lookup, the same search warm took no measurable time from the in-memory cache, and peak process memory was about 300 MiB.
+  A failure to install or load is reported by name, "the DuckDB httpfs extension could not be installed or loaded", and never hidden or replaced with sample places.
+- **Not verified, because it needs a Vercel deployment:**
+  - That the function can reach the DuckDB extension host and the S3 bucket, and that `/tmp` is writable at the documented size.
+    If the download fails, Browse nearby fails with the places error above and the logs name the cause, and `MAKAN_DEMO=1` is the working fallback.
+    The proper fix is a regional extract: a Parquet file of open, confident food places for one supported region (the `SQL` filter in `makan.places.overture`), read through the existing `DuckDbSource(path=...)`, which needs no extension at all.
+    `places_provider` has no setting for a local path yet, and the file's size and refresh process must be measured before it is chosen.
+  - Cold start time and memory on Vercel, and that the 13.6 second cold search is similar there.
+  - Which of `requirements.txt` and `pyproject.toml` Vercel installs from when both exist, and that its build image runs `npm`, and that `app.py` is imported after the build command.
+    If `pyproject.toml` wins, only `httpx` is installed and the import fails at once with a missing `fastapi`, which is easy to see.
+- **Out of scope here:** shared admission control and daily caps, a regional extract, a free scorer, durable groups, and accounts.
+  Without a limiter a public link can run up the places and function allowances, and Hobby usually stops at its allowance instead of billing, so this is a reliability risk more than a cost one.
 
 ## Security and privacy
 

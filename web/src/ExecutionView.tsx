@@ -11,7 +11,13 @@ import {
   runSummary,
 } from "./stages";
 import { MODE_COPY } from "./searchMode";
-import type { Run, Stage, StageName } from "./types";
+import type { Mode, Run, Stage, StageName } from "./types";
+
+const MODE_LABEL: Record<Mode, string> = {
+  demo: "Demo",
+  live: "Live",
+  places: "Real places, no model",
+};
 
 interface Props {
   history: HistoryEntry[];
@@ -135,7 +141,7 @@ function RunSummary({ run, abandoned }: { run: Run; abandoned: boolean }) {
           value={run.status === "running" ? "Running" : run.status === "ok" ? "Ok" : "Failed"}
         />
         <Fact label="Outcome" value={outcomeLabel(run)} />
-        <Fact label="Mode" value={run.mode === "demo" ? "Demo" : "Live"} />
+        <Fact label="Mode" value={MODE_LABEL[run.mode]} />
         <Fact label="Data source" value={run.data_source} />
         <Fact label="Duration" value={durationLabel(run.duration_ms)} />
       </dl>

@@ -47,6 +47,20 @@ class ScorerConfig:
 
 
 @dataclass(frozen=True)
+class DuckDbConfig:
+    """The bounds on the Overture places query: threads, memory, a scratch directory, a deadline.
+
+    The defaults suit one small serverless function. `work_dir` blank uses DuckDB's own
+    directories, which a read-only host cannot write.
+    """
+
+    threads: int = 2
+    memory_mb: int = 1024
+    work_dir: str = ""
+    deadline_s: float = 20.0
+
+
+@dataclass(frozen=True)
 class SupabaseConfig:
     """The Supabase project that holds accounts. Present only when `SUPABASE_URL` is set.
 
@@ -84,6 +98,9 @@ class Config:
     map_attribution_url: str = DEFAULT_MAP_ATTRIBUTION_URL  # where that attribution links, or ""
     scorer: ScorerConfig = field(default_factory=ScorerConfig)
     supabase: SupabaseConfig | None = None  # None leaves accounts off, so everyone is a guest
+    duckdb: DuckDbConfig = field(default_factory=DuckDbConfig)
+    groups_enabled: bool = True  # False removes the group page and its endpoints
+    accounts_enabled: bool = True  # False leaves everyone a guest, whatever SUPABASE_URL says
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -105,6 +122,7 @@ class Config:
             tile_url = DEFAULT_MAP_TILE_URL
             attribution = attribution or DEFAULT_MAP_ATTRIBUTION
             attribution_url = attribution_url or DEFAULT_MAP_ATTRIBUTION_URL
+        accounts_enabled = _flag(env, "MAKAN_ACCOUNTS_ENABLED", True)
         return cls(
             model=model,
             openrouter_api_key=env.get("OPENROUTER_API_KEY", "").strip(),
@@ -139,7 +157,17 @@ class Config:
                 model=env.get("MAKAN_SCORER_MODEL", "").strip(),
                 timeout_s=float(_int(env, "MAKAN_SCORER_TIMEOUT_SECONDS", 15)),
             ),
-            supabase=_supabase(env),
+            supabase=_supabase(env) if accounts_enabled else None,
+            duckdb=DuckDbConfig(
+                threads=_int(env, "MAKAN_DUCKDB_THREADS", DuckDbConfig.threads),
+                memory_mb=_int(env, "MAKAN_DUCKDB_MEMORY_MB", DuckDbConfig.memory_mb),
+                work_dir=env.get("MAKAN_DUCKDB_DIR", "").strip(),
+                deadline_s=float(
+                    _int(env, "MAKAN_PLACES_DEADLINE_SECONDS", int(DuckDbConfig.deadline_s))
+                ),
+            ),
+            groups_enabled=_flag(env, "MAKAN_GROUPS_ENABLED", True),
+            accounts_enabled=accounts_enabled,
         )
 
 
@@ -172,6 +200,23 @@ def _supabase(env: Mapping[str, str]) -> SupabaseConfig | None:
 def _is_http_url(value: str) -> bool:
     parts = urlsplit(value)
     return parts.scheme in ("http", "https") and bool(parts.netloc)
+
+
+_TRUE = ("1", "true", "yes", "on")
+_FALSE = ("0", "false", "no", "off")
+
+
+def _flag(env: Mapping[str, str], name: str, default: bool) -> bool:
+    """A switch: blank is the default, and anything but a clear yes or no is an error, so a typo
+    cannot silently leave a feature on that was meant to be off."""
+    raw = env.get(name, "").strip().lower()
+    if not raw:
+        return default
+    if raw in _TRUE:
+        return True
+    if raw in _FALSE:
+        return False
+    raise ConfigError(f"{name} must be one of 1, 0, true, false, yes, no, on, off, got {raw!r}")
 
 
 def _int(env: Mapping[str, str], name: str, default: int) -> int:

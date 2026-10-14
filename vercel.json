@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm ci --prefix web && npm run build --prefix web",
+  "env": {
+    "MAKAN_WEB_DIST": "web/dist"
+  },
+  "functions": {
+    "app.py": {
+      "maxDuration": 60,
+      "excludeFiles": "{.venv/**,.git/**,.claude/**,.audit-chrome/**,.wordmark-tools/**,tests/**,docs/**,data/**,migrations/**,web/node_modules/**,web/src/**,**/__pycache__/**,.mypy_cache/**,.pytest_cache/**,.ruff_cache/**}"
+    }
+  }
+}

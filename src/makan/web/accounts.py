@@ -23,17 +23,14 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from makan.accounts import AccountGone, Accounts, AuthUnavailable, InvalidProfile, InvalidToken
-from makan.accounts.postgres import PostgresAccountStore
 from makan.accounts.profile import MAX_RAW_NAME_CHARS
 from makan.accounts.supabase import SupabaseAdmin
 from makan.accounts.taste import MAX_TERM_CHARS, Taste
 from makan.accounts.tokens import Identity, TokenVerifier
 from makan.config import Config, ConfigError, SupabaseConfig
 from makan.memory import Memory
-from makan.memory.postgres import PostgresMemoryStore
 from makan.models import Profile
 from makan.visits import VisitError, Visits
-from makan.visits.postgres import PostgresVisitStore
 from makan.web.errors import ApiError, error
 
 log = logging.getLogger("makan.web")
@@ -73,6 +70,12 @@ def build_account_services(config: Config) -> AccountServices | None:
         return None
     try:
         import psycopg
+
+        # These modules import psycopg, so they load here and not at startup: a site with accounts
+        # off, such as the public one, does not need the Postgres extra.
+        from makan.accounts.postgres import PostgresAccountStore
+        from makan.memory.postgres import PostgresMemoryStore
+        from makan.visits.postgres import PostgresVisitStore
     except ImportError as exc:
         raise ConfigError(
             'SUPABASE_URL is set but psycopg is not installed; run: pip install ".[postgres]"'

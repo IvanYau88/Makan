@@ -25,6 +25,8 @@ Read `docs/DESIGN.md` before making architectural decisions.
 - Never send raw trace events to a client.
   They hold the session link token and exception text, so the web channel sends only the bounded view from `makan.web.runs`.
   A type decides what a trace may hold through `trace_summary()`.
+- The public Vercel site (`app.py`, `vercel.json`) is guest-only: groups and accounts are off through `MAKAN_GROUPS_ENABLED` and `MAKAN_ACCOUNTS_ENABLED`, and importing `app.py` must stay inert, with no key, network, or database.
+  Keep `requirements.txt` in step with `pyproject.toml`, and see "Vercel deployment decisions" in `docs/DESIGN.md`.
 - When a technical decision is made during coding, record it in `docs/DESIGN.md` in the same change so the docs and the code do not drift apart.
 
 ## Commands

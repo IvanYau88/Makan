@@ -4,7 +4,7 @@ import { onTestFinished } from "vitest";
 import L from "leaflet";
 import { App } from "./App";
 import { BROWSE_RESULT, RESULT, browseRun, place, run, scoredRun, stage } from "./test-fixtures";
-import type { Recommendation, Run } from "./types";
+import type { AppFeatures, Mode, Recommendation, Run } from "./types";
 
 type Handler = (body: Record<string, unknown>) => Response | Promise<Response>;
 
@@ -31,7 +31,7 @@ function errorLine(code: string, message: string, status: number, failedRun?: Ru
 }
 
 /** Stub fetch: the config route answers with `mode`, and the stream route with `handler`. */
-function stubApi(handler: Handler, mode: "demo" | "live" = "live") {
+function stubApi(handler: Handler, mode: Mode = "live", features?: Partial<AppFeatures>) {
   const calls: Record<string, unknown>[] = [];
   vi.stubGlobal(
     "fetch",
@@ -44,6 +44,7 @@ function stubApi(handler: Handler, mode: "demo" | "live" = "live") {
             attribution: "© Test Maps",
             attribution_url: "https://tiles.test/copyright",
           },
+          ...(features && { features: { recommend: true, groups: true, ...features } }),
         });
       }
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -85,7 +86,7 @@ const row = (name: RegExp | string) =>
 const pin = (rank: number, name: string) =>
   screen.getByRole("button", { name: new RegExp(`^${rank}\\. ${name}, .*map pin$`) });
 
-async function searched(handler: Handler = () => answer(RESULT), mode?: "demo" | "live") {
+async function searched(handler: Handler = () => answer(RESULT), mode?: Mode) {
   const calls = stubApi(handler, mode);
   const user = userEvent.setup();
   render(<App />);
@@ -978,6 +979,58 @@ describe("Discover failures", () => {
     expect(
       within(notice as HTMLElement).getByRole("button", { name: "Retry the map" }),
     ).toBeEnabled();
+  });
+});
+
+describe("A places-only site", () => {
+  const places = (handler: Handler = () => answer(BROWSE_RESULT)) =>
+    stubApi(handler, "places", { recommend: false, groups: false });
+
+  it("says the places are real and that it only browses, not that they are samples", async () => {
+    places();
+    render(<App />);
+    const note = await screen.findByRole("note");
+    expect(note).toHaveTextContent("Real places from Overture Maps");
+    expect(note).toHaveTextContent("makes no recommendations");
+    expect(note).not.toHaveTextContent(/sample|demo/i);
+  });
+
+  it("has no Pick for me, even when this device chose it before, and always browses", async () => {
+    window.localStorage.setItem("makan.search-mode", "recommend");
+    const calls = places();
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("note");
+    expect(
+      screen.queryByRole("group", { name: "What do you want to do?" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("What are you in the mood for?")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Pick for me/ })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Browse here" }));
+    await screen.findByRole("heading", { name: "Places nearby" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ mode: "browse", radius_m: 1609 });
+    expect(calls[0]).not.toHaveProperty("request");
+    // The device's own choice is left alone for a server that does have a model.
+    expect(window.localStorage.getItem("makan.search-mode")).toBe("recommend");
+  });
+
+  it("has no Group tab, and no Account tab without accounts", async () => {
+    places();
+    render(<App />);
+    await screen.findByRole("note");
+    const pages = within(screen.getByRole("navigation", { name: "Pages" }));
+    expect(pages.getByRole("button", { name: "Discover" })).toBeInTheDocument();
+    expect(pages.getByRole("button", { name: "Execution" })).toBeInTheDocument();
+    expect(pages.queryByRole("button", { name: "Group" })).not.toBeInTheDocument();
+    expect(pages.queryByRole("button", { name: "Account" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the Group tab on a server that does not say, as before", async () => {
+    stubApi(() => answer(RESULT));
+    render(<App />);
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Group" })).toBeInTheDocument();
   });
 });
 

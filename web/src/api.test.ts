@@ -139,7 +139,24 @@ describe("fetchConfig", () => {
       map: { tile_url: "https://t/{z}/{x}/{y}.png", attribution: "© T", attribution_url: null },
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(config))));
-    await expect(fetchConfig()).resolves.toEqual({ ...config, auth: null });
+    await expect(fetchConfig()).resolves.toEqual({
+      ...config,
+      auth: null,
+      features: { recommend: true, groups: true },
+    });
+  });
+
+  it("reads the places-only mode and the features a server switches off", async () => {
+    const config = {
+      mode: "places",
+      map: { tile_url: "https://t/{z}/{x}/{y}.png", attribution: "© T", attribution_url: null },
+      features: { recommend: false, groups: false, accounts: false },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(config))));
+    await expect(fetchConfig()).resolves.toMatchObject({
+      mode: "places",
+      features: { recommend: false, groups: false },
+    });
   });
 
   it("passes the public auth settings through, and treats a malformed block as no accounts", async () => {

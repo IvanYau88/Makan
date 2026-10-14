@@ -1,6 +1,7 @@
 """Run the web backend: `python -m makan.web`.
 
     python -m makan.web --demo      sample places, no API key and no network
+    python -m makan.web --places-only   real Overture places, Browse nearby only, no API key
     python -m makan.web --reload    restart on code changes, for development
     python -m makan.web             live providers, with `.env` or the environment as the settings
 
@@ -40,6 +41,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="run with sample places, no API key and no network (same as MAKAN_DEMO=1)",
     )
     parser.add_argument(
+        "--places-only",
+        action="store_true",
+        help="real places, Browse nearby only, no model or key (same as MAKAN_PLACES_ONLY=1)",
+    )
+    parser.add_argument(
         "--reload", action="store_true", help="restart when the Python code changes (development)"
     )
     parser.add_argument("--host", default=DEFAULT_HOST, help="default: %(default)s")
@@ -72,6 +78,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     if args.demo:
         os.environ["MAKAN_DEMO"] = "1"  # the reload worker inherits it
+    if args.places_only:
+        os.environ["MAKAN_PLACES_ONLY"] = "1"
     missing = missing_packages(demo=demo_requested(os.environ))
     if missing:
         print(

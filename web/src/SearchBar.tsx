@@ -41,6 +41,8 @@ interface Props {
   appliedRadiusM: number | null;
   /** A "Pick for me" search was tried with nothing typed. */
   requestError: boolean;
+  /** False when the server has no model, so there is no "Pick for me" to switch to. */
+  canPick: boolean;
 }
 
 export function SearchBar({
@@ -55,6 +57,7 @@ export function SearchBar({
   coordinateErrors,
   appliedRadiusM,
   requestError,
+  canPick,
 }: Props) {
   const latitudeInput = useRef<HTMLInputElement>(null);
   const requestInput = useRef<HTMLInputElement>(null);
@@ -89,17 +92,19 @@ export function SearchBar({
       <div className="searchbar-row" data-browse={browsing}>
         {browsing ? (
           <div className="field field-grow browse-note">
-            <button
-              type="button"
-              className="button button-link"
-              disabled={busy}
-              onClick={() => {
-                focusRequest.current = true;
-                set({ mode: "recommend" });
-              }}
-            >
-              Pick for me instead
-            </button>
+            {canPick && (
+              <button
+                type="button"
+                className="button button-link"
+                disabled={busy}
+                onClick={() => {
+                  focusRequest.current = true;
+                  set({ mode: "recommend" });
+                }}
+              >
+                Pick for me instead
+              </button>
+            )}
           </div>
         ) : (
           <div className="field field-grow">

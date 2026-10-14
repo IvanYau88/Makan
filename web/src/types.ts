@@ -56,7 +56,8 @@ export interface Recommendation {
   run: Run | null;
 }
 
-export type Mode = "demo" | "live";
+/** Sample places and a keyword stand-in, real places with no model, or everything real. */
+export type Mode = "demo" | "live" | "places";
 
 export interface MapConfig {
   tile_url: string;
@@ -72,9 +73,17 @@ export interface AuthSettings {
   redirect_url: string | null;
 }
 
+/** What the server offers. A feature that is off has no screen, so none can only fail. */
+export interface AppFeatures {
+  /** False when there is no model: only Browse nearby works. */
+  recommend: boolean;
+  groups: boolean;
+}
+
 export interface AppConfig {
   mode: Mode;
   map: MapConfig;
+  features: AppFeatures;
   /** Null when the server has no accounts, so everyone is a guest and there is no Account page. */
   auth: AuthSettings | null;
 }

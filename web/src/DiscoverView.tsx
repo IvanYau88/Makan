@@ -24,6 +24,8 @@ export type Status =
 
 interface Props {
   tiles: MapConfig | null;
+  /** False when the server has no model, so Browse nearby is the only search and there is no choice. */
+  recommend: boolean;
   form: FormValues;
   onForm: (form: FormValues) => void;
   locationError: string | null;
@@ -86,13 +88,13 @@ export function DiscoverView(props: Props) {
   const working = status.kind === "working";
   // What is on screen belongs to the search that made it, which may not be the mode chosen now.
   const browsed = result?.query.mode === "browse";
-  const modeChoice = (
+  const modeChoice = props.recommend ? (
     <ModeChoice
       mode={form.mode}
       onChange={(mode) => props.onForm({ ...form, mode })}
       compact={!wide && result !== null}
     />
-  );
+  ) : null;
   const applied: Circle | null = result
     ? {
         center: { latitude: result.query.latitude, longitude: result.query.longitude },
@@ -232,7 +234,7 @@ export function DiscoverView(props: Props) {
 
   return (
     <div className="discover" data-view={view} ref={rootRef}>
-      {!wide && <div className="modebar">{modeChoice}</div>}
+      {!wide && modeChoice && <div className="modebar">{modeChoice}</div>}
       <SearchBar
         values={form}
         onChange={props.onForm}
@@ -244,6 +246,7 @@ export function DiscoverView(props: Props) {
         locationError={props.locationError}
         coordinateErrors={props.coordinateErrors}
         requestError={props.requestError}
+        canPick={props.recommend}
         appliedRadiusM={applied?.radiusM ?? null}
       />
 
