@@ -195,7 +195,7 @@ The app refuses to start, and says what is missing, if either setting is absent.
 
 ### Public site on Vercel
 
-The repository deploys to Vercel as one project: `app.py` exports the FastAPI app, `vercel.json` builds the page in `web/`, and `requirements.txt` and `.python-version` pin what the function installs.
+The repository deploys to Vercel as one project: `app.py` exports the FastAPI app, `vercel.json` builds the page in `web/`, and the `public` dependency group in `pyproject.toml` and `.python-version` pin what the function installs.
 The public site is guest-only: groups and accounts are off, and the places are real unless `MAKAN_DEMO=1` asks for the sample ones.
 `MAKAN_GROUPS_ENABLED` and `MAKAN_ACCOUNTS_ENABLED` are the switches, and `.env.example` lists every variable.
 Run the same app locally with `python -c "from app import app"` after `npm --prefix web run build`, or point uvicorn at `app:app`.

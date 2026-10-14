@@ -26,6 +26,20 @@ dev = [
     "httpx2>=2",
 ]
 
+# What the public Vercel site installs, pinned like requirements.txt, which a test keeps in step.
+# Vercel installs from this file and ignores requirements.txt, and its `uv sync --no-dev` never
+# installs an extra, but it does install the default groups. See docs/DESIGN.md, Vercel.
+[dependency-groups]
+public = [
+    "httpx==0.28.1",
+    "fastapi==0.142.2",
+    "pyjwt[crypto]==2.15.1",
+    "duckdb==1.5.6",
+]
+
+[tool.uv]
+default-groups = ["public"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/makan"]
 
