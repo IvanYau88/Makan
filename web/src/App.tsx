@@ -41,6 +41,9 @@ const PAGES: { page: Page; label: string }[] = [
 export function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const auth = useAuth(config?.auth ?? null);
+  // Until the server says otherwise, everything is on.
+  const recommendOn = config?.features.recommend !== false;
+  const groupsOn = config?.features.groups !== false;
   const { token: authToken, endSession } = auth;
   // A shared group link opens the page on the group it names.
   const [groupLink, setGroupLink] = useState<string | null>(() =>
@@ -51,7 +54,7 @@ export function App() {
   const [page, setPage] = useState<Page>(() =>
     linkFromPath(window.location.pathname) ? "group" : "discover",
   );
-  const [form, setForm] = useState<FormValues>(() => ({
+  const [chosen, setChosen] = useState<FormValues>(() => ({
     mode: loadMode(),
     request: "",
     radiusM: DEFAULT_RADIUS_M,
@@ -59,6 +62,11 @@ export function App() {
     latitude: "",
     longitude: "",
   }));
+  // A server with no model offers only Browse nearby, whatever this device chose last.
+  const form = useMemo<FormValues>(
+    () => (recommendOn ? chosen : { ...chosen, mode: "browse" }),
+    [chosen, recommendOn],
+  );
   // "Pick for me" was tried with nothing typed: the form asks about it and does not search.
   const [requestError, setRequestError] = useState(false);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
@@ -113,7 +121,10 @@ export function App() {
   };
 
   // The choice belongs to the device, so the next visit starts where this one left off.
-  useEffect(() => saveMode(form.mode), [form.mode]);
+  // A server with no model offers only Browse nearby, and that is not the person's choice to keep.
+  useEffect(() => {
+    if (recommendOn) saveMode(form.mode);
+  }, [form.mode, recommendOn]);
 
   // Start the map on the person's own location. If the browser cannot say, or they decline, it
   // stays on the view of the United States and says nothing: they never asked for a search.
@@ -231,7 +242,7 @@ export function App() {
 
   const changeForm = (next: FormValues) => {
     if (next.request !== form.request || next.mode !== form.mode) setRequestError(false);
-    setForm(next);
+    setChosen(next);
   };
 
   /** A "Pick for me" search needs something typed. Ask when there is not, rather than guess. */
@@ -272,7 +283,7 @@ export function App() {
     } catch (error) {
       if (started.signal.aborted) return;
       setLocationError(error instanceof LocationError ? error.message : "Location failed.");
-      setForm((current) => ({ ...current, manual: true }));
+      setChosen((current) => ({ ...current, manual: true }));
       setStatus({ kind: "idle" });
       inflight.current = null;
       return;
@@ -302,7 +313,7 @@ export function App() {
   const widen = () => {
     if (wider === undefined || !result || !requestReady(form)) return;
     const next = { ...form, radiusM: wider };
-    setForm(next);
+    setChosen(next);
     void search(next, { latitude: result.query.latitude, longitude: result.query.longitude });
   };
 
@@ -331,22 +342,29 @@ export function App() {
           Demo mode: sample places, not real venues or a real language model.
         </p>
       )}
+      {config?.mode === "places" && (
+        <p className="banner banner-info" role="note">
+          Real places from Overture Maps, nearest first. This site only browses: it makes no
+          recommendations and calls no language model.
+        </p>
+      )}
       <header className="topbar">
         <h1 className="brand">Makan</h1>
         <nav aria-label="Pages" className="tabs">
-          {PAGES.filter(({ page: p }) => p !== "account" || auth.state.status !== "off").map(
-            ({ page: p, label }) => (
-              <button
-                key={p}
-                type="button"
-                className="tab"
-                aria-current={page === p ? "page" : undefined}
-                onClick={() => setPage(p)}
-              >
-                {label}
-              </button>
-            ),
-          )}
+          {PAGES.filter(
+            ({ page: p }) =>
+              (p !== "account" || auth.state.status !== "off") && (p !== "group" || groupsOn),
+          ).map(({ page: p, label }) => (
+            <button
+              key={p}
+              type="button"
+              className="tab"
+              aria-current={page === p ? "page" : undefined}
+              onClick={() => setPage(p)}
+            >
+              {label}
+            </button>
+          ))}
         </nav>
       </header>
       {auth.state.status === "out" && auth.state.notice && page !== "account" && (
@@ -362,6 +380,7 @@ export function App() {
         <div hidden={page !== "discover"}>
           <DiscoverView
             tiles={config?.map ?? null}
+            recommend={recommendOn}
             form={form}
             onForm={changeForm}
             requestError={requestError}
@@ -399,7 +418,7 @@ export function App() {
           />
         </div>
         <div hidden={page !== "group"}>
-          {groupLink ? (
+          {!groupsOn ? null : groupLink ? (
             <GroupView
               key={groupLink}
               link={groupLink}

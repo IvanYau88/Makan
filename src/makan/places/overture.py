@@ -14,6 +14,7 @@ import math
 import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 import httpx
@@ -34,6 +35,9 @@ ANONYMOUS_S3_SECRET = (
 FOOD_ROOT = "food_and_drink"  # the top of Overture's category taxonomy for places to eat or drink
 MIN_CONFIDENCE = 0.5  # Overture's own score that a place exists; lower scores are mostly junk
 METERS_PER_DEGREE = 111_320
+
+HTTP_TIMEOUT_S = 10  # one remote read, so a stalled one cannot outlast the application deadline
+MAX_TEMP_MB = 256  # the most DuckDB may spill to disk, under the 500 MB a serverless host allows
 
 Row = dict[str, Any]
 
@@ -79,11 +83,43 @@ class RowSource(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class DuckDbLimits:
+    """What bounds one DuckDB connection, so a places query cannot take a small host down.
+
+    `work_dir` is where extensions are installed and spilled data goes. It must be writable, and
+    blank leaves DuckDB's own defaults, which put extensions under the home directory. A
+    serverless host needs it set to a scratch directory such as `/tmp/makan-duckdb`.
+    `deadline_s` is the application deadline for one query, enforced by interrupting it.
+    """
+
+    threads: int = 2
+    memory_mb: int = 1024
+    work_dir: str = ""
+    deadline_s: float = 20.0
+
+    def settings(self) -> dict[str, str | int]:
+        """DuckDB's `config` for `duckdb.connect`."""
+        settings: dict[str, str | int] = {
+            "threads": self.threads,
+            "memory_limit": f"{self.memory_mb}MB",
+            "max_temp_directory_size": f"{MAX_TEMP_MB}MB",
+        }
+        if self.work_dir:
+            work = Path(self.work_dir)
+            (work / "extensions").mkdir(parents=True, exist_ok=True)
+            (work / "tmp").mkdir(parents=True, exist_ok=True)
+            settings["extension_directory"] = str(work / "extensions")
+            settings["temp_directory"] = str(work / "tmp")
+        return settings
+
+
 class DuckDbSource:
     """Runs `SQL` over Overture's Parquet files. `path` may name a local file for offline use."""
 
-    def __init__(self, path: str = PLACES_PATH) -> None:
+    def __init__(self, path: str = PLACES_PATH, limits: DuckDbLimits | None = None) -> None:
         self._path = path
+        self._limits = limits or DuckDbLimits()
         self._connection: Any = None
         self._lock = threading.Lock()
 
@@ -95,24 +131,69 @@ class DuckDbSource:
                 'DuckDB is not installed; run: pip install "makan[overture]"'
             ) from None
         path = self._path.format(release=release)
+        overdue = threading.Event()
+        timer: threading.Timer | None = None
         try:
             cursor = self._connect(duckdb, path).cursor()  # one cursor per call: thread safe
+            # The graph's step timeout cannot stop a thread, so the query is interrupted instead.
+
+            def expire() -> None:
+                overdue.set()
+                cursor.interrupt()
+
+            timer = threading.Timer(self._limits.deadline_s, expire)
+            timer.daemon = True
+            timer.start()
             cursor.execute(SQL, [path, bounds.west, bounds.east, bounds.south, bounds.north])
             columns = [column[0] for column in cursor.description]
             return [dict(zip(columns, values, strict=True)) for values in cursor.fetchall()]
         except duckdb.Error as exc:
+            if overdue.is_set():
+                raise PlacesError(
+                    f"Overture query passed its {self._limits.deadline_s:g} second deadline"
+                ) from exc
             raise PlacesError(f"Overture query failed: {exc}") from exc
+        finally:
+            if timer is not None:
+                timer.cancel()
 
     def _connect(self, duckdb: Any, path: str) -> Any:
         with self._lock:
             if self._connection is None:
-                connection = duckdb.connect()
+                try:
+                    settings = self._limits.settings()
+                except OSError as exc:
+                    raise PlacesError(
+                        f"the DuckDB work directory is not writable ({type(exc).__name__})"
+                    ) from exc
+                connection = duckdb.connect(config=settings)
                 if path.startswith("s3://"):
-                    connection.execute("INSTALL httpfs")
-                    connection.execute("LOAD httpfs")
+                    self._load_httpfs(duckdb, connection)
+                    connection.execute(f"SET http_timeout = {HTTP_TIMEOUT_S}")
+                    connection.execute("SET http_retries = 1")
                     connection.execute(ANONYMOUS_S3_SECRET)
                 self._connection = connection
             return self._connection
+
+    @staticmethod
+    def _load_httpfs(duckdb: Any, connection: Any) -> None:
+        """Load the extension that reads S3, downloading it only when it is not already there.
+
+        A directory prepared ahead of time, see `DuckDbLimits.work_dir`, needs no download.
+        """
+        try:
+            connection.execute("LOAD httpfs")
+            return
+        except duckdb.Error:
+            pass
+        try:
+            connection.execute("INSTALL httpfs")
+            connection.execute("LOAD httpfs")
+        except duckdb.Error as exc:
+            raise PlacesError(
+                "the DuckDB httpfs extension could not be installed or loaded, so Overture "
+                f"cannot be read ({type(exc).__name__}): {exc}"
+            ) from exc
 
 
 class OvertureProvider:

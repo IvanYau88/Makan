@@ -184,10 +184,22 @@ Add `--demo` (for example `python -m makan.web --demo`) to run with sample data,
 Demo mode shows a banner and invents sample places around any location you give it.
 Latitude 90 or -90 finds nothing, which shows the no-results state.
 
+Add `--places-only` (or set `MAKAN_PLACES_ONLY=1`) to browse real places from Overture Maps with no model and no key.
+Only Browse nearby works there, and the page says so in a banner.
+The first search in this mode installs DuckDB's `httpfs` extension and reads Overture over the network, which takes several seconds.
+
 For real providers, copy `.env.example` to `.env` and set `MAKAN_MODEL` and `OPENROUTER_API_KEY`.
 The backend loads `.env` from the current directory itself, or the file named by `MAKAN_ENV_FILE`.
 Windows line endings are fine, and a variable already set in the environment is never overridden.
 The app refuses to start, and says what is missing, if either setting is absent.
+
+### Public site on Vercel
+
+The repository deploys to Vercel as one project: `app.py` exports the FastAPI app, `vercel.json` builds the page in `web/`, and `requirements.txt` and `.python-version` pin what the function installs.
+The public site is guest-only: groups and accounts are off, and the places are real unless `MAKAN_DEMO=1` asks for the sample ones.
+`MAKAN_GROUPS_ENABLED` and `MAKAN_ACCOUNTS_ENABLED` are the switches, and `.env.example` lists every variable.
+Run the same app locally with `python -c "from app import app"` after `npm --prefix web run build`, or point uvicorn at `app:app`.
+The proposed project settings, the limits that were checked, and what only a real deployment can show are in `docs/DESIGN.md`, under "Vercel deployment decisions".
 
 For front end work, `npm run dev` in `web/` proxies `/api` to the backend on `http://127.0.0.1:8000`.
 There you also have `npm run lint` (eslint and prettier), `npm test` (vitest, with no network calls), and `npm run build`.

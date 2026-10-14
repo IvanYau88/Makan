@@ -85,6 +85,18 @@ def test_demo_sets_the_variable_the_factory_reads(
     assert len(uvicorn_calls) == 1
 
 
+def test_places_only_sets_the_variable_and_still_needs_duckdb(
+    uvicorn_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("MAKAN_PLACES_ONLY", raising=False)
+    monkeypatch.setattr(entry, "missing_packages", lambda *, demo: ["duckdb"] if not demo else [])
+    assert entry.main(["--places-only"]) == 1  # real places read Overture, so DuckDB is needed
+    monkeypatch.setattr(entry, "missing_packages", lambda *, demo: [])
+    assert entry.main(["--places-only"]) == 0
+    assert os.environ["MAKAN_PLACES_ONLY"] == "1"
+    monkeypatch.delenv("MAKAN_PLACES_ONLY")
+
+
 def test_demo_from_the_env_file_counts(
     uvicorn_calls: list[dict[str, Any]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

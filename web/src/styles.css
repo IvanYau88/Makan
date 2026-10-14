@@ -166,6 +166,11 @@ main > div {
   text-align: center;
 }
 
+.banner-info {
+  background: var(--info-bg);
+  color: var(--info-text);
+}
+
 .topbar {
   display: flex;
   flex-wrap: wrap; /* the brand and both tabs are wider than a 320px screen */

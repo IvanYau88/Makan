@@ -46,6 +46,7 @@ from makan.places.factory import places_provider
 from makan.providers.base import Provider
 from makan.providers.openrouter import OpenRouterProvider
 from makan.providers.scoring import Scorer, build_scorer
+from makan.providers.unavailable import UnavailableProvider
 from makan.sessions import GroupSessions, InMemorySessionStore
 from makan.sessions.service import MAX_REQUEST_CHARS
 from makan.solo import (
@@ -71,7 +72,9 @@ from makan.web.visits import register_visit_routes
 
 log = logging.getLogger("makan.web")
 
-Mode = Literal["demo", "live"]
+# What the data and the language model are: invented stand-ins, real places with no model
+# ("places", browsing only), or everything real.
+Mode = Literal["demo", "live", "places"]
 DEFAULT_WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 
@@ -135,11 +138,23 @@ def create_app(
     Group sessions are kept in `sessions`, or in memory for the life of the process when it is None.
     While the app runs it deletes expired sessions at startup and then every
     `config.session_purge_interval_minutes`, so expired participant data does not stay stored.
+    With `config.groups_enabled` False, or in `places` mode, there are no group routes, no group
+    page, no sessions, and no purge task.
+
+    In `places` mode the app answers Browse nearby only, with no model: a recommendation is
+    refused, and `provider` is never called.
     """
-    group_sessions = _default_sessions(config) if sessions is None else sessions
+    # A group needs the language model to pick, so there are none in a run with no model.
+    groups = config.groups_enabled and mode != "places"
+    group_sessions: GroupSessions | None = None
+    if groups:
+        group_sessions = _default_sessions(config) if sessions is None else sessions
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if group_sessions is None:
+            yield
+            return
         purge = asyncio.create_task(
             purge_forever(group_sessions, config.session_purge_interval_minutes * 60)
         )
@@ -188,6 +203,12 @@ def create_app(
                 "attribution_url": config.map_attribution_url or None,
             },
             "auth": accounts.public_config() if accounts else None,
+            # What this deployment offers, so the page shows no screen that would only fail.
+            "features": {
+                "recommend": mode != "places",
+                "groups": groups,
+                "accounts": accounts is not None,
+            },
         }
 
     app.state.accounts = accounts
@@ -202,6 +223,14 @@ def create_app(
             provider=provider, places=places, config=config, scorer=scorer
         ).steps
     )
+
+    def require_recommendations(body: RecommendBody) -> None:
+        if mode == "places" and body.mode == "recommend":
+            raise ApiError(
+                422,
+                "recommendations_unavailable",
+                "This site shows real places nearby only. Use Browse nearby.",
+            )
 
     def run_search(
         body: RecommendBody,
@@ -263,6 +292,7 @@ def create_app(
     async def recommendations(
         body: RecommendBody, identity: Annotated[Identity | None, Depends(optional_identity)]
     ) -> JSONResponse:
+        require_recommendations(body)
         # The workflow is synchronous and runs its own event loop, so it must leave ours.
         try:
             answer = await run_in_threadpool(run_search, body, None, identity)
@@ -282,6 +312,7 @@ def create_app(
         Lines are `{"type": "run", "run": ...}` while it works, then one last `result` line with
         the recommendation or an `error` line with the same code and message as the plain route.
         """
+        require_recommendations(body)
         loop = asyncio.get_running_loop()
         lines: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
 
@@ -332,54 +363,95 @@ def create_app(
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
 
-    register_group_routes(
-        app,
-        group_sessions,
-        provider=provider,
-        places=places,
-        config=config,
-        mode=mode,
-    )
+    if group_sessions is not None and mode != "places":
+        register_group_routes(
+            app,
+            group_sessions,
+            provider=provider,
+            places=places,
+            config=config,
+            mode=mode,
+        )
+
+    # A switched off feature is a plain 404 for every method, not a fall through to the static
+    # files, which would answer a POST with a 405 that suggests the route exists.
+    switched_off = [("/api/groups", not groups), ("/api/me", accounts is None)]
+    for prefix, off in switched_off:
+        if off:
+            _refuse_every_method(app, prefix)
 
     if static_dir is not None and static_dir.is_dir():
         index = static_dir / "index.html"
 
-        @app.get("/g/{link_token}", include_in_schema=False, response_model=None)
-        @app.get("/g/{link_token}/", include_in_schema=False, response_model=None)
-        def group_page(link_token: str) -> FileResponse | JSONResponse:
-            """A shared group link opens the same page. The page asks the API about the link."""
-            if not index.is_file():
-                return error(404, "not_found", "Not found.")
-            return FileResponse(index, headers={"Cache-Control": "no-store"})
+        if groups:
+
+            @app.get("/g/{link_token}", include_in_schema=False, response_model=None)
+            @app.get("/g/{link_token}/", include_in_schema=False, response_model=None)
+            def group_page(link_token: str) -> FileResponse | JSONResponse:
+                """A shared group link opens the same page. The page asks the API about it."""
+                if not index.is_file():
+                    return error(404, "not_found", "Not found.")
+                return FileResponse(index, headers={"Cache-Control": "no-store"})
 
         # Registered last so the API routes win. `html=True` serves index.html at "/".
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="web")
     return app
 
 
+def _refuse_every_method(app: FastAPI, prefix: str) -> None:
+    """Answer 404 to anything at or under `prefix`, for every method."""
+
+    async def not_found(request: Request) -> JSONResponse:
+        return error(404, "not_found", "Not found.")
+
+    for path in (prefix, f"{prefix}/{{rest:path}}"):
+        app.add_api_route(
+            path,
+            not_found,
+            methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            include_in_schema=False,
+        )
+
+
+def _requested(env: Mapping[str, str], name: str) -> bool:
+    return env.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def demo_requested(env: Mapping[str, str]) -> bool:
     """Whether `MAKAN_DEMO` asks for sample places and no key or network."""
-    return env.get("MAKAN_DEMO", "").strip().lower() in ("1", "true", "yes", "on")
+    return _requested(env, "MAKAN_DEMO")
+
+
+def places_only_requested(env: Mapping[str, str]) -> bool:
+    """Whether `MAKAN_PLACES_ONLY` asks for real places with Browse nearby and no model."""
+    return _requested(env, "MAKAN_PLACES_ONLY")
 
 
 def create_app_from_env(env: Mapping[str, str] | None = None) -> FastAPI:
-    """The uvicorn factory: demo mode when `MAKAN_DEMO` is set, otherwise real providers.
+    """The uvicorn factory. `MAKAN_DEMO` gives sample places, `MAKAN_PLACES_ONLY` gives real
+    places with Browse nearby only, and otherwise the providers are real.
 
-    Demo mode needs no key and makes no network call. Live mode needs `MAKAN_MODEL` and
-    `OPENROUTER_API_KEY`, and fails at startup, not on the first request, when either is missing.
-    Called with no `env`, it first loads `.env` (see `makan.env`) into the real environment.
+    Demo mode wins when both are set, since it is the explicit choice of invented data. Demo and
+    places-only modes need no key. Places-only makes no call at startup either: Overture is read
+    on the first search. Live mode needs `MAKAN_MODEL` and `OPENROUTER_API_KEY`, and fails at
+    startup, not on the first request, when either is missing.
+    `MAKAN_GROUPS_ENABLED` and `MAKAN_ACCOUNTS_ENABLED` set to a false value remove those features
+    in every mode. Called with no `env`, it first loads `.env` (see `makan.env`) into the real
+    environment.
     """
     if env is None:
         load_dotenv()
     env = os.environ if env is None else env
     dist = Path(env.get("MAKAN_WEB_DIST", "").strip() or DEFAULT_WEB_DIST)
-    if demo_requested(env):
-        config = Config.from_env({**env, "MAKAN_MODEL": env.get("MAKAN_MODEL", "") or "demo"})
+    if demo_requested(env) or places_only_requested(env):
+        demo = demo_requested(env)
+        stand_in = "demo" if demo else "none"
+        config = Config.from_env({**env, "MAKAN_MODEL": env.get("MAKAN_MODEL", "") or stand_in})
         return create_app(
-            provider=DemoProvider(),
-            places=DemoPlaces(),
+            provider=DemoProvider() if demo else UnavailableProvider(),
+            places=DemoPlaces() if demo else places_provider(config),
             config=config,
-            mode="demo",
+            mode="demo" if demo else "places",
             static_dir=dist,
             sessions=_default_sessions(config),  # demo group sessions never need a database
             accounts=build_account_services(config),  # accounts do, when Supabase is set
@@ -399,7 +471,7 @@ def create_app_from_env(env: Mapping[str, str] | None = None) -> FastAPI:
         scorer=build_scorer(config.scorer, openrouter_api_key=config.openrouter_api_key),
         mode="live",
         static_dir=dist,
-        sessions=_group_sessions(config),
+        sessions=_group_sessions(config) if config.groups_enabled else None,
         accounts=build_account_services(config),
     )
 

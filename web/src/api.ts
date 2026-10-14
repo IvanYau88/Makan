@@ -34,10 +34,21 @@ export async function fetchConfig(signal?: AbortSignal): Promise<AppConfig | nul
   try {
     const response = await fetch("/api/config", { signal });
     const body = (await response.json()) as Partial<AppConfig>;
-    const { mode, map, auth } = body;
-    if ((mode !== "demo" && mode !== "live") || typeof map?.tile_url !== "string") return null;
+    const { mode, map, auth, features } = body;
+    if (
+      (mode !== "demo" && mode !== "live" && mode !== "places") ||
+      typeof map?.tile_url !== "string"
+    ) {
+      return null;
+    }
     const usable = typeof auth?.url === "string" && typeof auth.anon_key === "string";
-    return { mode, map, auth: usable ? auth : null };
+    // A server that does not say offers everything, as every server did before it said.
+    return {
+      mode,
+      map,
+      auth: usable ? auth : null,
+      features: { recommend: features?.recommend !== false, groups: features?.groups !== false },
+    };
   } catch {
     return null;
   }

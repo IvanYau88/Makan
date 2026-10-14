@@ -1,7 +1,9 @@
 """The Overture provider with no network: fixture rows, a mock catalog, and a local Parquet file."""
 
+import sys
+import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 import pytest
@@ -11,6 +13,7 @@ from makan.places.overture import (
     ANONYMOUS_S3_SECRET,
     PLACES_PATH,
     Bounds,
+    DuckDbLimits,
     DuckDbSource,
     Row,
 )
@@ -262,8 +265,12 @@ class RecordingDuckDb:
 
     def __init__(self) -> None:
         self.statements: list[str] = []
+        self.config: dict[str, Any] | None = None
 
-    def connect(self) -> "RecordingDuckDb":
+    Error = Exception
+
+    def connect(self, config: dict[str, Any] | None = None) -> "RecordingDuckDb":
+        self.config = config
         return self
 
     def execute(self, statement: str) -> None:
@@ -310,3 +317,148 @@ def test_duckdb_picks_the_anonymous_secret_over_aws_environment_credentials(
         "SELECT secret_string FROM duckdb_secrets() WHERE name = 'makan_overture'"
     ).fetchone()
     assert secret is not None and "key_id=;" in secret[0]
+
+
+# The bounds on one DuckDB connection
+
+
+class FakeDuckError(Exception):
+    pass
+
+
+class FakeCursor:
+    """A query that runs until it is interrupted, like a remote read that never answers."""
+
+    description: ClassVar[list[tuple[str]]] = [("id",)]
+
+    def __init__(self) -> None:
+        self.interrupted = threading.Event()
+
+    def interrupt(self) -> None:
+        self.interrupted.set()
+
+    def execute(self, sql: str, params: list[Any]) -> None:
+        if not self.interrupted.wait(timeout=5):
+            raise AssertionError("the deadline never interrupted the query")
+        raise FakeDuckError("INTERRUPT Error: Interrupted!")
+
+
+class FakeConnection:
+    def __init__(self, config: dict[str, Any] | None, failing: tuple[str, ...] = ()) -> None:
+        self.config = config
+        self.statements: list[str] = []
+        self.failing = failing
+
+    def execute(self, statement: str) -> None:
+        self.statements.append(statement)
+        if statement in self.failing:
+            raise FakeDuckError(f"{statement} failed")
+
+    def cursor(self) -> FakeCursor:
+        return FakeCursor()
+
+
+class FakeDuckModule:
+    Error = FakeDuckError
+
+    def __init__(self, failing: tuple[str, ...] = ()) -> None:
+        self.failing = failing
+        self.connections: list[FakeConnection] = []
+
+    def connect(self, config: dict[str, Any] | None = None) -> FakeConnection:
+        self.connections.append(FakeConnection(config, self.failing))
+        return self.connections[-1]
+
+
+@pytest.fixture
+def fake_duckdb(monkeypatch: pytest.MonkeyPatch) -> FakeDuckModule:
+    module = FakeDuckModule()
+    monkeypatch.setitem(sys.modules, "duckdb", module)
+    return module
+
+
+def test_a_query_past_its_deadline_is_interrupted_and_reported_as_late(
+    fake_duckdb: FakeDuckModule, tmp_path: Path
+) -> None:
+    source = DuckDbSource(str(tmp_path / "places.parquet"), DuckDbLimits(deadline_s=0.05))
+    with pytest.raises(PlacesError, match="deadline"):
+        source.fetch(RELEASE, Bounds.around(*KLCC, 1000))
+
+
+def test_the_connection_is_opened_with_the_limits(
+    fake_duckdb: FakeDuckModule, tmp_path: Path
+) -> None:
+    limits = DuckDbLimits(threads=1, memory_mb=300, work_dir=str(tmp_path / "work"))
+    DuckDbSource(limits=limits)._connect(fake_duckdb, PLACES_PATH.format(release=RELEASE))
+    config = fake_duckdb.connections[0].config
+    assert config is not None
+    assert config["threads"] == 1 and config["memory_limit"] == "300MB"
+    assert config["extension_directory"] == str(tmp_path / "work" / "extensions")
+    assert config["temp_directory"] == str(tmp_path / "work" / "tmp")
+    assert (tmp_path / "work" / "extensions").is_dir()
+    assert str(config["max_temp_directory_size"]).endswith("MB")
+
+
+def test_remote_reads_are_given_a_short_timeout_and_one_retry(
+    fake_duckdb: FakeDuckModule,
+) -> None:
+    DuckDbSource()._connect(fake_duckdb, PLACES_PATH.format(release=RELEASE))
+    statements = fake_duckdb.connections[0].statements
+    assert "SET http_timeout = 10" in statements and "SET http_retries = 1" in statements
+    assert statements[-1] == ANONYMOUS_S3_SECRET
+
+
+def test_an_extension_that_is_already_there_is_loaded_without_a_download(
+    fake_duckdb: FakeDuckModule,
+) -> None:
+    DuckDbSource()._connect(fake_duckdb, PLACES_PATH.format(release=RELEASE))
+    statements = fake_duckdb.connections[0].statements
+    assert statements[0] == "LOAD httpfs" and "INSTALL httpfs" not in statements
+
+
+def test_a_missing_extension_is_installed_once_and_then_loaded() -> None:
+    class Missing(FakeDuckModule):
+        def connect(self, config: dict[str, Any] | None = None) -> FakeConnection:
+            connection = super().connect(config)
+            real = connection.execute
+
+            def execute(statement: str) -> None:
+                real(statement)
+                if statement == "LOAD httpfs" and "INSTALL httpfs" not in connection.statements:
+                    raise FakeDuckError("not installed")
+
+            connection.execute = execute  # type: ignore[method-assign]
+            return connection
+
+    duckdb = Missing()
+    DuckDbSource()._connect(duckdb, PLACES_PATH.format(release=RELEASE))
+    assert duckdb.connections[0].statements[:3] == ["LOAD httpfs", "INSTALL httpfs", "LOAD httpfs"]
+
+
+def test_an_extension_that_cannot_be_installed_is_a_named_places_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failing = FakeDuckModule(failing=("LOAD httpfs", "INSTALL httpfs"))
+    monkeypatch.setitem(sys.modules, "duckdb", failing)
+    with pytest.raises(PlacesError, match="httpfs extension could not be installed"):
+        DuckDbSource().fetch(RELEASE, Bounds.around(*KLCC, 1000))
+
+
+def test_an_unwritable_work_directory_is_a_places_error(
+    fake_duckdb: FakeDuckModule, tmp_path: Path
+) -> None:
+    (tmp_path / "file").write_text("not a directory")
+    source = DuckDbSource(limits=DuckDbLimits(work_dir=str(tmp_path / "file" / "inside")))
+    with pytest.raises(PlacesError, match="work directory"):
+        source.fetch(RELEASE, Bounds.around(*KLCC, 1000))
+
+
+def test_the_limits_apply_to_a_real_connection(tmp_path: Path) -> None:
+    duckdb = pytest.importorskip("duckdb")
+    limits = DuckDbLimits(threads=1, memory_mb=300, work_dir=str(tmp_path))
+    connection = duckdb.connect(config=limits.settings())
+    row = connection.execute(
+        "SELECT current_setting('threads'), current_setting('extension_directory')"
+    ).fetchone()
+    assert row == (1, str(tmp_path / "extensions"))
+    assert "MiB" in connection.execute("SELECT current_setting('memory_limit')").fetchone()[0]
