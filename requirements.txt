@@ -1,5 +1,6 @@
-# What the public Vercel site installs, and nothing else: no tests, linters, or uvicorn, since
-# Vercel runs the app itself. Keep these in step with pyproject.toml, which a test checks.
+# The pinned runtime packages of the public site, for `pip install -r requirements.txt`, and nothing
+# else: no tests, linters, or uvicorn. Vercel does NOT read this file: it installs from
+# pyproject.toml, whose `public` dependency group must list exactly these lines (a test checks it).
 # Python is pinned in .python-version. The package itself is used from src/ (see app.py).
 httpx==0.28.1
 fastapi==0.142.2

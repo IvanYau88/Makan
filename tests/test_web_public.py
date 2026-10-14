@@ -2,8 +2,10 @@
 matters in both public modes. Every app here is built from an explicit environment mapping, with
 no key, no `.env`, and the network blocked, so a call that leaves the process fails the test."""
 
+import importlib.metadata
 import importlib.util
 import json
+import re
 import socket
 import subprocess
 import sys
@@ -14,6 +16,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from packaging.requirements import Requirement
 
 from makan.config import Config, ConfigError
 from makan.places import CachedPlacesProvider, OvertureProvider
@@ -377,6 +380,18 @@ def test_vercel_json_builds_the_page_and_stays_inside_the_free_limits() -> None:
     assert "web/dist" not in excluded  # the built page must stay in the function
 
 
+def _requirement_name(requirement: str) -> str:
+    return re.split(r"[\[<>=!~; ]", requirement.strip(), maxsplit=1)[0].lower().replace("_", "-")
+
+
+def _vercel_installed(pyproject: dict[str, Any]) -> list[str]:
+    """What `uv sync --no-dev` installs from pyproject.toml, which Vercel reads and requirements.txt
+    it ignores: the base dependencies and the default groups, and never an extra."""
+    groups = pyproject["dependency-groups"]
+    defaults = pyproject["tool"]["uv"]["default-groups"]
+    return [*pyproject["project"]["dependencies"], *(r for g in defaults for r in groups[g])]
+
+
 def test_python_is_pinned_and_the_production_install_is_the_runtime_only() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8"))
     version = (ROOT / ".python-version").read_text("utf-8").strip()
@@ -389,10 +404,10 @@ def test_python_is_pinned_and_the_production_install_is_the_runtime_only() -> No
         if line.strip() and not line.startswith("#")
     ]
     assert all("==" in line for line in lines), "every production dependency is pinned"
-    names = {line.split("==")[0].split("[")[0].lower() for line in lines}
+    names = {_requirement_name(line) for line in lines}
     project = pyproject["project"]
     wanted = {
-        dependency.split("[")[0].split(">")[0].split("=")[0].lower()
+        _requirement_name(dependency)
         for dependency in (
             *project["dependencies"],
             *project["optional-dependencies"]["web"],
@@ -400,7 +415,61 @@ def test_python_is_pinned_and_the_production_install_is_the_runtime_only() -> No
         )
     } - {"uvicorn"}  # Vercel runs the app itself
     assert names == wanted
-    assert not names & {"pytest", "ruff", "mypy", "uvicorn"}
+    assert not names & {"pytest", "ruff", "mypy", "uvicorn", "psycopg"}
+    # Vercel installs from pyproject.toml's default groups, so the file it reads must say the same
+    # thing, with the same pins, as the requirements file a person installs from.
+    assert sorted(pyproject["dependency-groups"]["public"]) == sorted(lines)
+
+
+def test_the_entrypoint_imports_with_only_the_packages_vercel_installs() -> None:
+    """The bug this guards: Vercel installed pyproject.toml's base dependencies (only httpx) and no
+    extra, so importing app.py failed on `fastapi`. A fresh interpreter blocks every installed
+    package outside what Vercel installs, and the entrypoint must still import."""
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8"))
+    installed: set[str] = set()
+    pending = [Requirement(text) for text in _vercel_installed(pyproject)]
+    while pending:  # the closure of what Vercel installs, with the extras each requirement asks for
+        requirement = pending.pop()
+        name = requirement.name.lower().replace("_", "-")
+        if name in installed and not requirement.extras:
+            continue
+        installed.add(name)
+        for text in importlib.metadata.requires(name) or []:
+            child = Requirement(text)
+            wanted = requirement.extras or {""}
+            if child.marker is None or any(child.marker.evaluate({"extra": e}) for e in wanted):
+                pending.append(child)
+    assert {"fastapi", "httpx", "pyjwt", "cryptography", "duckdb"} <= installed
+    blocked = sorted(
+        module
+        for module, owners in importlib.metadata.packages_distributions().items()
+        if not {o.lower().replace("_", "-") for o in owners} & (installed | {"makan"})
+    )
+    assert {"psycopg", "uvicorn"} <= set(blocked)  # the environment has them and Vercel does not
+    script = (
+        "import sys, json\n"
+        "for module in json.loads(sys.argv[2]): sys.modules[module] = None\n"
+        "sys.path.insert(0, sys.argv[1])\n"
+        "import app\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", script, str(ROOT), json.dumps(blocked)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={"MAKAN_WEB_DIST": str(ROOT / "missing")},
+    )
+    assert done.returncode == 0, done.stderr
+
+
+def test_the_vercel_install_source_does_not_depend_on_an_extra() -> None:
+    """`uv sync --no-dev` ignores `[project.optional-dependencies]`, so the default groups, and not
+    an extra, are what make the install complete."""
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8"))
+    assert pyproject["tool"]["uv"]["default-groups"] == ["public"]
+    installed = {_requirement_name(r) for r in _vercel_installed(pyproject)}
+    assert {"httpx", "fastapi", "pyjwt", "duckdb"} <= installed
+    assert not installed & {"uvicorn", "psycopg", "pytest", "ruff", "mypy"}
 
 
 def test_the_ignore_file_keeps_secrets_and_environments_out_of_the_upload() -> None:

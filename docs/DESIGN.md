@@ -1360,8 +1360,16 @@ Nothing was deployed to prepare this: every check below ran locally, and what on
   DuckDB is imported on the first search, the release lookup and the `httpfs` download wait for it too, no database is connected, and no key is needed.
   A test imports the root file with every key unset and the network blocked.
   A missing `web/dist` at import is a logged warning and not an error, because the order of Vercel's build command and its import cannot be checked from here, and the site would then serve only the API.
-- **Python and dependencies:** `.python-version` pins 3.12, the version CI runs, and `requirements.txt` lists the pinned production dependencies: `httpx`, `fastapi`, `pyjwt[crypto]`, and `duckdb`.
-  It leaves out `uvicorn`, tests, linters, and `psycopg`, and a test keeps it in step with `pyproject.toml`.
+- **Python and dependencies:** `.python-version` pins 3.12, the version CI runs, and the pinned production dependencies are `httpx`, `fastapi`, `pyjwt[crypto]`, and `duckdb`.
+  They are listed twice, in the `public` dependency group of `pyproject.toml`, which Vercel installs, and in `requirements.txt`, which Vercel ignores and a person can `pip install -r`.
+  Both leave out `uvicorn`, tests, linters, and `psycopg`, and a test keeps the two lists identical and in step with the `web` and `overture` extras.
+  The first deployment failed with `ModuleNotFoundError: No module named 'fastapi'`, and the cause is now known from Vercel's open-source Python builder (`packages/python/src` in `vercel/vercel`), which a local run of its commands reproduced:
+  when a `pyproject.toml` exists it wins over `requirements.txt`, which is converted only when there is none, and a `uv.lock` wins over both.
+  Vercel runs `uv lock` and then `uv sync --active --no-dev --locked --no-editable`, so it installs the base `dependencies` and the project itself (as `_vendor/makan`), never an extra, so the `web` and `overture` extras were never installed.
+  `--no-dev` removes only the `dev` group, so the `public` group is installed by `[tool.uv] default-groups = ["public"]`, and a local `uv sync` run with Vercel's flags then installed exactly the four packages and their dependencies.
+  Moving the packages into the base `dependencies` would have worked too, but it makes `fastapi`, `duckdb` and `cryptography` mandatory for every user of the core loop, which only needs `httpx`.
+  A `vercel.json` `installCommand` was not chosen because the builder honours it only for a detected Python framework, which cannot be checked from here.
+  A test imports `app.py` with every installed package outside the Vercel install blocked, and fails on a missing `fastapi` the way the deployment did.
   `makan.web.accounts` used to import the Postgres stores, and so `psycopg`, at startup even with accounts off, so `makan.web` could not be imported with the `web` and `overture` extras alone.
   It now imports them inside `build_account_services`, after the check for `SUPABASE_URL`, and a test builds the public app with `psycopg` and `uvicorn` blocked.
   Resolving it for Python 3.12 on Linux gave about 95 MB installed, and `src/` and the built page add about 3 MB, against a 500 MB function limit.
@@ -1394,8 +1402,9 @@ Nothing was deployed to prepare this: every check below ran locally, and what on
     The proper fix is a regional extract: a Parquet file of open, confident food places for one supported region (the `SQL` filter in `makan.places.overture`), read through the existing `DuckDbSource(path=...)`, which needs no extension at all.
     `places_provider` has no setting for a local path yet, and the file's size and refresh process must be measured before it is chosen.
   - Cold start time and memory on Vercel, and that the 13.6 second cold search is similar there.
-  - Which of `requirements.txt` and `pyproject.toml` Vercel installs from when both exist, and that its build image runs `npm`, and that `app.py` is imported after the build command.
-    If `pyproject.toml` wins, only `httpx` is installed and the import fails at once with a missing `fastapi`, which is easy to see.
+  - That its build image runs `npm`, and that `app.py` is imported after the build command.
+  - That the `uv` Vercel runs treats `default-groups` as the local `uv` 0.13.1 does.
+    If it did not, the import would again fail at once with a missing `fastapi`, which is easy to see.
 - **Out of scope here:** shared admission control and daily caps, a regional extract, a free scorer, durable groups, and accounts.
   Without a limiter a public link can run up the places and function allowances, and Hobby usually stops at its allowance instead of billing, so this is a reliability risk more than a cost one.
 
