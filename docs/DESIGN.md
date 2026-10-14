@@ -1347,7 +1347,7 @@ Before this, a blank request was silently turned into "something good to eat" an
 ### Vercel deployment decisions
 
 The first public deployment is a guest-only site on Vercel Hobby, built from this one repository, with real nearby places and no model.
-Nothing was deployed to prepare this: every check below ran locally, and what only Vercel can show is listed under "Not verified".
+Most checks below ran locally, the live places lookup was verified on a real preview (see "Verified on a real Vercel preview"), and what remains unchecked is listed under "Not verified".
 
 - **One project:** the React build in `web/` and the FastAPI backend deploy together.
   The root `app.py` exports `app`, which is where Vercel's FastAPI detection looks, so no `tool.vercel` setting is needed.
@@ -1405,7 +1405,7 @@ Nothing was deployed to prepare this: every check below ran locally, and what on
   The code runs `LOAD httpfs` first and installs only when that fails, so an extension copied into the directory ahead of time needs no download.
   The regression test calls a real DuckDB connection with `HOME` unset and empty and an empty local repository, so it needs no network and fails if `home_directory` is dropped.
 - **The extension download on a cold function:** nothing on Vercel persists `/tmp` between cold starts, so every cold instance downloads `httpfs` from `extensions.duckdb.org` (about 21 MB on disk, fetched compressed) before its first query, and that is the dominant cost of a cold search.
-  It is measured only locally, where the whole cold search took 12 to 15 seconds, and the part Vercel adds is unmeasured.
+  Locally the whole cold search took 12 to 15 seconds, and on the Vercel preview the first request after idle took about 14 seconds.
   A warm instance keeps the extension in `/tmp` and the connection in memory, so only cold starts pay it.
   DuckDB can neither interrupt a download nor set a timeout on one (the `http_timeout` setting belongs to the extension that is being installed, and setting it triggers the install), so the code runs `INSTALL httpfs` on a thread and waits at most `install_deadline_s` (15 seconds).
   Past that the request fails with the places error "the DuckDB httpfs extension download did not finish within 15 seconds", the download keeps going and still lands in the directory, no second download starts while it runs, and the next request's `LOAD httpfs` uses it.
@@ -1414,13 +1414,17 @@ Nothing was deployed to prepare this: every check below ran locally, and what on
   A download on every cold start is the only way with this design.
   Two ways to remove it exist and are not built here: ship the `httpfs` file with the deployment (installed at build time into a directory the function sets as `extension_directory`, which is read-only and so needs no write access, and which must match DuckDB's version and the Linux x86-64 platform), and the regional extract below, which needs no extension at all.
   A failure to install or load is reported by name, "the DuckDB httpfs extension could not be installed or loaded", and never hidden or replaced with sample places.
+- **Verified on a real Vercel preview:** firstmate ran the live verification on 2026-10-14 (python3.12 function, `MAKAN_PLACES_ONLY=1`, this change merged over main).
+  A process with no `HOME` ran `INSTALL` and `LOAD` for `httpfs` without the home directory error.
+  `POST /api/recommendations` with mode `browse` at 40.758, -73.9855 returned HTTP 200 with real Overture places (Anita Gelato 17 m, Charley O's 31 m, Ny - Times Square 34 m).
+  The first request after idle took about 14 seconds including the extension download, and a repeat request about 0.2 seconds from the warm cache.
+  The stalled-download deadline was not driven live and is covered only by the offline regression test.
+  If the download ever fails, Browse nearby fails with the places error above and the logs name the cause, and `MAKAN_DEMO=1` is the working fallback.
+  The proper fix for the per-cold-start download is a regional extract: a Parquet file of open, confident food places for one supported region (the `SQL` filter in `makan.places.overture`), read through the existing `DuckDbSource(path=...)`, which needs no extension at all.
+  `places_provider` has no setting for a local path yet, and the file's size and refresh process must be measured before it is chosen.
 - **Not verified, because it needs a Vercel deployment:**
-  - That the function can reach the DuckDB extension host and the S3 bucket, and that `/tmp` is writable at the documented size.
-    The preview's function log already showed that it reaches `stac.overturemaps.org`, which is the release lookup, and that `INSTALL` got as far as the home directory, but nothing has yet shown the download or an S3 read from Vercel.
-    If the download fails, Browse nearby fails with the places error above and the logs name the cause, and `MAKAN_DEMO=1` is the working fallback.
-    The proper fix is a regional extract: a Parquet file of open, confident food places for one supported region (the `SQL` filter in `makan.places.overture`), read through the existing `DuckDbSource(path=...)`, which needs no extension at all.
-    `places_provider` has no setting for a local path yet, and the file's size and refresh process must be measured before it is chosen.
-  - Cold start time and memory on Vercel, and that the 13.6 second cold search is similar there.
+  - That `/tmp` is writable at the documented size.
+  - Memory use on Vercel.
   - That its build image runs `npm`, and that `app.py` is imported after the build command.
   - That the `uv` Vercel runs treats `default-groups` as the local `uv` 0.13.1 does.
     If it did not, the import would again fail at once with a missing `fastapi`, which is easy to see.
