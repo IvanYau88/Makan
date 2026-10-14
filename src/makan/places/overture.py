@@ -87,16 +87,20 @@ class RowSource(Protocol):
 class DuckDbLimits:
     """What bounds one DuckDB connection, so a places query cannot take a small host down.
 
-    `work_dir` is where extensions are installed and spilled data goes. It must be writable, and
-    blank leaves DuckDB's own defaults, which put extensions under the home directory. A
-    serverless host needs it set to a scratch directory such as `/tmp/makan-duckdb`.
+    `work_dir` is where DuckDB keeps everything it writes: extensions, spilled data, and its home
+    directory. It must be writable, and blank leaves DuckDB's own defaults, which are all under
+    the process's home directory. A serverless host has none, so it needs a scratch directory such
+    as `/tmp/makan-duckdb`.
     `deadline_s` is the application deadline for one query, enforced by interrupting it.
+    `install_deadline_s` bounds the one-time download of the S3 extension, which cannot be
+    interrupted, so it is waited on instead.
     """
 
     threads: int = 2
     memory_mb: int = 1024
     work_dir: str = ""
     deadline_s: float = 20.0
+    install_deadline_s: float = 15.0
 
     def settings(self) -> dict[str, str | int]:
         """DuckDB's `config` for `duckdb.connect`."""
@@ -107,10 +111,14 @@ class DuckDbLimits:
         }
         if self.work_dir:
             work = Path(self.work_dir)
-            (work / "extensions").mkdir(parents=True, exist_ok=True)
-            (work / "tmp").mkdir(parents=True, exist_ok=True)
+            for name in ("extensions", "tmp", "home"):
+                (work / name).mkdir(parents=True, exist_ok=True)
             settings["extension_directory"] = str(work / "extensions")
             settings["temp_directory"] = str(work / "tmp")
+            # `INSTALL` looks up the home directory even when `extension_directory` is set, and a
+            # serverless process has no HOME, so DuckDB fails with "Can't find the home directory
+            # at ''". It has to be in the connect config, before any INSTALL runs.
+            settings["home_directory"] = str(work / "home")
         return settings
 
 
@@ -121,6 +129,7 @@ class DuckDbSource:
         self._path = path
         self._limits = limits or DuckDbLimits()
         self._connection: Any = None
+        self._installer: _Installer | None = None
         self._lock = threading.Lock()
 
     def fetch(self, release: str, bounds: Bounds) -> list[Row]:
@@ -175,8 +184,7 @@ class DuckDbSource:
                 self._connection = connection
             return self._connection
 
-    @staticmethod
-    def _load_httpfs(duckdb: Any, connection: Any) -> None:
+    def _load_httpfs(self, duckdb: Any, connection: Any) -> None:
         """Load the extension that reads S3, downloading it only when it is not already there.
 
         A directory prepared ahead of time, see `DuckDbLimits.work_dir`, needs no download.
@@ -186,14 +194,52 @@ class DuckDbSource:
             return
         except duckdb.Error:
             pass
-        try:
-            connection.execute("INSTALL httpfs")
-            connection.execute("LOAD httpfs")
-        except duckdb.Error as exc:
+        failure = self._install_httpfs(connection)
+        if failure is None:
+            try:
+                connection.execute("LOAD httpfs")
+                return
+            except duckdb.Error as exc:
+                failure = exc
+        raise PlacesError(
+            "the DuckDB httpfs extension could not be installed or loaded, so Overture "
+            f"cannot be read ({type(failure).__name__}): {failure}"
+        ) from failure
+
+    def _install_httpfs(self, connection: Any) -> Exception | None:
+        """Download the extension within `install_deadline_s`, and return why it failed, if it did.
+
+        DuckDB cannot interrupt a download, and it has no timeout setting for one before the
+        extension that defines `http_timeout` is loaded, so it runs on a thread that is waited on.
+        A download that outlasts the deadline keeps going and still lands in the extension
+        directory, so a later request can load it, and no second one starts until it ends.
+        """
+        installer = self._installer
+        if installer is None or not installer.is_alive():
+            installer = self._installer = _Installer(connection)
+            installer.start()
+        installer.join(self._limits.install_deadline_s)
+        if installer.is_alive():
             raise PlacesError(
-                "the DuckDB httpfs extension could not be installed or loaded, so Overture "
-                f"cannot be read ({type(exc).__name__}): {exc}"
-            ) from exc
+                "the DuckDB httpfs extension download did not finish within "
+                f"{self._limits.install_deadline_s:g} seconds, so Overture cannot be read yet"
+            )
+        return installer.failure
+
+
+class _Installer(threading.Thread):
+    """Runs `INSTALL httpfs` off the calling thread. `failure` is why it failed, if it did."""
+
+    def __init__(self, connection: Any) -> None:
+        super().__init__(name="makan-httpfs-install", daemon=True)
+        self._connection = connection
+        self.failure: Exception | None = None
+
+    def run(self) -> None:
+        try:
+            self._connection.execute("INSTALL httpfs")
+        except Exception as exc:  # handed to the caller, which raises PlacesError
+            self.failure = exc
 
 
 class OvertureProvider:
