@@ -2,6 +2,7 @@
 
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -395,6 +396,7 @@ def test_the_connection_is_opened_with_the_limits(
     assert config["threads"] == 1 and config["memory_limit"] == "300MB"
     assert config["extension_directory"] == str(tmp_path / "work" / "extensions")
     assert config["temp_directory"] == str(tmp_path / "work" / "tmp")
+    assert config["home_directory"] == str(tmp_path / "work" / "home")
     assert (tmp_path / "work" / "extensions").is_dir()
     assert str(config["max_temp_directory_size"]).endswith("MB")
 
@@ -442,6 +444,82 @@ def test_an_extension_that_cannot_be_installed_is_a_named_places_error(
     monkeypatch.setitem(sys.modules, "duckdb", failing)
     with pytest.raises(PlacesError, match="httpfs extension could not be installed"):
         DuckDbSource().fetch(RELEASE, Bounds.around(*KLCC, 1000))
+
+
+@pytest.mark.parametrize("home", [None, ""], ids=["HOME unset", "HOME empty"])
+def test_a_process_with_no_home_directory_can_still_install_an_extension(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, home: str | None
+) -> None:
+    # A serverless function has no HOME, and DuckDB's INSTALL then failed with "Can't find the
+    # home directory at ''" even with `extension_directory` set. The repository here is an empty
+    # local directory, so nothing is downloaded: the install gets past the home directory and
+    # fails only because the repository holds no extension.
+    duckdb = pytest.importorskip("duckdb")
+    if home is None:
+        monkeypatch.delenv("HOME", raising=False)
+    else:
+        monkeypatch.setenv("HOME", home)
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    connection = duckdb.connect(config=DuckDbLimits(work_dir=str(tmp_path / "work")).settings())
+    with pytest.raises(duckdb.Error) as raised:
+        connection.execute(f"INSTALL httpfs FROM '{repository}'")
+    assert "home directory" not in str(raised.value)
+    assert "Failed to install local extension" in str(raised.value)
+
+
+class StalledInstall(FakeDuckModule):
+    """`INSTALL httpfs` waits for `release`, like a download from a host that never answers."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.release = threading.Event()
+        self.installs = 0
+
+    def connect(self, config: dict[str, Any] | None = None) -> FakeConnection:
+        connection = super().connect(config)
+        run = connection.execute
+        installed = threading.Event()
+
+        def execute(statement: str) -> None:
+            if statement == "INSTALL httpfs":
+                self.installs += 1
+                self.release.wait(timeout=5)
+                installed.set()
+            elif statement == "LOAD httpfs" and not (installed.is_set() or self.release.is_set()):
+                raise FakeDuckError("not installed")
+            run(statement)
+
+        connection.execute = execute  # type: ignore[method-assign]
+        return connection
+
+
+def test_a_stalled_extension_download_is_a_places_error_within_its_deadline() -> None:
+    duckdb = StalledInstall()
+    source = DuckDbSource(limits=DuckDbLimits(install_deadline_s=0.05))
+    started = time.monotonic()
+    try:
+        with pytest.raises(PlacesError, match=r"did not finish within 0\.05 seconds"):
+            source._connect(duckdb, PLACES_PATH.format(release=RELEASE))
+        assert time.monotonic() - started < 2
+        assert source._connection is None  # nothing half set up is kept
+    finally:
+        duckdb.release.set()
+
+
+def test_a_download_that_outlasts_its_deadline_is_not_started_twice_and_is_used_when_done() -> None:
+    duckdb = StalledInstall()
+    source = DuckDbSource(limits=DuckDbLimits(install_deadline_s=0.05))
+    path = PLACES_PATH.format(release=RELEASE)
+    for _ in range(2):
+        with pytest.raises(PlacesError, match="did not finish"):
+            source._connect(duckdb, path)
+    assert duckdb.installs == 1
+    duckdb.release.set()
+    assert source._installer is not None
+    source._installer.join(timeout=5)
+    assert source._connect(duckdb, path) is duckdb.connections[-1]
+    assert duckdb.installs == 1  # the finished download was loaded, not repeated
 
 
 def test_an_unwritable_work_directory_is_a_places_error(
