@@ -74,7 +74,7 @@ export function PlaceList({
                 {place.id === pickId && place.reasons[0] && (
                   <span className="row-reason">{place.reasons[0]}</span>
                 )}
-                <Plate />
+                <Plate score={place.fit?.score} />
               </span>
             </button>
             {isSelected && inlineDetail}
@@ -92,5 +92,12 @@ function rowLabel(place: Place, isPick: boolean, hasTerms: boolean): string {
     distanceLabel(place.distance_m),
   ];
   if (hasTerms) parts.push(place.matched ? "matches your request" : "nearby alternative");
+  if (place.fit) {
+    parts.push(
+      place.fit.score === null
+        ? `Unrated. ${place.fit.explanation}`
+        : `Cuisine fit ${place.fit.score} out of 100`,
+    );
+  }
   return parts.join(", ");
 }

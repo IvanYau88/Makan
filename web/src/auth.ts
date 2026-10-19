@@ -60,6 +60,7 @@ export function failureFrom(error: unknown): AuthFailure {
 
 /** A signed-in person, as far as the page needs: who, and the token for the API. */
 export interface AuthSession {
+  userId?: string;
   email: string | null;
   token: string;
 }
@@ -86,7 +87,11 @@ export class Auth {
   async session(): Promise<AuthSession | null> {
     const { data, error } = await this.client.auth.getSession();
     if (error || !data.session) return null;
-    return { email: data.session.user.email ?? null, token: data.session.access_token };
+    return {
+      ...(data.session.user.id && { userId: data.session.user.id }),
+      email: data.session.user.email ?? null,
+      token: data.session.access_token,
+    };
   }
 
   /**
@@ -97,7 +102,11 @@ export class Auth {
     const { data } = this.client.auth.onAuthStateChange((event, session) => {
       if (event === "INITIAL_SESSION") return;
       const next = session
-        ? { email: session.user.email ?? null, token: session.access_token }
+        ? {
+            ...(session.user.id && { userId: session.user.id }),
+            email: session.user.email ?? null,
+            token: session.access_token,
+          }
         : null;
       listener(next, event === "SIGNED_OUT" && !this.leaving);
     });

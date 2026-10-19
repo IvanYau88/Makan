@@ -1218,7 +1218,8 @@ Before this, a blank request was silently turned into "something good to eat" an
   Every read and write is guarded, so blocked or cleared storage means the default and nothing breaks.
   It is a convenience of this browser and is never sent to the server, so it holds no profile and no location.
 - **Browse is places search only:** `makan.browse.browse` runs a one step graph, `browse_nearby`, with the same `nearby_places` tool call the solo graph makes, no filters, up to 20 places.
-  No model is called, no request is read, memory and the scorer are not touched, and nothing is picked.
+  The underlying graph calls no model, reads no request or memory, and picks nothing.
+  The optional local cuisine layer described below decorates its results in the web channel and applies known owner exclusions.
   It sorts the places nearest first, then by name and id, in code, so the order does not depend on the provider.
   It reuses the solo `Candidate` and `RankedCandidate` types so the response needs no new place shape, and its one reason per place is the distance in miles and feet.
   The radius, the category filter, and a sort are kept: a browse list can be sorted "Nearest first" (the server's order) or "Name, A to Z", and "Best match" and "Only places that match my request" do not appear because nothing is matched.
@@ -1228,9 +1229,57 @@ Before this, a blank request was silently turned into "something good to eat" an
 - **What is on screen belongs to the search that made it:** the results heading, the sort labels, and the pick chip follow `query.mode` of the answer, not the mode chosen since, so switching modes never relabels old results.
 - **A phone gives the room back after a search:** the two sentences hide once results exist, because the form, the choice, and the map already compete for 844 px.
   The choice stays, and the sentences were shown at entry.
-- **Not built here:** "something new" and "no preference" routes, ratings, "hide places I avoid", and any restyling.
+- **Not built here:** "something new" and "no preference" routes, ratings, and any restyling.
   The empty-request question names "no preference" but only asks it, and the way to look around without a request is Browse nearby.
 - **Units are unchanged:** storage and the API stay in meters, and the page shows miles and feet at the edges.
+
+### Local cuisine fit decisions
+
+`makan.fit` implements the optional fit value and an exact-category baseline, independently of the fixed-answer scorer, the request matcher, and the ranking policy.
+`MAKAN_FIT_ENABLED` defaults to false in every deployment, including public Vercel, and enabling it never enables a model or accounts.
+There is no generated evidence table, inference transport, background enrichment, daily discovery list, new dependency, or schema change in this slice.
+
+- **One bounded value:** every serialized place has a `fit` object with integer-or-null `score`, derived `status`, fixed `reason` and explanation, `basis=cuisine_profile`, and `policy_version=exact-cuisine-v1`.
+  `FitAssessment` rejects booleans, floats, nonfinite values, out-of-range integers, and mismatched rated/null reasons.
+  Null statuses distinguish disabled, no taste, insufficient evidence, and unavailable.
+  The public shape is an explicit allowlist with no raw memory, confidence, scorer output, tokens, or private evidence.
+  `RankedCandidate` defaults to disabled; the web channel decorates every candidate once and reuses its assessment for pick, runners-up, and list in both JSON and NDJSON.
+  Existing ranking remains unchanged, apart from plain-code removal of known never-go places.
+- **Exact-category evidence only:** the supported vocabulary is Chinese, Indian, Italian, Japanese, Korean, Mexican, Thai, and Vietnamese.
+  Only the corresponding exact primary `<cuisine>_restaurant` category supplies a match.
+  An exact stated like yields 100 and an exact stated dislike yields 0; these are deterministic policy endpoints, not calibrated probabilities or venue quality ratings.
+  Repeated choices do not increase the score, and order never decides conflicting tastes.
+  Broad categories, unrelated cuisines, ramen, sushi, pizza, venue names, request text, distance, ranks, ratings, and tags supply no inferred relationship.
+  With multiple supported tastes, the assessment describes only the exact matching cuisine and explicitly says other cuisines were not assessed.
+  A material unsupported, stale, malformed, or conflicting explicit cuisine input makes the entire assessment Unrated instead of presenting an incomplete profile as complete.
+  No taste is null, never a fabricated 50, and same-category places get the same assessment.
+- **Guest choices:** an optional disclosure under the search form offers one labeled native select per supported cuisine with No preference, Like, and Prefer to skip.
+  It uses the existing light design tokens with 44 px controls, two columns on phones, and four columns on desktop to keep the expanded form compact.
+  The choices live only in React state for the current tab and are sent as a bounded, allowlisted `tastes` request field.
+  There is no browser storage access, persistent memory write, arbitrary free-text taste field, or automatic inference from a search request.
+  Clear tastes immediately removes displayed results and cancels an in-flight search; changing a taste does the same and asks the person to search again.
+  Authentication changes reset choices, results, and execution history and cancel pending requests before another identity can receive the previous result.
+  This boundary uses the stable authenticated user id (email for older auth adapters), so refreshing a token for the same owner does not discard their search.
+  Opening Account discards search results so a later taste edit cannot leave an old score visible on return.
+- **Account inputs:** `makan.fit_inputs.owner_fit_inputs` recalls only the verified current owner's cuisine and constraint facts through `Memory.recall(Owner(user_id=...))`.
+  Cuisine facts must be explicit (`source=stated`) and non-stale; observed cuisine guesses and place ratings are not used.
+  Saved unsupported cuisine text stays local and cannot trigger an online fallback.
+  An authenticated request ignores the guest taste field and always uses that owner's current facts, without caching a personalized result between requests.
+  Forgetting or reconfirming a taste takes effect at the next search.
+  The narrow layer around browse deliberately bypasses the recommendation retrieval gate because the place search itself still reads no memory and calls no model.
+- **Hard rules first:** `FitInputs.excludes` uses the existing `names_place` rule before fitting returned candidates, including browse results.
+  Reading owner constraints and applying them is independent of `MAKAN_FIT_ENABLED`, so turning scores off never turns known exclusions or safety warnings off.
+  Known never-go constraints remain effective even when soft tastes are stale or unsupported.
+  Allergies, diets, and other hard requirements remain plain-code warnings because the place taxonomy cannot verify them, and an exact-category 100 never establishes safety.
+  Failure to read optional owner inputs yields unavailable fit plus a bounded warning that saved exclusions could not be checked; the place search still succeeds.
+  No other owner's visits, tags, memories, or profiles are queried.
+- **Display and transport:** list and detail plates receive the optional score, preserve zero distinctly from null, and show no percent sign.
+  Older servers and missing assessments still render Unrated.
+  Detail copy and row accessibility text explain the bounded cuisine estimate and why a place is Unrated.
+  Map pins retain their existing unrated artwork and separate rank badges; numeric map artwork and generated-table composition remain a later slice.
+  Personalized JSON and NDJSON responses are `private, no-store` and no taste choices are added to trace events.
+  The places banner says searches call no language model and, when fit is on, explains that optional cuisine estimates use stated tastes and source categories.
+  Public guest-only defaults and inert `app.py` import remain unchanged.
 
 ### Map and execution decisions
 

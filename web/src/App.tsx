@@ -22,6 +22,7 @@ import { phaseText } from "./stages";
 import { DEFAULT_RADIUS_M, RADII } from "./SearchBar";
 import type { FormValues } from "./SearchBar";
 import { loadMode, saveMode } from "./searchMode";
+import { EMPTY_TASTES, SessionTaste } from "./SessionTaste";
 import { SESSION_EXPIRED, useAuth } from "./useAuth";
 import type {
   AppConfig,
@@ -29,6 +30,7 @@ import type {
   GroupCreated,
   GroupView as GroupSnapshot,
   Recommendation,
+  SessionTastes,
 } from "./types";
 
 type Page = "discover" | "group" | "execution" | "account";
@@ -47,6 +49,10 @@ export function App() {
   const recommendOn = config?.features.recommend !== false;
   const groupsOn = config?.features.groups !== false;
   const { token: authToken, endSession } = auth;
+  const authScope =
+    auth.state.status === "in" ? `in:${auth.state.userId ?? auth.state.email}` : auth.state.status;
+  const [tastes, setTastes] = useState<SessionTastes>(EMPTY_TASTES);
+  const [previousAuth, setPreviousAuth] = useState(authScope);
   // A shared group link opens the page on the group it names.
   const [groupLink, setGroupLink] = useState<string | null>(() =>
     linkFromPath(window.location.pathname),
@@ -88,11 +94,29 @@ export function App() {
   // One tab's runs, newest first. Nothing is stored: a reload starts empty.
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 
+  // Reset at the identity boundary before another person's results can be painted.
+  if (previousAuth !== authScope) {
+    setPreviousAuth(authScope);
+    setTastes(EMPTY_TASTES);
+    setResult(null);
+    setHistory([]);
+    // A failed search can be the reason for sign-out; keep its bounded error visible.
+    if (status.kind !== "failed") setStatus({ kind: "idle" });
+    setSelectedId(null);
+  }
+
   // Set once the map has a place, from a location, a search, or the person moving the map.
   const claimed = useRef(false);
 
   const inflight = useRef<{ seq: number; controller: AbortController } | null>(null);
   const counter = useRef(0);
+  useEffect(
+    () => () => {
+      inflight.current?.controller.abort();
+      inflight.current = null;
+    },
+    [authScope],
+  );
   // Counts the results and errors to announce. DiscoverView moves focus when it changes.
   const [focusHeading, setFocusHeading] = useState(0);
 
@@ -183,6 +207,7 @@ export function App() {
             ...where,
             ...(values.mode === "recommend" && { request: values.request.trim() }),
             radius_m: values.radiusM,
+            ...(!token && config?.features.fit && { tastes }),
           },
           (run) => {
             if (!finishIdle(seq)) return;
@@ -232,8 +257,19 @@ export function App() {
         inflight.current = null;
       }
     },
-    [begin, authToken, endSession],
+    [begin, authToken, endSession, config?.features.fit, tastes],
   );
+
+  const changeTastes = (next: SessionTastes) => {
+    const previous = inflight.current;
+    previous?.controller.abort();
+    if (previous) setHistory((h) => abandonRun(h, previous.seq));
+    inflight.current = null;
+    setTastes(next);
+    setResult(null);
+    setSelectedId(null);
+    setStatus({ kind: "idle" });
+  };
 
   const goTo = (center: Coordinates, radiusM: number | null) => {
     claimed.current = true;
@@ -346,8 +382,10 @@ export function App() {
       )}
       {config?.mode === "places" && (
         <p className="banner banner-info" role="note">
-          Real places from Overture Maps, nearest first. This site only browses: it makes no
-          recommendations and calls no language model.
+          Real places from Overture Maps, nearest first. Searches call no language model.
+          {config.features.fit
+            ? " Optional cuisine fit uses only your stated tastes and place categories."
+            : " This site browses nearby places without choosing a recommendation."}
         </p>
       )}
       <header className="topbar">
@@ -364,7 +402,15 @@ export function App() {
               type="button"
               className="tab"
               aria-current={page === p ? "page" : undefined}
-              onClick={() => setPage(p)}
+              onClick={() => {
+                setPage(p);
+                if (p === "account") {
+                  inflight.current?.controller.abort();
+                  inflight.current = null;
+                  setResult(null);
+                  setStatus({ kind: "idle" });
+                }
+              }}
             >
               <Icon name={p} />
               <span>{label}</span>
@@ -386,6 +432,13 @@ export function App() {
           <DiscoverView
             tiles={config?.map ?? null}
             recommend={recommendOn}
+            sessionTaste={
+              config?.features.fit &&
+              auth.state.status !== "in" &&
+              auth.state.status !== "loading" ? (
+                <SessionTaste tastes={tastes} onChange={changeTastes} />
+              ) : undefined
+            }
             form={form}
             onForm={changeForm}
             requestError={requestError}

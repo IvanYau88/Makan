@@ -95,12 +95,16 @@ def ndjson(response: Any) -> list[dict[str, Any]]:
 # The entrypoint
 
 
+@pytest.mark.parametrize("fit", ["0", "1"])
 def test_the_root_entrypoint_exports_an_app_without_any_key_or_remote_work(
-    monkeypatch: pytest.MonkeyPatch, source: Source
+    monkeypatch: pytest.MonkeyPatch,
+    source: Source,
+    fit: str,
 ) -> None:
     for name in ("OPENROUTER_API_KEY", "MAKAN_MODEL", "MAKAN_DEMO", "MAKAN_DATABASE_URL"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("SUPABASE_URL", "https://project.supabase.test")  # half set, and ignored
+    monkeypatch.setenv("MAKAN_FIT_ENABLED", fit)
     spec = importlib.util.spec_from_file_location("vercel_entrypoint", ROOT / "app.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -108,6 +112,9 @@ def test_the_root_entrypoint_exports_an_app_without_any_key_or_remote_work(
     assert isinstance(module.app, FastAPI)
     assert source.calls == 0  # importing it read no places
     assert TestClient(module.app).get("/api/health").json() == {"status": "ok", "mode": "places"}
+    config = TestClient(module.app).get("/api/config").json()
+    assert config["features"]["fit"] is (fit == "1")
+    assert config["auth"] is None
 
 
 def test_the_public_app_uses_real_places_by_default_and_sample_ones_on_request(
@@ -164,6 +171,7 @@ def test_health_and_config_say_what_this_site_is(site: TestClient) -> None:
         "recommend": mode == "demo",
         "groups": False,
         "accounts": False,
+        "fit": False,
     }
     assert config["map"]["tile_url"]
 
