@@ -210,7 +210,11 @@ describe("Discover", () => {
 
   it("filters by category and by match, sorts by distance, and clears the filters", async () => {
     const { user } = await searched();
-    await user.selectOptions(screen.getByLabelText("Category"), "ramen_restaurant");
+    await user.click(
+      within(screen.getByRole("group", { name: "Categories" })).getByRole("button", {
+        name: "Ramen restaurant (1)",
+      }),
+    );
     expect(screen.getByText(/1 of 3 shown/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^1\. Mid Thai/ })).not.toBeInTheDocument();
     expect(pin(3, "Near Ramen")).toBeInTheDocument();
@@ -232,7 +236,11 @@ describe("Discover", () => {
   it("drops the selection when a filter hides the selected place", async () => {
     const { user } = await searched();
     await user.click(row(/^1\. Mid Thai/));
-    await user.selectOptions(screen.getByLabelText("Category"), "ramen_restaurant");
+    await user.click(
+      within(screen.getByRole("group", { name: "Categories" })).getByRole("button", {
+        name: "Ramen restaurant (1)",
+      }),
+    );
     expect(screen.queryByRole("heading", { name: "Mid Thai", level: 3 })).not.toBeInTheDocument();
   });
 
@@ -631,6 +639,11 @@ describe("Discover on a phone", () => {
     stubNarrow();
     const { user } = await searched();
     const toggle = screen.getByRole("group", { name: "Show the map or the list" });
+    expect(within(toggle).getByRole("button", { name: "List" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await user.click(within(toggle).getByRole("button", { name: "Map" }));
     expect(within(toggle).getByRole("button", { name: "Map" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -657,6 +670,7 @@ describe("Discover on a phone", () => {
   it("opens a collapsed place sheet over the map that expands and closes with buttons", async () => {
     stubNarrow();
     const { user } = await searched();
+    await user.click(screen.getByRole("button", { name: "Map" }));
     await user.click(pin(2, "Far Thai"));
     const sheet = screen.getByRole("heading", { name: "Far Thai", level: 3 }).closest("section")!;
     expect(sheet.closest(".map-detail")).not.toBeNull();
@@ -712,6 +726,7 @@ describe("Discover on a phone", () => {
       Reflect.deleteProperty(Element.prototype, "scrollIntoView");
     });
     const { user } = await searched();
+    await user.click(screen.getByRole("button", { name: "Map" }));
     expect(scrolled).not.toHaveBeenCalled();
     await user.click(pin(2, "Far Thai"));
     expect(scrolled).toHaveBeenCalledTimes(1);
@@ -727,6 +742,7 @@ describe("Discover on a phone", () => {
       stubApi(() => errorLine("model_busy", "The language model is busy.", 503));
       const user = userEvent.setup();
       render(<App />);
+      await user.click(screen.getByRole("button", { name: "Map" }));
       await submit(user);
       const alert = await screen.findByRole("alert");
       expect(document.querySelector(".discover")).toHaveAttribute("data-view", "map");
@@ -752,9 +768,10 @@ describe("Discover on a phone", () => {
       const calls = stubApi(() => answer({ ...RESULT, places: [], pick: null }));
       const user = userEvent.setup();
       render(<App />);
+      await user.click(screen.getByRole("button", { name: "Map" }));
       await submit(user);
       const heading = await screen.findByRole("heading", { name: "No places found" });
-      expect(heading).toHaveFocus();
+      await waitFor(() => expect(heading).toHaveFocus());
       expect(inResultsPane(heading)).toBe(false);
       const wider = screen.getByRole("button", { name: "Search a wider area" });
       expect(inResultsPane(wider)).toBe(false);
@@ -772,6 +789,7 @@ describe("Discover on a phone", () => {
       });
       const user = userEvent.setup();
       render(<App />);
+      await user.click(screen.getByRole("button", { name: "Map" }));
       await submit(user);
       const progress = await waitFor(() => {
         const el = document.querySelector<HTMLElement>(".progress");
@@ -782,7 +800,7 @@ describe("Discover on a phone", () => {
       expect(screen.getByRole("status")).toHaveTextContent(/Starting the search/);
       release();
       const heading = await screen.findByRole("heading", { name: "Nearby options" });
-      expect(heading).toHaveFocus();
+      await waitFor(() => expect(heading).toHaveFocus());
       expect(inResultsPane(heading)).toBe(false);
       expect(inResultsPane(screen.getByText(/list may be missing places/))).toBe(false);
     });
@@ -968,6 +986,7 @@ describe("Discover failures", () => {
     const user = userEvent.setup();
     render(<App />);
     await screen.findByText("The map could not start.");
+    await user.click(screen.getByRole("button", { name: "Map" }));
     await submit(user);
     await user.click(await screen.findByRole("button", { name: /^1\. Mid Thai/ }));
     const notice = document.querySelector(".map-fallback")!;
@@ -1136,9 +1155,17 @@ describe("Search mode", () => {
     await screen.findByRole("heading", { name: "Places nearby" });
     expect(calls[0]?.radius_m).toBe(3219);
 
-    await user.selectOptions(screen.getByLabelText("Category"), "ramen_restaurant");
+    await user.click(
+      within(screen.getByRole("group", { name: "Categories" })).getByRole("button", {
+        name: "Ramen restaurant (1)",
+      }),
+    );
     expect(screen.getByText(/1 of 3 shown/)).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText("Category"), "all");
+    await user.click(
+      within(screen.getByRole("group", { name: "Categories" })).getByRole("button", {
+        name: "All",
+      }),
+    );
 
     expect(
       within(screen.getByLabelText("Sort by"))

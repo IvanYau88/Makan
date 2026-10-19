@@ -1,3 +1,5 @@
+import wordmark from "./assets/makan-wordmark.svg";
+import { PlatePlaceholder } from "./PlatePlaceholder";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "./api";
 import {
@@ -20,27 +22,49 @@ export const DELETED = "Your data and account were deleted. Makan works as a gue
 
 interface Props {
   auth: UseAuth;
+  onGuest?: () => void;
 }
 
 type Load = { kind: "loading" } | { kind: "ready"; me: Me } | { kind: "failed"; message: string };
 
 /** The Account page: sign in or create an account, then profile, taste, export, and delete. */
-export function AccountView({ auth }: Props) {
+export function AccountView({ auth, onGuest }: Props) {
   const { state } = auth;
   return (
-    <div className="group-page">
-      <h2 className="section-title">Account</h2>
-      {state.status === "loading" && <p role="status">Checking your sign-in…</p>}
+    <div className={`group-page account-page${state.status === "out" ? " account-sign-in" : ""}`}>
+      <div className="account-content">
+        <h2 className="section-title">Account</h2>
+        {state.status === "loading" && <p role="status">Checking your sign-in…</p>}
+        {state.status === "out" && (
+          <>
+            <img className="sign-in-wordmark" src={wordmark} alt="Makan" width="205" height="50" />
+            <h3 className="page-title">Sign in to Makan</h3>
+            <p className="hint">
+              Sign in so Makan remembers your taste and calls you by name. Your searches work the
+              same without one.
+            </p>
+            <SignInForm auth={auth} notice={state.notice} />
+            {onGuest && (
+              <button type="button" className="button button-secondary" onClick={onGuest}>
+                Continue as guest
+              </button>
+            )}
+          </>
+        )}
+        {state.status === "in" && <SignedIn auth={auth} email={state.email} />}
+      </div>
       {state.status === "out" && (
-        <>
-          <p className="hint">
-            Sign in so Makan remembers your taste and calls you by name. Your searches work the same
-            without one.
-          </p>
-          <SignInForm auth={auth} notice={state.notice} />
-        </>
+        <aside className="sign-in-preview" aria-label="About Makan">
+          <div className="sign-in-preview-card">
+            <PlatePlaceholder />
+            <h3 className="section-title">A good place to eat, near you.</h3>
+            <p className="hint">
+              Tell Makan what you feel like. Explore nearby places, or get a pick for your next
+              meal.
+            </p>
+          </div>
+        </aside>
       )}
-      {state.status === "in" && <SignedIn auth={auth} email={state.email} />}
     </div>
   );
 }

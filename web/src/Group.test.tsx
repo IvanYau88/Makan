@@ -618,9 +618,11 @@ describe("the host's view and closing the group", () => {
     expect(
       within(pick).getByText(/~460 ft straight-line from the search point · 1 Jalan Test/),
     ).toBeInTheDocument();
-    expect(
-      within(pick).getByText(/Lowest score 0.62 · average 0.71 \(out of 1\) · least happy: Alex/),
-    ).toBeInTheDocument();
+    expect(within(pick).getByText("0.62").closest("p")).toHaveTextContent(
+      "0.62Lowest score (out of 1)",
+    );
+    expect(within(pick).getByText("0.71").closest("p")).toHaveTextContent("0.71Average (out of 1)");
+    expect(within(pick).getByText("Least happy: Alex")).toBeInTheDocument();
     expect(within(pick).getByText("liked by 1 of 2")).toBeInTheDocument();
 
     expect(screen.getByText("Try Mid Thai: liked by 1 of 2.")).toBeInTheDocument();
