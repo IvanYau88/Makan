@@ -1,3 +1,4 @@
+import { Plate } from "./Plate";
 import { categoryLabel, distanceLabel } from "./format";
 import { hasCoordinates } from "./places";
 import type { Mode, Place } from "./types";
@@ -26,6 +27,7 @@ export function PlaceDetail({ place, isPick, mode, expanded = true, onToggle, on
             {isPick && <span className="chip">Top pick</span>}
           </div>
           <p className="meta">{categoryLabel(place.category)}</p>
+          <Plate />
           <p className="meta">
             {distanceLabel(place.distance_m)} straight-line from the search center
           </p>

@@ -1145,9 +1145,10 @@ The 70 percent routing threshold, the taste-fading speed, and the model choice a
   If the browser refuses, is unsupported, or is on an insecure origin, the page says why, opens manual latitude and longitude fields, and moves focus to them.
   Typed coordinates are validated in the page before any request.
   Nothing is stored in the browser or on the server.
-- **UI:** mobile first, with one column on phones and a sticky form beside the results from 56rem.
+- **UI:** mobile first, with one column on phones, a compact form beside the page heading from 56rem, and the merged light layouts described below.
   Controls are at least 44 px tall and 16 px text, so iOS does not zoom on focus.
-  Colors follow the system light or dark setting and meet WCAG AA contrast, and that includes placeholder text, which is drawn at the full muted color because any extra opacity dropped it to 3.75:1 on white.
+  The approved merged light mockup sets the presentation: white surfaces, local Inter, green accents, neutral primary buttons, and illustrative plate placeholders.
+  Placeholder text uses the full muted color to preserve contrast.
   The search button keeps its size while it searches: its idle and busy labels share one grid cell, so the cell is as wide as the wider one and nothing beside it moves.
   The busy label is "Finding food…" from 56rem and "Finding…" below it, since the longer one would wrap in the phone's half-width column.
   After a search, focus moves to the result or error heading and a hidden live region announces progress.
@@ -1233,7 +1234,7 @@ Before this, a blank request was silently turned into "something good to eat" an
 
 ### Map and execution decisions
 
-- **Three pages, no router:** Discover is a search bar above a list beside a map, Group is the shared group flow (see "Group page decisions"), and Execution is the run inspector.
+- **Existing pages, no router:** Discover holds Today and nearby search, Group is the shared group flow (see "Group page decisions"), Execution is the run inspector, and Account appears when accounts are enabled.
   All stay mounted and the inactive ones are hidden, so the map keeps its position and the history survives a tab switch.
   A phone shows the map or the list, chosen by a Map and List toggle, and a place opens as a bottom sheet over the map or inline in its list row.
   The place sheet does not depend on a drag: it has Show more, Show less, and Close buttons.
@@ -1316,20 +1317,32 @@ Before this, a blank request was silently turned into "something good to eat" an
   The server stores nothing, so there is no endpoint that reads another person's run, and the "no location stored" promise still holds.
   Durable cross-user history needs authorization, scope, retention, and redaction decisions of its own, and is a follow-up.
   A run the page stopped following because a newer search began is marked so, since the server may still finish it.
-- **Palette:** a warm cream page with paprika for everything interactive and basil green for success, replacing the teal scheme.
-  The earlier brown and orange was muddy, so this one keeps the warmth but uses a clean chili orange-red on cream, which reads as food without looking brown.
-  Light tokens are `#fbf6ee` (page), `#fffdf9` (surface), `#f5ebdc` (sunk), `#2a1c14` (text), `#675446` (muted), `#b63e17` (accent, `#982f0f` on hover), and `#37661f` (ok).
-  Dark mode has its own espresso and apricot tokens, not the old scheme inverted: `#1a1310` (page), `#251b17` (surface), `#30241e` (sunk), `#f7ede4` (text), `#c4ae9d` (muted), `#ff8c5a` (accent), and `#a2d77c` (ok).
-  Information is a soft sage, warnings turmeric, and errors raspberry (`#9c1a3a` light, `#ffb9c7` dark), which sits far enough from the accent that an error is never mistaken for a button, and every error also says so in words.
-  Every token lives in the `:root` block at the top of `web/src/styles.css`, light then dark, and nothing else in the app holds a color of its own except the white ring on the map center.
-  Body text, muted text, accent text, text on the accent, and each notice pair pass 4.5:1 in both, checked by script.
+- **Merged light presentation:** the approved 2026-10-19 mockup replaces the cream and paprika palette with white (`#ffffff`), quiet fill (`#f4f4f1`), dark ink (`#161616`), muted ink (`#5c5c5c`), and green (`#276749`).
+  Primary buttons are neutral dark ink, and active navigation, tags, and score arcs use green.
+  The app is light only, including when the operating system requests dark mode.
+  Colors, font sizes, spacing, radii, and motion tokens live in `web/src/styles.css`.
+  Inter and the chosen outlined Fraunces wordmark are local assets with their font licences under `web/src/assets/fonts/`; source details are in `web/src/assets/README.md`.
+  Existing pages and search modes remain: Discover carries the Today and nearby-search presentations, Group and Account remain optional, and Execution remains available.
+  The navigation becomes a fixed icon-and-label bar on phones and a centered text navigation on desktop.
+  Today opens on List, with a List/Map toggle at either width and synchronized results beside desktop Map.
+  Browse nearby mirrors the mockup search layout: phone List/Map toggle and a combined list and map on desktop.
+  List details expand inside their rows at either width so they stay visible when the map is hidden.
+  The top pick uses an illustrative plate hero, and other places keep tinted plate placeholders rather than implying a venue photograph exists.
+  Category chips present the existing category filter, including counts; sorting, manual coordinates, location recovery, warnings, and distance conversions keep their existing behavior.
+- **Honest score plates:** `web/src/Plate.tsx` renders the selected compact ceramic rim, centered score without a percent sign, and green arc for a numeric score out of 100.
+  The current solo `Place` contract returns rank and a boolean request match, not a numeric taste score, so actual rows and details use the supplied unrated plate.
+  Map pins use that same unrated artwork with a separate small rank badge, preserving the link to numbered rows without presenting rank as fit.
+  No score is synthesized from rank, request match, or group statistics, and the backend contract is unchanged.
+  Group results keep their existing lowest and average scores out of 1 in rectangular stat tiles, including the host-only least-happy names.
+  The existing participant list sits beside the pick on desktop, with the explanation below the pick and the same information stacked on phones.
+  Sign in retains the existing account form, validation, and account-creation choice with a larger wordmark and desktop illustration panel; its guest button returns to the existing Discover page.
 - **Motion and materials:** the app has no gesture-driven surface, so there is no drag physics, and the motion is press feedback and arrivals.
   A control dips to 0.97 on pointer-down in 90ms and springs back on release, so the response is on the press and not on the click.
   The spring is a `linear()` easing curve in the `--spring` token, critically damped (damping 1, response 0.3s), with no overshoot.
   A bouncier one (damping 0.8) belongs only to motion that follows a flick, which nothing here has yet.
   They are CSS transitions, so a press released mid-dip retargets from where the control is, and no spring library is added.
   Hover styles apply only where a pointer can hover, so a tap does not leave a control stuck in its hover state.
-  Surfaces that float over the map, which are the place sheet, the "Updating" chip, and the zoom buttons, use a translucent material with a blur, a bright top edge, and a shadow that deepens with size.
+  Surfaces that float over the map, which are the place sheet, the "Updating" chip, and the zoom buttons, use solid white surfaces and a restrained shadow in the merged light design.
   The place sheet rises from the edge it docks to.
   The page chrome and the lists stay solid, so no translucent layer sits on another.
   `prefers-reduced-motion` drops the dip and the arrivals and keeps color and opacity changes, `prefers-reduced-transparency` and `prefers-contrast: more` make the materials solid, and more contrast also darkens borders and muted text.

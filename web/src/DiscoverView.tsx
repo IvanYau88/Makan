@@ -159,7 +159,7 @@ export function DiscoverView(props: Props) {
         onClose={() => props.onSelect(null)}
       />
     ) : null;
-  const inlineDetail = !wide && view === "list";
+  const inlineDetail = view === "list" && (!wide || form.mode !== "browse");
   // On a phone the map is taller than the room left under the search form, so a sheet anchored to
   // the map's bottom edge can start below the screen. Scroll it, and so the map above it, into view.
   const detailRef = useRef<HTMLDivElement>(null);
@@ -233,8 +233,12 @@ export function DiscoverView(props: Props) {
   const hasOutcome = working || status.kind === "failed" || result !== null;
 
   return (
-    <div className="discover" data-view={view} ref={rootRef}>
-      {!wide && modeChoice && <div className="modebar">{modeChoice}</div>}
+    <div className="discover" data-view={view} data-browse={form.mode === "browse"} ref={rootRef}>
+      <header className="discover-heading">
+        <p className="hint">{props.placed ? "Current search location" : "Find your next meal"}</p>
+        <h2 className="page-title">{form.mode === "browse" ? "Search nearby" : "Today"}</h2>
+        {modeChoice && <div className="modebar">{modeChoice}</div>}
+      </header>
       <SearchBar
         values={form}
         onChange={props.onForm}
@@ -251,7 +255,7 @@ export function DiscoverView(props: Props) {
       />
 
       <div className="view-toggle" role="group" aria-label="Show the map or the list">
-        {(["map", "list"] as const).map((v) => (
+        {(["list", "map"] as const).map((v) => (
           <button
             key={v}
             type="button"
@@ -272,7 +276,6 @@ export function DiscoverView(props: Props) {
 
       <div className="panes">
         <section className="results-pane" aria-label="Results" data-stale={working && !!result}>
-          {wide && modeChoice}
           {wide && outcome}
 
           {!result && status.kind !== "failed" && !working && (

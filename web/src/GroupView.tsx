@@ -321,10 +321,10 @@ export function GroupView({ link, initial, onLeave, paused = false, pollMs = POL
         </section>
       )}
       {closed && you && result.kind === "ready" && (
-        <GroupResultView ref={resultHeadingRef} result={result.result} />
+        <GroupResultView ref={resultHeadingRef} result={result.result} people={people} />
       )}
 
-      {closed && people}
+      {closed && result.kind !== "ready" && people}
 
       <div>
         <button type="button" className="button button-link" onClick={onLeave}>
@@ -344,6 +344,11 @@ function expiryLabel(expiresAt: string): string {
 function Person({ member, you }: { member: GroupMember; you: string | undefined }) {
   return (
     <li className="group-person">
+      <span
+        className="person-avatar"
+        aria-hidden="true"
+        data-initial={member.name.charAt(0).toUpperCase()}
+      />
       <span className="group-person-name">
         {member.name}
         {member.is_host && " (host)"}

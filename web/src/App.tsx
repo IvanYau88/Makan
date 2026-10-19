@@ -1,3 +1,5 @@
+import wordmark from "./assets/makan-wordmark.svg";
+import { Icon } from "./Icon";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sessionEnded } from "./accountApi";
 import { AccountView } from "./AccountView";
@@ -81,7 +83,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [filters, setFilters] = useState<PlaceFilters>(NO_FILTERS);
-  const [view, setView] = useState<View>("map");
+  const [view, setView] = useState<View>("list");
   const [sheetExpanded, setSheetExpanded] = useState(false);
   // One tab's runs, newest first. Nothing is stored: a reload starts empty.
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -349,7 +351,9 @@ export function App() {
         </p>
       )}
       <header className="topbar">
-        <h1 className="brand">Makan</h1>
+        <h1 className="brand">
+          <img src={wordmark} alt="Makan" width="148" height="36" />
+        </h1>
         <nav aria-label="Pages" className="tabs">
           {PAGES.filter(
             ({ page: p }) =>
@@ -362,7 +366,8 @@ export function App() {
               aria-current={page === p ? "page" : undefined}
               onClick={() => setPage(p)}
             >
-              {label}
+              <Icon name={p} />
+              <span>{label}</span>
             </button>
           ))}
         </nav>
@@ -433,7 +438,7 @@ export function App() {
         <div hidden={page !== "execution"}>
           <ExecutionView history={history} onClear={() => setHistory([])} />
         </div>
-        {page === "account" && <AccountView auth={auth} />}
+        {page === "account" && <AccountView auth={auth} onGuest={() => setPage("discover")} />}
       </main>
     </>
   );

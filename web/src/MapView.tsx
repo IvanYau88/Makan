@@ -1,3 +1,4 @@
+import unratedPlate from "./assets/plate-c-unrated-compact.svg";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import L from "leaflet";
@@ -315,7 +316,7 @@ function sizePinTargets(instance: L.Map, pins: Map<string, { marker: L.Marker }>
 function pinIcon(place: Place, state: PinState, highlightMatches: boolean): L.DivIcon {
   return L.divIcon({
     className: `pin pin-${state}${place.matched || !highlightMatches ? " pin-matched" : ""}`,
-    html: `<span>${place.rank}</span>`,
+    html: `<span class="pin-plate"><img src="${unratedPlate}" alt="" /><b>${place.rank}</b></span>`,
     iconSize: [44, 44], // the touch target around the 34px circle, see `.pin` in styles.css
     iconAnchor: [22, 22],
   });

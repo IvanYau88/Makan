@@ -1,3 +1,5 @@
+import { Plate } from "./Plate";
+import { PlatePlaceholder } from "./PlatePlaceholder";
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { categoryLabel, distanceLabel } from "./format";
@@ -40,7 +42,7 @@ export function PlaceList({
           <li
             key={place.id}
             ref={isSelected ? selected : undefined}
-            className={`row${isSelected ? " row-selected" : ""}${place.id === hoveredId ? " row-hover" : ""}`}
+            className={`row${place.id === pickId ? " row-pick" : ""}${isSelected ? " row-selected" : ""}${place.id === hoveredId ? " row-hover" : ""}`}
           >
             <button
               type="button"
@@ -54,11 +56,10 @@ export function PlaceList({
               onFocus={() => onHover(place.id)}
               onBlur={() => onHover(null)}
             >
-              <span className="row-rank" aria-hidden="true">
-                {place.rank}
-              </span>
+              <PlatePlaceholder />
               <span className="row-text">
                 <span className="row-name">
+                  <span className="row-position">{place.rank}. </span>
                   {place.name}
                   {place.id === pickId && <span className="chip">Top pick</span>}
                 </span>
@@ -70,6 +71,10 @@ export function PlaceList({
                     {place.matched ? "Matches your request" : "Nearby alternative"}
                   </span>
                 )}
+                {place.id === pickId && place.reasons[0] && (
+                  <span className="row-reason">{place.reasons[0]}</span>
+                )}
+                <Plate />
               </span>
             </button>
             {isSelected && inlineDetail}
