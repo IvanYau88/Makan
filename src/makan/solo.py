@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 from makan.accounts.errors import InvalidProfile
 from makan.accounts.profile import clean_display_name
 from makan.config import Config
+from makan.fit import FitAssessment
 from makan.graph import Graph, GraphResult, Step, StepContext, StepFailed, run_graph
 from makan.memory.content import claim
 from makan.memory.context import TurnMemory, recall_for_turn
@@ -116,6 +117,7 @@ class RankedCandidate:
     place: Candidate
     reasons: tuple[str, ...]
     memory_score: float
+    fit: FitAssessment = field(default_factory=FitAssessment)
 
     def trace_summary(self) -> dict[str, Any]:
         return {

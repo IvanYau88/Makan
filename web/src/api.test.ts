@@ -142,7 +142,7 @@ describe("fetchConfig", () => {
     await expect(fetchConfig()).resolves.toEqual({
       ...config,
       auth: null,
-      features: { recommend: true, groups: true },
+      features: { recommend: true, groups: true, fit: false },
     });
   });
 
@@ -155,7 +155,7 @@ describe("fetchConfig", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(config))));
     await expect(fetchConfig()).resolves.toMatchObject({
       mode: "places",
-      features: { recommend: false, groups: false },
+      features: { recommend: false, groups: false, fit: false },
     });
   });
 

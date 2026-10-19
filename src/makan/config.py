@@ -101,6 +101,7 @@ class Config:
     duckdb: DuckDbConfig = field(default_factory=DuckDbConfig)
     groups_enabled: bool = True  # False removes the group page and its endpoints
     accounts_enabled: bool = True  # False leaves everyone a guest, whatever SUPABASE_URL says
+    fit_enabled: bool = False  # opt-in local cuisine estimates; never enables a model
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -168,6 +169,7 @@ class Config:
             ),
             groups_enabled=_flag(env, "MAKAN_GROUPS_ENABLED", True),
             accounts_enabled=accounts_enabled,
+            fit_enabled=_flag(env, "MAKAN_FIT_ENABLED", False),
         )
 
 

@@ -14,6 +14,33 @@ export interface Place {
   /** True when the place matched what the request asked for, not just being nearby. */
   matched: boolean;
   reasons: string[];
+  /** Optional for compatibility with older servers. A missing assessment is Unrated. */
+  fit?: FitAssessment | null;
+}
+
+export interface FitAssessment {
+  score: number | null;
+  status: "rated" | "no_taste" | "insufficient_evidence" | "unavailable" | "disabled";
+  basis: "cuisine_profile";
+  policy_version: string;
+  reason: string;
+  explanation: string;
+}
+
+export const CUISINES = [
+  "chinese",
+  "indian",
+  "italian",
+  "japanese",
+  "korean",
+  "mexican",
+  "thai",
+  "vietnamese",
+] as const;
+export type Cuisine = (typeof CUISINES)[number];
+export interface SessionTastes {
+  likes: Cuisine[];
+  dislikes: Cuisine[];
 }
 
 export interface StaleFact {
@@ -78,6 +105,8 @@ export interface AppFeatures {
   /** False when there is no model: only Browse nearby works. */
   recommend: boolean;
   groups: boolean;
+  /** Local cuisine fit is opt-in, including when the server predates this field. */
+  fit?: boolean;
 }
 
 export interface AppConfig {
@@ -119,6 +148,7 @@ export interface RecommendRequest extends Coordinates {
   mode: SearchMode;
   request?: string;
   radius_m: number;
+  tastes?: SessionTastes;
 }
 
 export type StageName =

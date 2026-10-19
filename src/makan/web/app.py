@@ -17,7 +17,7 @@ import logging
 import os
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -41,6 +41,8 @@ from makan.accounts.tokens import Identity
 from makan.browse import BrowseRequest, BrowseResult, browse
 from makan.config import Config, ConfigError
 from makan.env import load_dotenv
+from makan.fit import FitReason, cuisine_fit
+from makan.fit_inputs import Cuisine, FitInputs, owner_fit_inputs
 from makan.places.base import MAX_RADIUS_M, MIN_RADIUS_M, PlaceQuery, PlacesProvider
 from makan.places.factory import places_provider
 from makan.providers.base import Provider
@@ -78,6 +80,13 @@ Mode = Literal["demo", "live", "places"]
 DEFAULT_WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 
+class GuestTastes(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    likes: list[Cuisine] = Field(default_factory=list, max_length=8)
+    dislikes: list[Cuisine] = Field(default_factory=list, max_length=8)
+
+
 class RecommendBody(BaseModel):
     """What the browser sends. There is deliberately no user id: who is asking comes only from
     a verified access token in the `Authorization` header, never from the body.
@@ -95,6 +104,7 @@ class RecommendBody(BaseModel):
         str | None, StringConstraints(strip_whitespace=True, max_length=MAX_REQUEST_CHARS)
     ] = Field(default=None, validate_default=True)
     radius_m: Annotated[int, Field(ge=MIN_RADIUS_M, le=MAX_RADIUS_M)] = 1000
+    tastes: GuestTastes | None = None
 
     @field_validator("request")
     @classmethod
@@ -208,6 +218,7 @@ def create_app(
                 "recommend": mode != "places",
                 "groups": groups,
                 "accounts": accounts is not None,
+                "fit": config.fit_enabled,
             },
         }
 
@@ -251,6 +262,36 @@ def create_app(
             data_source=places.name,
             on_update=on_update,
         )
+        inputs = FitInputs()
+        # Disabling soft scores must never disable known hard exclusions or their warnings.
+        if identity is not None and accounts is not None:
+            try:
+                inputs = owner_fit_inputs(accounts.accounts.memory, identity.user_id)
+            except Exception:
+                log.exception("could not read local fit inputs")
+                inputs = FitInputs(
+                    problem=FitReason.UNAVAILABLE,
+                    warnings=("Saved tastes and exclusions are unavailable. Check before going.",),
+                )
+        elif config.fit_enabled and body.tastes is not None:
+            inputs = FitInputs(tuple(body.tastes.likes), tuple(body.tastes.dislikes))
+
+        def assess(ranked: tuple[RankedCandidate, ...]) -> tuple[RankedCandidate, ...]:
+            return tuple(
+                replace(
+                    r,
+                    fit=cuisine_fit(
+                        r.place.category,
+                        inputs.likes,
+                        inputs.dislikes,
+                        enabled=config.fit_enabled,
+                        problem=inputs.problem,
+                    ),
+                )
+                for r in ranked
+                if not inputs.excludes(r.place.name)
+            )
+
         if body.mode == "browse":
             found = browse(
                 BrowseRequest(body.latitude, body.longitude, body.radius_m),
@@ -258,6 +299,16 @@ def create_app(
                 config=config,
                 sink=recorder,
             )
+            if found.places is not None:
+                assessed = assess(found.places)
+                excluded = len(assessed) != len(found.places)
+                found = replace(
+                    found,
+                    places=assessed,
+                    warnings=found.warnings
+                    + inputs.warnings
+                    + (("Left out places you said you will not go to.",) if excluded else ()),
+                )
             recorder.finish(_browse_outcome(found))
             if found.places is None:
                 return Answer(recorder, failure=workflow_failure(found.graph))
@@ -280,11 +331,32 @@ def create_app(
             sink=recorder,
             scorer=scorer,
         )
-        recorder.finish(_outcome(result))
         if result.recommendation is None:
+            recorder.finish(_outcome(result))
             return Answer(recorder, failure=workflow_failure(result.graph))
+        rec = result.recommendation
+        ranked = assess(rec.ranked)
+        # A single immutable value per candidate is reused by all three wire views.
+        rec = replace(
+            rec,
+            ranked=ranked,
+            pick=ranked[0] if ranked else None,
+            runners_up=ranked[1:4],
+            warnings=tuple(dict.fromkeys((*rec.warnings, *inputs.warnings))),
+        )
+        if len(ranked) != len(result.recommendation.ranked):
+            rec = replace(
+                rec,
+                explanation=(
+                    f"Try {ranked[0].place.name}."
+                    if ranked
+                    else "No places found within this search radius."
+                ),
+                warnings=(*rec.warnings, "Left out places you said you will not go to."),
+            )
+        recorder.finish(_outcome(replace(result, recommendation=rec)))
         payload = _recommendation_json(
-            result.recommendation, result.graph.ok, mode, _query_json(body, result), recorder
+            rec, result.graph.ok, mode, _query_json(body, result), recorder
         )
         return Answer(recorder, payload)
 
@@ -301,7 +373,7 @@ def create_app(
             return error(500, "server_error", "Something went wrong on our side. Try again.")
         if answer.failure is not None:
             return answer.failure
-        return JSONResponse(answer.payload)
+        return JSONResponse(answer.payload, headers={"Cache-Control": "private, no-store"})
 
     @app.post("/api/recommendations/stream")
     async def recommendations_stream(
@@ -360,7 +432,7 @@ def create_app(
         return StreamingResponse(
             body_lines(),
             media_type="application/x-ndjson",
-            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+            headers={"Cache-Control": "private, no-store", "X-Accel-Buffering": "no"},
         )
 
     if group_sessions is not None and mode != "places":
@@ -572,6 +644,7 @@ def _place_json(ranked: RankedCandidate, rank: int) -> dict[str, Any]:
         "rank": rank,
         "matched": p.request_fit > 0,
         "reasons": list(ranked.reasons),
+        "fit": ranked.fit.to_json(),
     }
 
 

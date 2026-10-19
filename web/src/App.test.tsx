@@ -1010,7 +1010,8 @@ describe("A places-only site", () => {
     render(<App />);
     const note = await screen.findByRole("note");
     expect(note).toHaveTextContent("Real places from Overture Maps");
-    expect(note).toHaveTextContent("makes no recommendations");
+    expect(note).toHaveTextContent("Searches call no language model");
+    expect(note).toHaveTextContent("without choosing a recommendation");
     expect(note).not.toHaveTextContent(/sample|demo/i);
   });
 
@@ -1050,6 +1051,71 @@ describe("A places-only site", () => {
     render(<App />);
     await waitFor(() => expect(fetch).toHaveBeenCalled());
     expect(screen.getByRole("button", { name: "Group" })).toBeInTheDocument();
+  });
+});
+
+describe("Session cuisine tastes", () => {
+  it("sends explicit choices, renders zero in list and detail, and clears the old result", async () => {
+    const fit = {
+      score: 0,
+      status: "rated" as const,
+      basis: "cuisine_profile" as const,
+      policy_version: "exact-cuisine-v1",
+      reason: "exact_dislike",
+      explanation: "Exact cuisine match to a stated dislike. Other cuisines are not assessed.",
+    };
+    const rated: Recommendation = {
+      ...BROWSE_RESULT,
+      places: [place("Mid Thai", 140, { fit })],
+      candidate_count: 1,
+    };
+    const calls = stubApi(() => answer(rated), "places", { recommend: false, fit: true });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByText("Your tastes"));
+    expect(screen.getAllByRole("combobox")).toHaveLength(9);
+    await user.selectOptions(screen.getByLabelText("Thai"), "like");
+    await user.selectOptions(screen.getByLabelText("Thai"), "skip");
+    await user.click(screen.getByRole("button", { name: "Browse here" }));
+    await screen.findByRole("heading", { name: "Places nearby" });
+    expect(calls[0]?.tastes).toEqual({ likes: [], dislikes: ["thai"] });
+    expect(screen.getByRole("img", { name: "Taste match 0 out of 100" })).toBeInTheDocument();
+    await user.click(row(/^1\. Mid Thai/));
+    expect(screen.getAllByRole("img", { name: "Taste match 0 out of 100" })).toHaveLength(2);
+    expect(screen.getByText(/Exact cuisine match to a stated dislike/)).toBeInTheDocument();
+    expect(screen.queryByText("0%")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear tastes" }));
+    expect(screen.queryByRole("heading", { name: "Places nearby" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Taste match 0 out of 100" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Browse here" }));
+    await screen.findByRole("heading", { name: "Places nearby" });
+    expect(calls[1]?.tastes).toEqual({ likes: [], dislikes: [] });
+  });
+
+  it("works with browser storage blocked and a fresh tab starts blank", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    stubApi(() => answer(BROWSE_RESULT), "places", { recommend: false, fit: true });
+    const user = userEvent.setup();
+    const mounted = render(<App />);
+    await user.click(await screen.findByText("Your tastes"));
+    await user.selectOptions(screen.getByLabelText("Thai"), "like");
+    expect(screen.getByLabelText("Thai")).toHaveValue("like");
+    mounted.unmount();
+    render(<App />);
+    await user.click(await screen.findByText("Your tastes"));
+    expect(screen.getByLabelText("Thai")).toHaveValue("");
+  });
+
+  it("does not offer taste controls when fit is disabled or unknown", async () => {
+    stubApi(() => answer(BROWSE_RESULT), "places", { recommend: false });
+    render(<App />);
+    await screen.findByRole("note");
+    expect(screen.queryByText("Your tastes")).not.toBeInTheDocument();
   });
 });
 

@@ -47,7 +47,11 @@ export async function fetchConfig(signal?: AbortSignal): Promise<AppConfig | nul
       mode,
       map,
       auth: usable ? auth : null,
-      features: { recommend: features?.recommend !== false, groups: features?.groups !== false },
+      features: {
+        recommend: features?.recommend !== false,
+        groups: features?.groups !== false,
+        fit: features?.fit === true,
+      },
     };
   } catch {
     return null;

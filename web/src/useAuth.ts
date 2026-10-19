@@ -14,7 +14,7 @@ export type AuthState =
   | { status: "off" }
   | { status: "loading" }
   | { status: "out"; notice: string | null }
-  | { status: "in"; email: string | null };
+  | { status: "in"; email: string | null; userId?: string };
 
 export interface UseAuth {
   state: AuthState;
@@ -43,7 +43,11 @@ export function useAuth(settings: AuthSettings | null): UseAuth {
     let ignore = false;
     const problem = linkProblem(window.location);
     const apply = (session: AuthSession | null, notice: string | null) => {
-      setState(session ? { status: "in", email: session.email } : { status: "out", notice });
+      setState(
+        session
+          ? { status: "in", email: session.email, userId: session.userId }
+          : { status: "out", notice },
+      );
     };
     void auth.session().then((session) => {
       if (ignore) return;

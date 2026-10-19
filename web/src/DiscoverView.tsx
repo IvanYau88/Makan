@@ -13,7 +13,7 @@ import { NO_FILTERS, isFiltered } from "./places";
 import type { PlaceFilters } from "./places";
 import type { CoordinateErrors } from "./location";
 import type { Coordinates, MapConfig, Place, Recommendation } from "./types";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 
 export type View = "map" | "list";
 
@@ -26,6 +26,7 @@ interface Props {
   tiles: MapConfig | null;
   /** False when the server has no model, so Browse nearby is the only search and there is no choice. */
   recommend: boolean;
+  sessionTaste?: ReactNode;
   form: FormValues;
   onForm: (form: FormValues) => void;
   locationError: string | null;
@@ -253,6 +254,8 @@ export function DiscoverView(props: Props) {
         canPick={props.recommend}
         appliedRadiusM={applied?.radiusM ?? null}
       />
+
+      {props.sessionTaste}
 
       <div className="view-toggle" role="group" aria-label="Show the map or the list">
         {(["list", "map"] as const).map((v) => (

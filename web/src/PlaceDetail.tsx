@@ -27,7 +27,7 @@ export function PlaceDetail({ place, isPick, mode, expanded = true, onToggle, on
             {isPick && <span className="chip">Top pick</span>}
           </div>
           <p className="meta">{categoryLabel(place.category)}</p>
-          <Plate />
+          <Plate score={place.fit?.score} />
           <p className="meta">
             {distanceLabel(place.distance_m)} straight-line from the search center
           </p>
@@ -51,6 +51,11 @@ export function PlaceDetail({ place, isPick, mode, expanded = true, onToggle, on
 
       {open && (
         <div className="detail-body">
+          {place.fit && (
+            <p className="hint">
+              {place.fit.explanation} Cuisine fit is an estimate, not a probability.
+            </p>
+          )}
           {place.address && <p className="meta">{place.address}</p>}
           <h4 className="subtitle">Why this option</h4>
           <ul className="reasons">

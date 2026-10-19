@@ -7,7 +7,7 @@ import type { Me, Recommendation, Taste } from "./types";
 // The Supabase client is the only thing mocked here: it stands for the network calls to Supabase
 // Auth. The page talks to the real `Auth` wrapper over it, and to a stubbed Makan API.
 const supabase = vi.hoisted(() => {
-  type Session = { access_token: string; user: { email: string } };
+  type Session = { access_token: string; user: { id: string; email: string } };
   const state = {
     session: null as Session | null,
     listeners: [] as ((event: string, session: Session | null) => void)[],
@@ -44,7 +44,7 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: vi.fn(() => supabase.cli
 
 const AUTH = { url: "https://p.supabase.test", anon_key: "anon-key", redirect_url: null };
 const EMPTY_TASTE: Taste = { likes: [], dislikes: [], allergies: [], diets: [], never_places: [] };
-const SESSION = { access_token: "tok-bob", user: { email: "bob@example.com" } };
+const SESSION = { access_token: "tok-bob", user: { id: "owner-bob", email: "bob@example.com" } };
 
 interface Api {
   me: Me;
@@ -63,7 +63,7 @@ function problem(code: string, message: string, status: number): Response {
 }
 
 function stubApi(
-  options: { auth?: typeof AUTH | null; me?: Partial<Me>; greeting?: string } = {},
+  options: { auth?: typeof AUTH | null; me?: Partial<Me>; greeting?: string; fit?: boolean } = {},
 ): Api {
   const api: Api = {
     me: {
@@ -91,6 +91,7 @@ function stubApi(
             attribution_url: null,
           },
           auth: options.auth === undefined ? AUTH : options.auth,
+          features: { recommend: true, groups: true, fit: options.fit === true },
         });
       }
       api.calls.push({ method, url, headers, body });
@@ -167,6 +168,33 @@ describe("without accounts", () => {
     expect(api.calls.every((c) => !("Authorization" in c.headers))).toBe(true);
     expect(screen.queryByText(/^Hey /)).not.toBeInTheDocument();
   });
+});
+
+it("clears guest tastes and results at sign-in and sign-out instead of carrying them between owners", async () => {
+  const api = stubApi({ fit: true });
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByText("Your tastes"));
+  await user.selectOptions(screen.getByLabelText("Thai"), "like");
+  await user.type(screen.getByLabelText("What are you in the mood for?"), "thai");
+  await user.click(screen.getByRole("button", { name: "Find food here" }));
+  await screen.findByRole("heading", { name: "Nearby options" });
+  expect(api.searched[0]?.tastes).toEqual({ likes: ["thai"], dislikes: [] });
+  act(() => supabase.emit("SIGNED_IN", SESSION));
+  expect(screen.queryByText("Your tastes")).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Nearby options" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Find food here" }));
+  await screen.findByRole("heading", { name: "Nearby options" });
+  expect(api.searched[1]).not.toHaveProperty("tastes");
+  act(() => supabase.emit("TOKEN_REFRESHED", { ...SESSION, access_token: "tok-refreshed" }));
+  expect(screen.getByRole("heading", { name: "Nearby options" })).toBeInTheDocument();
+  act(() =>
+    supabase.emit("SIGNED_IN", { ...SESSION, user: { ...SESSION.user, id: "another-owner" } }),
+  );
+  expect(screen.queryByRole("heading", { name: "Nearby options" })).not.toBeInTheDocument();
+  act(() => supabase.emit("SIGNED_OUT", null));
+  expect(screen.queryByRole("heading", { name: "Nearby options" })).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Thai")).toHaveValue("");
 });
 
 describe("signing in", () => {

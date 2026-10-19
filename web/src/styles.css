@@ -505,6 +505,50 @@ input[aria-invalid="true"] {
   background: var(--surface);
 }
 
+.session-taste {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-2) 0;
+}
+
+.session-taste summary {
+  cursor: pointer;
+  padding: var(--space-3) 0;
+  min-height: 44px;
+  font-weight: 600;
+}
+
+.session-taste summary .hint {
+  margin-left: var(--space-2);
+  font-weight: 400;
+}
+
+.session-taste-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-6);
+  margin: var(--space-4) 0;
+}
+
+.session-taste-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.session-taste-field select {
+  min-height: 44px;
+  width: 100%;
+}
+
+@media (min-width: 56rem) {
+  .session-taste-fields {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
 .searchbar-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
