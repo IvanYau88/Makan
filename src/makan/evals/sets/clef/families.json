@@ -1,0 +1,97 @@
+{
+  "split_policy": "Historical replay only. The original sources assign families, not dev/calibration/heldout splits. No new qualification split is inferred.",
+  "families": {
+    "original-01": [
+      "O01"
+    ],
+    "original-02": [
+      "O02"
+    ],
+    "original-03": [
+      "O03"
+    ],
+    "original-04": [
+      "O04"
+    ],
+    "original-05": [
+      "O05"
+    ],
+    "original-06": [
+      "O06"
+    ],
+    "original-07": [
+      "O07"
+    ],
+    "original-08": [
+      "O08"
+    ],
+    "original-09": [
+      "O09"
+    ],
+    "original-10": [
+      "O10"
+    ],
+    "original-11": [
+      "O11"
+    ],
+    "original-12": [
+      "O12"
+    ],
+    "pair-A01": [
+      "F01",
+      "M01"
+    ],
+    "pair-A02": [
+      "F02",
+      "M02"
+    ],
+    "pair-A03": [
+      "F03",
+      "M03"
+    ],
+    "pair-A04": [
+      "F04",
+      "M04"
+    ],
+    "pair-A05": [
+      "F05",
+      "M05"
+    ],
+    "pair-A06": [
+      "F06",
+      "M06"
+    ],
+    "pair-A07": [
+      "F07",
+      "M07"
+    ],
+    "pair-B01": [
+      "D01",
+      "T01"
+    ],
+    "pair-B02": [
+      "D02",
+      "T02"
+    ],
+    "pair-B03": [
+      "D03",
+      "T03"
+    ],
+    "pair-B04": [
+      "D04",
+      "T04"
+    ],
+    "pair-B05": [
+      "D05",
+      "T05"
+    ],
+    "pair-B06": [
+      "D06",
+      "T06"
+    ],
+    "pair-B07": [
+      "D07",
+      "T07"
+    ]
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Hypothesis awaiting qualification; initial guest-only, sourced soft inputs. No production builder. Require nonempty tastes and usable categories in evidence policy, not synthetic neutral values.",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "object",
+      "properties": {
+        "likes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "chinese",
+              "indian",
+              "italian",
+              "japanese",
+              "korean",
+              "mexican",
+              "thai",
+              "vietnamese"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "dislikes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "chinese",
+              "indian",
+              "italian",
+              "japanese",
+              "korean",
+              "mexican",
+              "thai",
+              "vietnamese"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "source": {
+          "const": "user_stated"
+        }
+      },
+      "required": [
+        "likes",
+        "dislikes",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "candidate": {
+      "type": "object",
+      "properties": {
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,127}$"
+          },
+          "uniqueItems": true
+        },
+        "source": {
+          "const": "overture_category"
+        },
+        "source_release": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "missing_facts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "categories"
+            ]
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "categories",
+        "source",
+        "source_release",
+        "missing_facts"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "profile",
+    "candidate"
+  ],
+  "additionalProperties": false
+}

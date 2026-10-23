@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Hypothesis awaiting qualification. Minimal offline validation projection based on the plan, not a recorded native response. Native optional metadata is outside this projection. Numeric finiteness, probability sum and score reconstruction require pure validators in makan.evals.fit. Future adapter must validate and project native responses separately. Schema reference from report: https://developers.cloudflare.com/workers-ai/models/clef-flash/schema-output.json; no network fetch in this slice.",
+  "type": "object",
+  "properties": {
+    "success": {
+      "const": true
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "const": "clef-flash"
+        },
+        "answers": {
+          "type": "object",
+          "properties": {
+            "taste_fit": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "choice"
+                },
+                "probabilities": {
+                  "type": "object",
+                  "properties": {
+                    "strong": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "partial": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "poor": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "unknown": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": [
+                    "strong",
+                    "partial",
+                    "poor",
+                    "unknown"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "type",
+                "probabilities"
+              ],
+              "additionalProperties": false
+            },
+            "fit_score": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "score"
+                },
+                "probabilities": {
+                  "type": "object",
+                  "properties": {
+                    "0": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "1": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "2": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "3": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "4": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": [
+                    "0",
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                  ],
+                  "additionalProperties": false
+                },
+                "legend": {
+                  "type": "object",
+                  "properties": {
+                    "0": {
+                      "const": "Poor match, major conflicts with tastes and little appeal."
+                    },
+                    "1": {
+                      "const": "Weak match, drawbacks outweigh appealing features."
+                    },
+                    "2": {
+                      "const": "Mixed match, meaningful appealing features and drawbacks balance."
+                    },
+                    "3": {
+                      "const": "Good match, appealing features outweigh drawbacks, with some compromise."
+                    },
+                    "4": {
+                      "const": "Excellent match, fits all stated soft tastes very well with no material drawback."
+                    }
+                  },
+                  "required": [
+                    "0",
+                    "1",
+                    "2",
+                    "3",
+                    "4"
+                  ],
+                  "additionalProperties": false
+                },
+                "score": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 4
+                }
+              },
+              "required": [
+                "type",
+                "probabilities",
+                "legend",
+                "score"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "taste_fit",
+            "fit_score"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "model",
+        "answers"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "success",
+    "result"
+  ],
+  "additionalProperties": false
+}

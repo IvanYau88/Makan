@@ -1,0 +1,488 @@
+{
+  "annotation": "Model-written construction labels, not captain or human ground truth.",
+  "version": 1,
+  "cases": {
+    "O01": {
+      "level": 3,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Spicy cuisine appeals, but popularity and long queues conflict with crowd aversion; neither preference is explicitly hard."
+    },
+    "O02": {
+      "level": 3,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Fish and two vegetable dishes provide appeal; breadth of preferred dishes and casual atmosphere are unclear. The internally qualified vegetarian description is not treated as a categorical ban on fish."
+    },
+    "O03": {
+      "level": 3,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Great sushi meets one preference and very loud seating directly conflicts with the other; loudness is not explicitly a refusal condition."
+    },
+    "O04": {
+      "level": 3,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Ramen is an appeal; average quality, $16 and a 30 minute walk create plausible compromises for a budget student, but no ceiling or walking bound is stated."
+    },
+    "O05": {
+      "level": 3,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Fine dining is a clear appeal; mixed service conflicts with an explicitly important service preference, but no absolute service requirement is given."
+    },
+    "O06": {
+      "level": 4,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Burgers and salad options support both aims; the healthier aim can be accommodated with a menu compromise."
+    },
+    "O07": {
+      "level": 4,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Thai cuisine appeals and mild options can satisfy the stated spice limit on request, leaving a minor ordering compromise rather than a verified violation."
+    },
+    "O08": {
+      "level": 3,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Kids menu supports family use; lively seating conflicts with quiet, with neither made an absolute refusal condition."
+    },
+    "O09": {
+      "level": 3,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Great espresso supports coffee preference; few outlets and busy seating compromise remote work. Need for a power socket is not explicitly absolute."
+    },
+    "O10": {
+      "level": 4,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Mexican cuisine appeals; cilantro omission meets the dislike through an explicit available accommodation."
+    },
+    "O11": {
+      "level": 3,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Halal chicken provides a compliant BBQ option; pork being the main draw limits appeal but does not prove that all meals violate halal."
+    },
+    "O12": {
+      "level": 5,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Cozy wine bar supports both the date purpose and wine preference; no material drawback is stated. Whether cozy means date-suitable is a judgement."
+    },
+    "F01": {
+      "level": 5,
+      "tier": "fit",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly met; no stated drawback or hard violation."
+    },
+    "M01": {
+      "level": 1,
+      "tier": "miss",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly opposed; no stated appealing feature. Preferences are soft, not refusal conditions."
+    },
+    "F02": {
+      "level": 5,
+      "tier": "fit",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly met; no stated drawback or hard violation."
+    },
+    "M02": {
+      "level": 1,
+      "tier": "miss",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly opposed; no stated appealing feature. Preferences are soft, not refusal conditions."
+    },
+    "F03": {
+      "level": 5,
+      "tier": "fit",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly met; no stated drawback or hard violation."
+    },
+    "M03": {
+      "level": 1,
+      "tier": "miss",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly opposed; no stated appealing feature. Preferences are soft, not refusal conditions."
+    },
+    "F04": {
+      "level": 5,
+      "tier": "fit",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly met; no stated drawback or hard violation."
+    },
+    "M04": {
+      "level": 1,
+      "tier": "miss",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly opposed; no stated appealing feature. Preferences are soft, not refusal conditions."
+    },
+    "F05": {
+      "level": 5,
+      "tier": "fit",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly met; no stated drawback or hard violation."
+    },
+    "M05": {
+      "level": 1,
+      "tier": "miss",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly opposed; no stated appealing feature. Preferences are soft, not refusal conditions."
+    },
+    "F06": {
+      "level": 5,
+      "tier": "fit",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly met; no stated drawback or hard violation."
+    },
+    "M06": {
+      "level": 1,
+      "tier": "miss",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly opposed; no stated appealing feature. Preferences are soft, not refusal conditions."
+    },
+    "F07": {
+      "level": 5,
+      "tier": "fit",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly met; no stated drawback or hard violation."
+    },
+    "M07": {
+      "level": 1,
+      "tier": "miss",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly opposed; no stated appealing feature. Preferences are soft, not refusal conditions."
+    },
+    "F08": {
+      "level": 5,
+      "tier": "fit",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly met; no stated drawback or hard violation."
+    },
+    "M08": {
+      "level": 1,
+      "tier": "miss",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly opposed; no stated appealing feature. Preferences are soft, not refusal conditions."
+    },
+    "F09": {
+      "level": 5,
+      "tier": "fit",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly met; no stated drawback or hard violation."
+    },
+    "M09": {
+      "level": 1,
+      "tier": "miss",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly opposed; no stated appealing feature. Preferences are soft, not refusal conditions."
+    },
+    "F10": {
+      "level": 5,
+      "tier": "fit",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly met; no stated drawback or hard violation."
+    },
+    "M10": {
+      "level": 1,
+      "tier": "miss",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly opposed; no stated appealing feature. Preferences are soft, not refusal conditions."
+    },
+    "F11": {
+      "level": 5,
+      "tier": "fit",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly met; no stated drawback or hard violation."
+    },
+    "M11": {
+      "level": 1,
+      "tier": "miss",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly opposed; no stated appealing feature. Preferences are soft, not refusal conditions."
+    },
+    "F12": {
+      "level": 5,
+      "tier": "fit",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly met; no stated drawback or hard violation."
+    },
+    "M12": {
+      "level": 1,
+      "tier": "miss",
+      "flag": "anchor",
+      "reason": "All three stated preferences are explicitly opposed; no stated appealing feature. Preferences are soft, not refusal conditions."
+    },
+    "D01": {
+      "level": 2,
+      "tier": "dealbreaker",
+      "flag": "anchor",
+      "reason": "Budget ceiling violated by $10; sushi and quiet appeal."
+    },
+    "T01": {
+      "level": 4,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Two explicit appeals and one explicitly tolerable minor compromise; level 4 by construction."
+    },
+    "D02": {
+      "level": 2,
+      "tier": "dealbreaker",
+      "flag": "anchor",
+      "reason": "Queue bound violated by 15 minutes; pizza and lively seating appeal."
+    },
+    "T02": {
+      "level": 4,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Two explicit appeals and one explicitly tolerable minor compromise; level 4 by construction."
+    },
+    "D03": {
+      "level": 2,
+      "tier": "dealbreaker",
+      "flag": "anchor",
+      "reason": "Travel bound violated by 0.7 miles; ramen and counter seating appeal."
+    },
+    "T03": {
+      "level": 4,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Two explicit appeals and one explicitly tolerable minor compromise; level 4 by construction."
+    },
+    "D04": {
+      "level": 2,
+      "tier": "dealbreaker",
+      "flag": "anchor",
+      "reason": "Required step-free entry absent; curry and mild seasoning appeal."
+    },
+    "T04": {
+      "level": 4,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Two explicit appeals and one explicitly tolerable minor compromise; level 4 by construction."
+    },
+    "D05": {
+      "level": 2,
+      "tier": "dealbreaker",
+      "flag": "anchor",
+      "reason": "Required booking unavailable; burgers and outdoor seating appeal."
+    },
+    "T05": {
+      "level": 4,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Two explicit appeals and one explicitly tolerable minor compromise; level 4 by construction."
+    },
+    "D06": {
+      "level": 2,
+      "tier": "dealbreaker",
+      "flag": "anchor",
+      "reason": "Meal duration violates absolute time bound; pasta and table service appeal."
+    },
+    "T06": {
+      "level": 4,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Two explicit appeals and one explicitly tolerable minor compromise; level 4 by construction."
+    },
+    "D07": {
+      "level": 2,
+      "tier": "dealbreaker",
+      "flag": "anchor",
+      "reason": "Absolute smoke refusal violated; tacos and fiery seasoning appeal."
+    },
+    "T07": {
+      "level": 3,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Two explicit appeals and one explicitly tolerable material compromise; level 3 by construction."
+    },
+    "D08": {
+      "level": 2,
+      "tier": "dealbreaker",
+      "flag": "anchor",
+      "reason": "Absolute live-music refusal violated; dumplings and counter seating appeal."
+    },
+    "T08": {
+      "level": 3,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Two explicit appeals and one explicitly tolerable material compromise; level 3 by construction."
+    },
+    "D09": {
+      "level": 2,
+      "tier": "dealbreaker",
+      "flag": "anchor",
+      "reason": "Required table time unavailable; steak and dim lighting appeal."
+    },
+    "T09": {
+      "level": 3,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Two explicit appeals and one explicitly tolerable material compromise; level 3 by construction."
+    },
+    "D10": {
+      "level": 2,
+      "tier": "dealbreaker",
+      "flag": "anchor",
+      "reason": "Required restroom unavailable; salads and bright seating appeal."
+    },
+    "T10": {
+      "level": 3,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Two explicit appeals and one explicitly tolerable material compromise; level 3 by construction."
+    },
+    "D11": {
+      "level": 2,
+      "tier": "dealbreaker",
+      "flag": "anchor",
+      "reason": "Only available payment method rejected; sandwiches and takeaway appeal."
+    },
+    "T11": {
+      "level": 3,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Two explicit appeals and one explicitly tolerable material compromise; level 3 by construction."
+    },
+    "D12": {
+      "level": 2,
+      "tier": "dealbreaker",
+      "flag": "anchor",
+      "reason": "Required breakfast time impossible; pancakes and table seating appeal."
+    },
+    "T12": {
+      "level": 3,
+      "tier": "tradeoff",
+      "flag": "judgement",
+      "reason": "Two explicit appeals and one explicitly tolerable material compromise; level 3 by construction."
+    }
+  },
+  "matched_pairs": [
+    {
+      "higher": "F01",
+      "lower": "M01",
+      "family": "pair-A01"
+    },
+    {
+      "higher": "F02",
+      "lower": "M02",
+      "family": "pair-A02"
+    },
+    {
+      "higher": "F03",
+      "lower": "M03",
+      "family": "pair-A03"
+    },
+    {
+      "higher": "F04",
+      "lower": "M04",
+      "family": "pair-A04"
+    },
+    {
+      "higher": "F05",
+      "lower": "M05",
+      "family": "pair-A05"
+    },
+    {
+      "higher": "F06",
+      "lower": "M06",
+      "family": "pair-A06"
+    },
+    {
+      "higher": "F07",
+      "lower": "M07",
+      "family": "pair-A07"
+    },
+    {
+      "higher": "F08",
+      "lower": "M08",
+      "family": "pair-A08"
+    },
+    {
+      "higher": "F09",
+      "lower": "M09",
+      "family": "pair-A09"
+    },
+    {
+      "higher": "F10",
+      "lower": "M10",
+      "family": "pair-A10"
+    },
+    {
+      "higher": "F11",
+      "lower": "M11",
+      "family": "pair-A11"
+    },
+    {
+      "higher": "F12",
+      "lower": "M12",
+      "family": "pair-A12"
+    },
+    {
+      "higher": "T01",
+      "lower": "D01",
+      "family": "pair-B01"
+    },
+    {
+      "higher": "T02",
+      "lower": "D02",
+      "family": "pair-B02"
+    },
+    {
+      "higher": "T03",
+      "lower": "D03",
+      "family": "pair-B03"
+    },
+    {
+      "higher": "T04",
+      "lower": "D04",
+      "family": "pair-B04"
+    },
+    {
+      "higher": "T05",
+      "lower": "D05",
+      "family": "pair-B05"
+    },
+    {
+      "higher": "T06",
+      "lower": "D06",
+      "family": "pair-B06"
+    },
+    {
+      "higher": "T07",
+      "lower": "D07",
+      "family": "pair-B07"
+    },
+    {
+      "higher": "T08",
+      "lower": "D08",
+      "family": "pair-B08"
+    },
+    {
+      "higher": "T09",
+      "lower": "D09",
+      "family": "pair-B09"
+    },
+    {
+      "higher": "T10",
+      "lower": "D10",
+      "family": "pair-B10"
+    },
+    {
+      "higher": "T11",
+      "lower": "D11",
+      "family": "pair-B11"
+    },
+    {
+      "higher": "T12",
+      "lower": "D12",
+      "family": "pair-B12"
+    }
+  ]
+}

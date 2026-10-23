@@ -1,0 +1,37 @@
+{
+  "version": "isolated-single-question-v1",
+  "status": "historical_control_only",
+  "model": "@cf/cloudflare/clef-flash",
+  "selector": "clef-flash",
+  "questions": {
+    "fit_score": {
+      "type": "score",
+      "instructions": "How well does this place suit this diner overall? Weigh the stated preferences, benefits and drawbacks. Use only the supplied facts. Judge fit, not certainty about the facts.",
+      "criteria": [
+        "Poor match: major conflicts with the diner's preferences and little appeal.",
+        "Weak match: drawbacks outweigh the appealing features.",
+        "Mixed match: meaningful appealing features and meaningful drawbacks balance out.",
+        "Good match: appealing features outweigh the drawbacks, with some compromise.",
+        "Perfect match: fits all stated preferences very well with no material drawback."
+      ]
+    }
+  },
+  "state_fields": [
+    "diner",
+    "place"
+  ],
+  "encoding": {
+    "state": "json.dumps(state, ensure_ascii=False), default separators, diner then place",
+    "request": "json.dumps(request, ensure_ascii=False, separators=(\",\", \":\")).encode(\"utf-8\"); model, state, questions in that order"
+  },
+  "labels": "Model-written construction labels, not human ground truth or measured diner satisfaction. labels.json is copied whole, including labels and matched pairs outside the selected 40 cases.",
+  "input_policy": "Retain hard-limit text only in this historical lane. This is not a production soft-state builder. No label certifies inputs modified to remove hard fields.",
+  "metrics": {
+    "expected_level": "1 + sum(i*p_i) after normalization",
+    "rounded_level": "min(5, floor(expected_level + 0.5))",
+    "normalized_mae": "mean(abs(expected_level - label) / 4)",
+    "expected_exact": 28,
+    "cases": 40,
+    "expected_normalized_mae_6dp": 0.102837
+  }
+}

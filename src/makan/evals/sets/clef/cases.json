@@ -1,0 +1,562 @@
+[
+  {
+    "id": "O01",
+    "diner": "likes spicy food, mid budget, hates crowds",
+    "place": "popular Sichuan spot, long queues, $22 per person",
+    "family": "original-01",
+    "original": true,
+    "variants": []
+  },
+  {
+    "id": "O02",
+    "diner": "vegetarian but eats fish sometimes, likes casual",
+    "place": "seafood grill with two veggie dishes, $25",
+    "family": "original-02",
+    "original": true,
+    "variants": []
+  },
+  {
+    "id": "O03",
+    "diner": "loves sushi, hates loud places",
+    "place": "great sushi counter but very loud, $40",
+    "family": "original-03",
+    "original": true,
+    "variants": []
+  },
+  {
+    "id": "O04",
+    "diner": "budget student, loves ramen",
+    "place": "average ramen shop, $16, 30 minute walk",
+    "family": "original-04",
+    "original": true,
+    "variants": []
+  },
+  {
+    "id": "O05",
+    "diner": "likes fine dining, picky about service",
+    "place": "Michelin-listed tasting menu, mixed service reviews, $120",
+    "family": "original-05",
+    "original": true,
+    "variants": []
+  },
+  {
+    "id": "O06",
+    "diner": "loves burgers, trying to eat healthier",
+    "place": "gourmet burger place with salad options, $18",
+    "family": "original-06",
+    "original": true,
+    "variants": []
+  },
+  {
+    "id": "O07",
+    "diner": "likes Thai food, mild spice only",
+    "place": "Thai restaurant known for very hot dishes, mild options on request, $20",
+    "family": "original-07",
+    "original": true,
+    "variants": []
+  },
+  {
+    "id": "O08",
+    "diner": "family with kids, wants quiet",
+    "place": "lively Italian pizzeria with kids menu, $24 per person",
+    "family": "original-08",
+    "original": true,
+    "variants": []
+  },
+  {
+    "id": "O09",
+    "diner": "coffee lover, works remotely",
+    "place": "busy cafe with great espresso, few power outlets, $8",
+    "family": "original-09",
+    "original": true,
+    "variants": []
+  },
+  {
+    "id": "O10",
+    "diner": "likes Mexican, dislikes cilantro",
+    "place": "taqueria that puts cilantro on most dishes, can omit, $14",
+    "family": "original-10",
+    "original": true,
+    "variants": []
+  },
+  {
+    "id": "O11",
+    "diner": "halal only, likes BBQ",
+    "place": "BBQ joint, halal chicken only, pork ribs main draw, $28",
+    "family": "original-11",
+    "original": true,
+    "variants": []
+  },
+  {
+    "id": "O12",
+    "diner": "wants a first date spot, likes wine",
+    "place": "cozy wine bar with small plates, $55 per person",
+    "family": "original-12",
+    "original": true,
+    "variants": []
+  },
+  {
+    "id": "F01",
+    "diner": "likes sushi; prefers quiet seating; prefers meals around $30",
+    "place": "sushi only; quiet seating; $30 per meal; no queue; 0.4 miles away",
+    "family": "pair-A01",
+    "original": false,
+    "variants": [
+      {
+        "id": "p1",
+        "diner": "enjoys sushi. would prefer low-noise seating. would prefer meals around $30.",
+        "place": "low-noise seating. $30 per meal. no queue. 0.4 miles away. sushi only."
+      },
+      {
+        "id": "p2",
+        "diner": "is fond of sushi. would like meals around $30. would like calm and quiet seating.",
+        "place": "calm and quiet seating. sushi only. 0.4 miles away. no queue. $30 per meal."
+      },
+      {
+        "id": "p3",
+        "diner": "has a preference for meals around $30. has a liking for sushi. has a preference for quiet and calm seating.",
+        "place": "no queue. 0.4 miles away. sushi only. quiet and calm seating. $30 per meal."
+      }
+    ]
+  },
+  {
+    "id": "M01",
+    "diner": "likes pizza; prefers loud seating; prefers meals around $10",
+    "place": "sushi only; quiet seating; $30 per meal; no queue; 0.4 miles away",
+    "family": "pair-A01",
+    "original": false,
+    "variants": [
+      {
+        "id": "p1",
+        "diner": "enjoys pizza. would prefer noisy seating. would prefer meals around $10.",
+        "place": "low-noise seating. $30 per meal. no queue. 0.4 miles away. sushi only."
+      },
+      {
+        "id": "p2",
+        "diner": "is fond of pizza. would like meals around $10. would like high-noise seating.",
+        "place": "calm and quiet seating. sushi only. 0.4 miles away. no queue. $30 per meal."
+      },
+      {
+        "id": "p3",
+        "diner": "has a preference for meals around $10. has a liking for pizza. has a preference for noisy seating.",
+        "place": "no queue. 0.4 miles away. sushi only. quiet and calm seating. $30 per meal."
+      }
+    ]
+  },
+  {
+    "id": "F02",
+    "diner": "likes pizza; prefers lively seating; prefers meals around $18",
+    "place": "pizza only; lively seating; $18 per meal; no queue; 0.2 miles away",
+    "family": "pair-A02",
+    "original": false,
+    "variants": [
+      {
+        "id": "p1",
+        "diner": "enjoys pizza. would prefer lively seating. would prefer meals around $18.",
+        "place": "lively seating. $18 per meal. no queue. 0.2 miles away. pizza only."
+      },
+      {
+        "id": "p2",
+        "diner": "is fond of pizza. would like meals around $18. would like lively seating.",
+        "place": "lively seating. pizza only. 0.2 miles away. no queue. $18 per meal."
+      },
+      {
+        "id": "p3",
+        "diner": "has a preference for meals around $18. has a liking for pizza. has a preference for lively seating.",
+        "place": "no queue. 0.2 miles away. pizza only. lively seating. $18 per meal."
+      }
+    ]
+  },
+  {
+    "id": "M02",
+    "diner": "likes sushi; prefers quiet seating; prefers meals around $45",
+    "place": "pizza only; lively seating; $18 per meal; no queue; 0.2 miles away",
+    "family": "pair-A02",
+    "original": false,
+    "variants": [
+      {
+        "id": "p1",
+        "diner": "enjoys sushi. would prefer low-noise seating. would prefer meals around $45.",
+        "place": "lively seating. $18 per meal. no queue. 0.2 miles away. pizza only."
+      },
+      {
+        "id": "p2",
+        "diner": "is fond of sushi. would like meals around $45. would like calm and quiet seating.",
+        "place": "lively seating. pizza only. 0.2 miles away. no queue. $18 per meal."
+      },
+      {
+        "id": "p3",
+        "diner": "has a preference for meals around $45. has a liking for sushi. has a preference for quiet and calm seating.",
+        "place": "no queue. 0.2 miles away. pizza only. lively seating. $18 per meal."
+      }
+    ]
+  },
+  {
+    "id": "F03",
+    "diner": "likes ramen; prefers counter seating; prefers meals around $16",
+    "place": "ramen only; counter seating only; $16 per meal; 5 minute queue; 0.3 miles away",
+    "family": "pair-A03",
+    "original": false,
+    "variants": [
+      {
+        "id": "p1",
+        "diner": "enjoys ramen. would prefer counter seating. would prefer meals around $16.",
+        "place": "counter seating only. $16 per meal. 5 minute queue. 0.3 miles away. ramen only."
+      },
+      {
+        "id": "p2",
+        "diner": "is fond of ramen. would like meals around $16. would like counter seating.",
+        "place": "counter seating only. ramen only. 0.3 miles away. 5 minute queue. $16 per meal."
+      },
+      {
+        "id": "p3",
+        "diner": "has a preference for meals around $16. has a liking for ramen. has a preference for counter seating.",
+        "place": "5 minute queue. 0.3 miles away. ramen only. counter seating only. $16 per meal."
+      }
+    ]
+  },
+  {
+    "id": "M03",
+    "diner": "likes pasta; prefers table seating; prefers meals around $35",
+    "place": "ramen only; counter seating only; $16 per meal; 5 minute queue; 0.3 miles away",
+    "family": "pair-A03",
+    "original": false,
+    "variants": []
+  },
+  {
+    "id": "F04",
+    "diner": "likes lentil curry; prefers mild food; prefers meals around $14",
+    "place": "lentil curry only; mild seasoning only; $14 per meal; no queue; 0.5 miles away",
+    "family": "pair-A04",
+    "original": false,
+    "variants": [
+      {
+        "id": "p1",
+        "diner": "enjoys lentil curry. would prefer mild food. would prefer meals around $14.",
+        "place": "mild seasoning only. $14 per meal. no queue. 0.5 miles away. lentil curry only."
+      },
+      {
+        "id": "p2",
+        "diner": "is fond of lentil curry. would like meals around $14. would like mild food.",
+        "place": "mild seasoning only. lentil curry only. 0.5 miles away. no queue. $14 per meal."
+      },
+      {
+        "id": "p3",
+        "diner": "has a preference for meals around $14. has a liking for lentil curry. has a preference for mild food.",
+        "place": "no queue. 0.5 miles away. lentil curry only. mild seasoning only. $14 per meal."
+      }
+    ]
+  },
+  {
+    "id": "M04",
+    "diner": "likes beef stew; prefers fiery food; prefers meals around $40",
+    "place": "lentil curry only; mild seasoning only; $14 per meal; no queue; 0.5 miles away",
+    "family": "pair-A04",
+    "original": false,
+    "variants": []
+  },
+  {
+    "id": "F05",
+    "diner": "likes burgers; prefers outdoor seating; prefers meals around $20",
+    "place": "burgers only; outdoor seating only; $20 per meal; no queue; 600 feet away",
+    "family": "pair-A05",
+    "original": false,
+    "variants": [
+      {
+        "id": "p1",
+        "diner": "enjoys burgers. would prefer outdoor seating. would prefer meals around $20.",
+        "place": "outdoor seating only. $20 per meal. no queue. 600 feet away. burgers only."
+      },
+      {
+        "id": "p2",
+        "diner": "is fond of burgers. would like meals around $20. would like outdoor seating.",
+        "place": "outdoor seating only. burgers only. 600 feet away. no queue. $20 per meal."
+      },
+      {
+        "id": "p3",
+        "diner": "has a preference for meals around $20. has a liking for burgers. has a preference for outdoor seating.",
+        "place": "no queue. 600 feet away. burgers only. outdoor seating only. $20 per meal."
+      }
+    ]
+  },
+  {
+    "id": "M05",
+    "diner": "likes noodles; prefers indoor seating; prefers meals around $8",
+    "place": "burgers only; outdoor seating only; $20 per meal; no queue; 600 feet away",
+    "family": "pair-A05",
+    "original": false,
+    "variants": []
+  },
+  {
+    "id": "F06",
+    "diner": "likes pasta; prefers table service; prefers meals around $28",
+    "place": "pasta only; table service only; $28 per meal; no queue; 0.6 miles away",
+    "family": "pair-A06",
+    "original": false,
+    "variants": []
+  },
+  {
+    "id": "M06",
+    "diner": "likes sandwiches; prefers counter service; prefers meals around $12",
+    "place": "pasta only; table service only; $28 per meal; no queue; 0.6 miles away",
+    "family": "pair-A06",
+    "original": false,
+    "variants": []
+  },
+  {
+    "id": "F07",
+    "diner": "likes tacos; prefers fiery food; prefers meals around $15",
+    "place": "tacos only; fiery seasoning only; $15 per meal; no queue; 0.3 miles away",
+    "family": "pair-A07",
+    "original": false,
+    "variants": []
+  },
+  {
+    "id": "M07",
+    "diner": "likes dumplings; prefers mild food; prefers meals around $40",
+    "place": "tacos only; fiery seasoning only; $15 per meal; no queue; 0.3 miles away",
+    "family": "pair-A07",
+    "original": false,
+    "variants": []
+  },
+  {
+    "id": "D01",
+    "diner": "likes sushi; prefers quiet seating; will not spend more than $25",
+    "place": "sushi menu; quiet seating; $35 per meal; no queue; 0.3 miles away",
+    "family": "pair-B01",
+    "original": false,
+    "variants": [
+      {
+        "id": "p1",
+        "diner": "enjoys sushi. would prefer low-noise seating. will not spend more than $25.",
+        "place": "low-noise seating. $35 per meal. no queue. 0.3 miles away. sushi menu."
+      },
+      {
+        "id": "p2",
+        "diner": "is fond of sushi. will not spend more than $25. would like calm and quiet seating.",
+        "place": "calm and quiet seating. sushi menu. 0.3 miles away. no queue. $35 per meal."
+      },
+      {
+        "id": "p3",
+        "diner": "will not spend more than $25. has a liking for sushi. has a preference for quiet and calm seating.",
+        "place": "no queue. 0.3 miles away. sushi menu. quiet and calm seating. $35 per meal."
+      }
+    ]
+  },
+  {
+    "id": "T01",
+    "diner": "likes sushi; prefers quiet seating; prefers $25 but will spend $35 for sushi",
+    "place": "sushi menu; quiet seating; $35 per meal; no queue; 0.3 miles away",
+    "family": "pair-B01",
+    "original": false,
+    "variants": [
+      {
+        "id": "p1",
+        "diner": "enjoys sushi. would prefer low-noise seating. would prefer $25 but will spend $35 for sushi.",
+        "place": "low-noise seating. $35 per meal. no queue. 0.3 miles away. sushi menu."
+      },
+      {
+        "id": "p2",
+        "diner": "is fond of sushi. would like $25 but will spend $35 for sushi. would like calm and quiet seating.",
+        "place": "calm and quiet seating. sushi menu. 0.3 miles away. no queue. $35 per meal."
+      },
+      {
+        "id": "p3",
+        "diner": "has a preference for $25 but will spend $35 for sushi. has a liking for sushi. has a preference for quiet and calm seating.",
+        "place": "no queue. 0.3 miles away. sushi menu. quiet and calm seating. $35 per meal."
+      }
+    ]
+  },
+  {
+    "id": "D02",
+    "diner": "likes pizza; prefers lively seating; will not queue more than 10 minutes",
+    "place": "pizza menu; lively seating; 25 minute queue; $18 per meal; 0.2 miles away",
+    "family": "pair-B02",
+    "original": false,
+    "variants": [
+      {
+        "id": "p1",
+        "diner": "enjoys pizza. would prefer lively seating. will not queue more than 10 minutes.",
+        "place": "lively seating. 25 minute queue. $18 per meal. 0.2 miles away. pizza menu."
+      },
+      {
+        "id": "p2",
+        "diner": "is fond of pizza. will not queue more than 10 minutes. would like lively seating.",
+        "place": "lively seating. pizza menu. 0.2 miles away. $18 per meal. 25 minute queue."
+      },
+      {
+        "id": "p3",
+        "diner": "will not queue more than 10 minutes. has a liking for pizza. has a preference for lively seating.",
+        "place": "$18 per meal. 0.2 miles away. pizza menu. lively seating. 25 minute queue."
+      }
+    ]
+  },
+  {
+    "id": "T02",
+    "diner": "likes pizza; prefers lively seating; prefers no queue but accepts 25 minutes for pizza",
+    "place": "pizza menu; lively seating; 25 minute queue; $18 per meal; 0.2 miles away",
+    "family": "pair-B02",
+    "original": false,
+    "variants": [
+      {
+        "id": "p1",
+        "diner": "enjoys pizza. would prefer lively seating. would prefer no queue but accepts 25 minutes for pizza.",
+        "place": "lively seating. 25 minute queue. $18 per meal. 0.2 miles away. pizza menu."
+      },
+      {
+        "id": "p2",
+        "diner": "is fond of pizza. would like no queue but accepts 25 minutes for pizza. would like lively seating.",
+        "place": "lively seating. pizza menu. 0.2 miles away. $18 per meal. 25 minute queue."
+      },
+      {
+        "id": "p3",
+        "diner": "has a preference for no queue but accepts 25 minutes for pizza. has a liking for pizza. has a preference for lively seating.",
+        "place": "$18 per meal. 0.2 miles away. pizza menu. lively seating. 25 minute queue."
+      }
+    ]
+  },
+  {
+    "id": "D03",
+    "diner": "likes ramen; prefers counter seating; will not travel farther than 0.5 miles",
+    "place": "ramen menu; counter seating; 1.2 miles away; $16 per meal; no queue",
+    "family": "pair-B03",
+    "original": false,
+    "variants": [
+      {
+        "id": "p1",
+        "diner": "enjoys ramen. would prefer counter seating. will not travel farther than 0.5 miles.",
+        "place": "counter seating. 1.2 miles away. $16 per meal. no queue. ramen menu."
+      },
+      {
+        "id": "p2",
+        "diner": "is fond of ramen. will not travel farther than 0.5 miles. would like counter seating.",
+        "place": "counter seating. ramen menu. no queue. $16 per meal. 1.2 miles away."
+      },
+      {
+        "id": "p3",
+        "diner": "will not travel farther than 0.5 miles. has a liking for ramen. has a preference for counter seating.",
+        "place": "$16 per meal. no queue. ramen menu. counter seating. 1.2 miles away."
+      }
+    ]
+  },
+  {
+    "id": "T03",
+    "diner": "likes ramen; prefers counter seating; prefers nearby but accepts 1.2 miles for ramen",
+    "place": "ramen menu; counter seating; 1.2 miles away; $16 per meal; no queue",
+    "family": "pair-B03",
+    "original": false,
+    "variants": [
+      {
+        "id": "p1",
+        "diner": "enjoys ramen. would prefer counter seating. would prefer nearby but accepts 1.2 miles for ramen.",
+        "place": "counter seating. 1.2 miles away. $16 per meal. no queue. ramen menu."
+      },
+      {
+        "id": "p2",
+        "diner": "is fond of ramen. would like nearby but accepts 1.2 miles for ramen. would like counter seating.",
+        "place": "counter seating. ramen menu. no queue. $16 per meal. 1.2 miles away."
+      },
+      {
+        "id": "p3",
+        "diner": "has a preference for nearby but accepts 1.2 miles for ramen. has a liking for ramen. has a preference for counter seating.",
+        "place": "$16 per meal. no queue. ramen menu. counter seating. 1.2 miles away."
+      }
+    ]
+  },
+  {
+    "id": "D04",
+    "diner": "likes curry; prefers mild food; needs step-free entry and cannot use stairs",
+    "place": "mild curry menu; entry requires 12 stairs with no lift; $14 per meal; no queue; 0.3 miles away",
+    "family": "pair-B04",
+    "original": false,
+    "variants": [
+      {
+        "id": "p1",
+        "diner": "enjoys curry. would prefer mild food. needs step-free entry and cannot use stairs.",
+        "place": "entry requires 12 stairs with no lift. $14 per meal. no queue. 0.3 miles away. mild curry menu."
+      },
+      {
+        "id": "p2",
+        "diner": "is fond of curry. needs step-free entry and cannot use stairs. would like mild food.",
+        "place": "entry requires 12 stairs with no lift. mild curry menu. 0.3 miles away. no queue. $14 per meal."
+      },
+      {
+        "id": "p3",
+        "diner": "needs step-free entry and cannot use stairs. has a liking for curry. has a preference for mild food.",
+        "place": "no queue. 0.3 miles away. mild curry menu. entry requires 12 stairs with no lift. $14 per meal."
+      }
+    ]
+  },
+  {
+    "id": "T04",
+    "diner": "likes curry; prefers mild food; prefers step-free entry but can and will use stairs",
+    "place": "mild curry menu; entry requires 12 stairs with no lift; $14 per meal; no queue; 0.3 miles away",
+    "family": "pair-B04",
+    "original": false,
+    "variants": [
+      {
+        "id": "p1",
+        "diner": "enjoys curry. would prefer mild food. would prefer step-free entry but can and will use stairs.",
+        "place": "entry requires 12 stairs with no lift. $14 per meal. no queue. 0.3 miles away. mild curry menu."
+      },
+      {
+        "id": "p2",
+        "diner": "is fond of curry. would like step-free entry but can and will use stairs. would like mild food.",
+        "place": "entry requires 12 stairs with no lift. mild curry menu. 0.3 miles away. no queue. $14 per meal."
+      },
+      {
+        "id": "p3",
+        "diner": "has a preference for step-free entry but can and will use stairs. has a liking for curry. has a preference for mild food.",
+        "place": "no queue. 0.3 miles away. mild curry menu. entry requires 12 stairs with no lift. $14 per meal."
+      }
+    ]
+  },
+  {
+    "id": "D05",
+    "diner": "likes burgers; prefers outdoor seating; requires a confirmed booking",
+    "place": "burger menu; outdoor seating; walk-ins only with no booking; $20 per meal; no queue; 0.2 miles away",
+    "family": "pair-B05",
+    "original": false,
+    "variants": []
+  },
+  {
+    "id": "T05",
+    "diner": "likes burgers; prefers outdoor seating; prefers booking but accepts walk-ins",
+    "place": "burger menu; outdoor seating; walk-ins only with no booking; $20 per meal; no queue; 0.2 miles away",
+    "family": "pair-B05",
+    "original": false,
+    "variants": []
+  },
+  {
+    "id": "D06",
+    "diner": "likes pasta; prefers table service; must finish the meal within 30 minutes",
+    "place": "pasta menu; table service; meals take 60 minutes; $28 per meal; no queue; 0.4 miles away",
+    "family": "pair-B06",
+    "original": false,
+    "variants": []
+  },
+  {
+    "id": "T06",
+    "diner": "likes pasta; prefers table service; prefers a short meal but accepts 60 minutes",
+    "place": "pasta menu; table service; meals take 60 minutes; $28 per meal; no queue; 0.4 miles away",
+    "family": "pair-B06",
+    "original": false,
+    "variants": []
+  },
+  {
+    "id": "D07",
+    "diner": "likes tacos; prefers fiery food; will not eat where smoking is allowed",
+    "place": "fiery tacos menu; smoking is allowed indoors; visibly smoky air; $15 per meal; no queue; 0.3 miles away",
+    "family": "pair-B07",
+    "original": false,
+    "variants": []
+  },
+  {
+    "id": "T07",
+    "diner": "likes tacos; prefers fiery food; dislikes smoky air but will tolerate it for tacos",
+    "place": "fiery tacos menu; smoking is allowed indoors; visibly smoky air; $15 per meal; no queue; 0.3 miles away",
+    "family": "pair-B07",
+    "original": false,
+    "variants": []
+  }
+]

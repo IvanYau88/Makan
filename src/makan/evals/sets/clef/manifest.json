@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "status": "historical_archive_and_unqualified_proposal",
+  "hash_algorithm": "sha256",
+  "content_hash_rule": "SHA-256 of UTF-8 canonical JSON of this manifest with content_sha256 omitted (sort_keys=True, ensure_ascii=False, separators=(comma,colon)). File hashes cover exact bytes.",
+  "provenance": {
+    "source_revision": "97c1ed00e2df4ce7db9026be75629336cb2b8479",
+    "cases": "data/makan-decision-model-pick/scratch/inputs/cases.json",
+    "labels": "data/makan-decision-model-pick/scratch/labels.json",
+    "source_reports": {
+      "data/makan-clef-integration-plan/report.md": "27c93d55251c1cd7af0bdb5134cc3159f332ef16c365f37e65773e0501da5f9e",
+      "data/makan-clef-flash-test/report.md": "4ebff880f5e3f5c5ee74fab8bcf65c0b7cb45a745f1a8c1f501c8ceeb6e92a73"
+    },
+    "annotation": "Model-written construction labels; no independent human qualification.",
+    "raw_response_available": false
+  },
+  "files": {
+    "src/makan/evals/sets/clef/baseline.json": "38616189d1cdf18f612c4c47a9cc79ac0e8b9db4f378d46e6e57ed731ad42e20",
+    "src/makan/evals/sets/clef/cases.json": "49e24d6ac40045628f4fdb2bb7574ea620ecfb50d4927da59fa27c33273f6900",
+    "src/makan/evals/sets/clef/contract.json": "b01dd3dd02100238ac8bff7db5978526c7c37a0f218b135041b086d9c5ded433",
+    "src/makan/evals/sets/clef/families.json": "f03b066a2d88a0c5a94fc9745326234c487b11e83a3e191667593d332b906849",
+    "src/makan/evals/sets/clef/labels.json": "773e600f286b7445966ed9cfba43d1963f69b91fdedd1e96cac0b8cb105d1f75",
+    "src/makan/evals/sets/clef/response.schema.json": "6d62103ab863b6842390a128ea5e0404901a430d113f557939632188a9100064",
+    "src/makan/evals/sets/clef/state.schema.json": "042354a9ff9a00f7d1b39bd158a2f68f75f1ac7d371a3b6399dca443e740351e",
+    "tests/fixtures/clef/isolated-vectors.json": "ba01f6d8a6dbdeb3b128239cbb1184d81880af5c9f5a63b28975da0d73a310c9",
+    "src/makan/evals/sets/clef/README.md": "a5dd2bebe7441c806066161016a26e708fa1b84be15f80c7bb818e974d200cdd"
+  },
+  "content_sha256": "dce0bdf6b62813c26d8447dcd0c31eac0e5633a094aebc126b0fa3c6bf1f0641"
+}
