@@ -26,6 +26,32 @@ DEFAULT_MAP_ATTRIBUTION_URL = "https://www.openstreetmap.org/copyright"
 SCORER_BACKENDS = ("none", "logprob", "structured", "jev", "fake")
 # These call a hosted model, so they need a configured model name and an API key.
 HOSTED_SCORER_BACKENDS = ("logprob", "structured", "jev")
+CLEF_FIT_MODEL = "@cf/cloudflare/clef-flash"
+
+
+def clef_selector(model: str) -> str:
+    """Only the selected, frozen model is supported; never substitute another endpoint."""
+    if model != CLEF_FIT_MODEL:
+        raise ConfigError("MAKAN_FIT_MODEL must explicitly select @cf/cloudflare/clef-flash")
+    return model.rsplit("/", 1)[1]
+
+
+@dataclass(frozen=True)
+class FitConfig:
+    """Separate from request-signal scoring; selecting Clef does not wire it into the app."""
+
+    backend: str = "local"
+    model: str = ""
+    cloudflare_account_id: str = field(default="", repr=False)
+    cloudflare_api_token: str = field(default="", repr=False)
+
+    def __post_init__(self) -> None:
+        if self.backend not in ("local", "clef"):
+            raise ConfigError("MAKAN_FIT_BACKEND must be local or clef")
+        if self.backend == "clef":
+            clef_selector(self.model)
+        elif self.model:
+            raise ConfigError("MAKAN_FIT_MODEL requires MAKAN_FIT_BACKEND=clef")
 
 
 @dataclass(frozen=True)
@@ -102,6 +128,7 @@ class Config:
     groups_enabled: bool = True  # False removes the group page and its endpoints
     accounts_enabled: bool = True  # False leaves everyone a guest, whatever SUPABASE_URL says
     fit_enabled: bool = False  # opt-in local cuisine estimates; never enables a model
+    fit: FitConfig = field(default_factory=FitConfig)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -170,6 +197,12 @@ class Config:
             groups_enabled=_flag(env, "MAKAN_GROUPS_ENABLED", True),
             accounts_enabled=accounts_enabled,
             fit_enabled=_flag(env, "MAKAN_FIT_ENABLED", False),
+            fit=FitConfig(
+                backend=env.get("MAKAN_FIT_BACKEND", "").strip().lower() or "local",
+                model=env.get("MAKAN_FIT_MODEL", "").strip(),
+                cloudflare_account_id=env.get("CLOUDFLARE_ACCOUNT_ID", "").strip(),
+                cloudflare_api_token=env.get("CLOUDFLARE_API_TOKEN", "").strip(),
+            ),
         )
 
 
