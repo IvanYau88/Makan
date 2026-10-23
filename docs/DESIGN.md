@@ -1048,8 +1048,8 @@ The 70 percent routing threshold, the taste-fading speed, and the model choice a
 
 ### Frozen Clef fit contract and historical replay
 
-Cloudflare Clef-flash (`@cf/cloudflare/clef-flash`) is the selected future profile classifier, but this slice adds only an offline archive, proposed contract data and pure validation/math helpers.
-There is no transport, configuration, feature switch, product call, web change or fallback, and existing taste-fit v1 and Jev behavior are unchanged.
+The first Clef slice froze an offline archive, proposed contract data and pure validation/math helpers for the selected future profile classifier, Cloudflare Clef-flash (`@cf/cloudflare/clef-flash`).
+The archive remains unchanged as the native adapter is added separately below, with existing taste-fit v1 and Jev behavior preserved.
 `PROFILE_FIT_SCORE` in `makan.decisions` names a separate five-level ordinal rubric; it is absent from both decision registries and cannot masquerade as a four-choice posterior.
 
 `src/makan/evals/sets/clef/README.md` describes the archived inputs, schemas, versioned policies and content-hashed manifest.
@@ -1078,6 +1078,47 @@ The proposed consistency grouping uses `min(5, floor(1 + E + 0.5))`, with levels
 Accepted unknown, low acceptance, sparse/stale/conflicting evidence or missing material facts mean null/insufficient evidence; infrastructure failures mean null/unavailable and no profile means null/no taste without a request.
 Zero remains distinct from null, and a uniform ordinal vector alone cannot justify 50.
 The revised soft-only prompt, two-question interaction, thresholds, consistency coverage and unknown behavior need independently labelled qualification before any runtime integration or enablement.
+
+### Native Clef adapter, disabled and unwired
+
+`makan.providers.scoring.clef.ClefScorer` implements the native API independently of `Provider.complete` and the OpenRouter transport.
+Its `score_profile_case` operation reads the frozen contract and state schema from the packaged `evals/sets/clef/` data, without importing eval helpers or loading historical cases.
+It validates exactly one profile and one candidate against that soft-field allowlist, encodes canonical JSON, and sends the exact frozen `taste_fit` and `fit_score` questions together in one HTTP request.
+It rejects an empty taste profile, invalid fields and a complete encoded request over 8 KiB before dispatch, without silently filtering or truncating inputs.
+The owner-aware state builder and eligibility checks remain a later slice.
+The ordinary `score(Question)` adapter exposes a single choice question for offline tooling and preserves the one-option deterministic shortcut.
+
+`MAKAN_FIT_BACKEND=local|clef` defaults to `local`, independently of `MAKAN_SCORER_BACKEND`, which retains its default `none` and its existing backends.
+`MAKAN_FIT_MODEL` must explicitly select the frozen full model id when Clef is selected; a short selector, another model, or a model configured with local fit is a configuration error.
+The required body selector is derived from that validated model id, and cannot be independently overridden.
+`build_fit_scorer` is an explicit, separately enabled factory with no product caller in this slice; disabled or local selection returns no model scorer and requires no Cloudflare credentials.
+The existing `fit_enabled` web behavior is unchanged and this new configuration does not select a web assessment strategy yet.
+Only an explicitly enabled Clef factory requires server-side `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`, both hidden from configuration repr.
+The request-signal factory explicitly selects Jev only in its Jev branch and rejects unknown backends before constructing a transport.
+There is no fallback between factories, transports, models or backends.
+
+`CloudflareTransport` pins the account-scoped native endpoint and server-side Bearer authentication, with no redirect following or retries even when an injected client permits them.
+Its owned httpx client is created only at the first explicit scoring call, and `ClefScorer.close` releases it; injected clients remain caller-owned.
+Imports and disabled fit create no client or connection, including the public Vercel entrypoint.
+Per-I/O timeouts are three seconds; coordinated total deadlines, admission, caching, quota settlement and idempotency belong to the shared gateway slice before product enablement.
+
+The native validator requires literal success, the expected returned model, exactly the requested answer ids and types, complete finite non-boolean probabilities in [0,1], sums within 1e-3 before normalization, the exact five-level legend and normalized score reconstruction within 0.0006.
+It also validates native choice/confidence fields and nonnegative integer `result.usage.input_tokens` and `output_tokens`, ignoring OpenRouter-style top-level usage and never using wire confidence as evidence.
+Malformed JSON, duplicate keys and nonstandard numeric constants fail closed.
+Both answers must validate before either is returned as usable evidence.
+Choice evidence uses `Evidence.CLEF_PROBABILITIES`; `OrdinalResult` carries the ordered probabilities and their expectation separately, with no fabricated choice posterior or display assessment.
+The combined result counts usage once, on its choice result, and does not implement the unqualified acceptance or consistency policy.
+
+Infrastructure failures return `Status.ERROR` with no choice or ordinal evidence and a fixed reason: `configuration`, `rate_limited`, `timeout`, `service_unavailable`, `malformed_response`, `refused` or `invalid_input`.
+No status copies a token, state, prompt, provider error text or arbitrary exception text.
+An unidentified 429 means rate limited, never an inferred daily quota exhaustion.
+A valid semantic `unknown` remains an OK choice result with its actual distribution, distinct from unavailable infrastructure; future assessment policy must suppress its numeric display.
+Only parsed `cf-ai-neurons`, bounded `Retry-After` and validated `cf-ai-req-id`/`cf-ray` correlation headers survive the transport boundary.
+
+Ordinary tests use httpx mock transports, synthetic native envelopes and the existing report-reconstructed success vectors, explicitly retaining their provenance limitations.
+They exercise single-call dual evidence, validation, unavailable versus semantic unknown, bounded failure output, header allowlisting, model/selector rejection, inert defaults and the existing public import tests.
+No raw success or qualified dual-question recording is claimed, no live inference runs, and no dependency is added.
+No request path, `FitAssessment`, web code, default selection, ranking, gateway or shared cache changes in this slice.
 
 ## Web stack
 

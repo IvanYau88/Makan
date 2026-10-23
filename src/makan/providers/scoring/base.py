@@ -35,6 +35,7 @@ class Evidence(StrEnum):
     SAMPLED_LABEL = "sampled_label"  # the generated label only, with no usable distribution
     VERBALIZED_CONFIDENCE = "verbalized_confidence"  # the model's own rough rating of itself
     JEV_PROBABILITIES = "jev_probabilities"  # probabilities from the hosted Jev decisions model
+    CLEF_PROBABILITIES = "clef_probabilities"  # native Cloudflare Clef probabilities
     DETERMINISTIC = "deterministic"  # no model: a lone option, or a plain rule
     FAKE = "fake"  # a test double
 
@@ -153,6 +154,19 @@ class ScoreResult:
         ):
             return self.choice
         return None
+
+
+@dataclass(frozen=True)
+class OrdinalResult:
+    """Ordered probability evidence and its zero-based expectation, never a Choice posterior.
+
+    The adapter validates the full rubric and wire score before constructing this value.
+    It makes no acceptance, display, or semantic-unknown decision.
+    """
+
+    probabilities: tuple[float, ...]
+    expectation: float
+    evidence: Evidence = Evidence.CLEF_PROBABILITIES
 
 
 class Scorer(Protocol):
