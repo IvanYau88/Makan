@@ -37,6 +37,7 @@ When you change `web/`, also run `npm run lint`, `npm test`, and `npm run build`
 Run the app in two terminals: `python -m makan.web --demo` (`--reload` while developing), and `npm run dev` in `web/`.
 When you change a scorer decision point or its eval sets, run `python -m makan.evals`, which is offline.
 For the taste-fit and router contract (`CONTRACT_DECISIONS` and the sets in `evals/sets/contract/`), also run `python -m makan.evals.contract --permutations`.
+When you change the frozen Clef archive in `evals/sets/clef/`, run `python -m makan.evals.fit`, which is offline.
 Tests must never make real network calls, so use `FakeProvider` or an `httpx` mock transport.
 
 ## Maintaining this file
