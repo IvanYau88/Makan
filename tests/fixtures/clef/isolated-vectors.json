@@ -1,0 +1,492 @@
+{
+  "provenance": {
+    "kind": "reconstructed_from_report_table",
+    "source": "data/makan-clef-flash-test/report.md",
+    "source_sha256": "4ebff880f5e3f5c5ee74fab8bcf65c0b7cb45a745f1a8c1f501c8ceeb6e92a73",
+    "section": "Primary probability evidence, Single probabilities; Per-request usage, latency and repeat evidence, single:* request hashes",
+    "raw_response_available": false,
+    "note": "Only report.md and brief files survived in the authorized Clef test directory. These are reported four-decimal vectors, not raw responses or newly recorded calls. No dual-question responses have been recorded."
+  },
+  "cases": [
+    {
+      "id": "O01",
+      "label": 3,
+      "probabilities": {
+        "0": 0.1659,
+        "1": 0.6314,
+        "2": 0.1028,
+        "3": 0.0605,
+        "4": 0.0394
+      },
+      "request_sha256": "97515074553b50906fa6f0fd3e73171cb779e4a740c77f6efe72c07857b790ad"
+    },
+    {
+      "id": "O02",
+      "label": 3,
+      "probabilities": {
+        "0": 0.0775,
+        "1": 0.2555,
+        "2": 0.4466,
+        "3": 0.1704,
+        "4": 0.05
+      },
+      "request_sha256": "758c216e8890fde0fa71155f19769bf6553cb606dce83b14cf16ba07c146c4b1"
+    },
+    {
+      "id": "O03",
+      "label": 3,
+      "probabilities": {
+        "0": 0.105,
+        "1": 0.7067,
+        "2": 0.0958,
+        "3": 0.0555,
+        "4": 0.037
+      },
+      "request_sha256": "c00901d7ace2bd65111584c6b24174baeeca134d7aab32be36924b09efdb8071"
+    },
+    {
+      "id": "O04",
+      "label": 3,
+      "probabilities": {
+        "0": 0.1273,
+        "1": 0.506,
+        "2": 0.2321,
+        "3": 0.0951,
+        "4": 0.0395
+      },
+      "request_sha256": "bceacd6aa34c8158a58e7f3f83ce5be8e6814179343b9f805e1913a1ba2476e6"
+    },
+    {
+      "id": "O05",
+      "label": 3,
+      "probabilities": {
+        "0": 0.0477,
+        "1": 0.1085,
+        "2": 0.4267,
+        "3": 0.3602,
+        "4": 0.0569
+      },
+      "request_sha256": "1f2206cf7feb48205aadf4bb51b01ef7e84f986b03c5174633dcff1f08c0c9a8"
+    },
+    {
+      "id": "O06",
+      "label": 4,
+      "probabilities": {
+        "0": 0.0393,
+        "1": 0.0639,
+        "2": 0.1853,
+        "3": 0.5689,
+        "4": 0.1426
+      },
+      "request_sha256": "6abe2ad8c0ca3acbcea276755a0cdda6d438a3a55a8ecfe27d60c4f873cffee6"
+    },
+    {
+      "id": "O07",
+      "label": 4,
+      "probabilities": {
+        "0": 0.0598,
+        "1": 0.0776,
+        "2": 0.2226,
+        "3": 0.5568,
+        "4": 0.0832
+      },
+      "request_sha256": "7fa9f2555bc706808f3a4eb720e3864746a4e764c168df48705afc8202145c8f"
+    },
+    {
+      "id": "O08",
+      "label": 3,
+      "probabilities": {
+        "0": 0.3053,
+        "1": 0.4415,
+        "2": 0.1287,
+        "3": 0.0797,
+        "4": 0.0448
+      },
+      "request_sha256": "30e149d17d645b4f889b5e4866673da3d67086268aef503d63ddcb879ba29e48"
+    },
+    {
+      "id": "O09",
+      "label": 3,
+      "probabilities": {
+        "0": 0.0632,
+        "1": 0.141,
+        "2": 0.4524,
+        "3": 0.3053,
+        "4": 0.0381
+      },
+      "request_sha256": "81ab02f1e843b8768904919d2a00996cb5235782252870c2709f5ff23a01c7e3"
+    },
+    {
+      "id": "O10",
+      "label": 4,
+      "probabilities": {
+        "0": 0.0756,
+        "1": 0.0928,
+        "2": 0.302,
+        "3": 0.4687,
+        "4": 0.0609
+      },
+      "request_sha256": "72dfcdce9caee5213e1d15e7bb2711fa74685a6633456c74fea504107341b2a1"
+    },
+    {
+      "id": "O11",
+      "label": 3,
+      "probabilities": {
+        "0": 0.0834,
+        "1": 0.1773,
+        "2": 0.3801,
+        "3": 0.2761,
+        "4": 0.0831
+      },
+      "request_sha256": "8563dc8ccdfa7d2fdaa89c9817f98de58704fc039cd12ec25de87e0e50d0f1b0"
+    },
+    {
+      "id": "O12",
+      "label": 5,
+      "probabilities": {
+        "0": 0.0357,
+        "1": 0.0803,
+        "2": 0.1574,
+        "3": 0.4907,
+        "4": 0.2359
+      },
+      "request_sha256": "ec64a1dcbe6e84157a44d64e4b36658143ca5cad2d86d9b7953d615bbd3b39db"
+    },
+    {
+      "id": "F01",
+      "label": 5,
+      "probabilities": {
+        "0": 0.0177,
+        "1": 0.018,
+        "2": 0.0173,
+        "3": 0.0431,
+        "4": 0.9039
+      },
+      "request_sha256": "0ab63a5698e6d6daa06258b26a2ab297ba8c5515a1836eac8af2c9f04ab2916c"
+    },
+    {
+      "id": "M01",
+      "label": 1,
+      "probabilities": {
+        "0": 0.7966,
+        "1": 0.1035,
+        "2": 0.0244,
+        "3": 0.027,
+        "4": 0.0485
+      },
+      "request_sha256": "e9f45faca3dfbdf146f1f57ed29562a1012d8143430b837d97da8b72ff1d39c4"
+    },
+    {
+      "id": "F02",
+      "label": 5,
+      "probabilities": {
+        "0": 0.0177,
+        "1": 0.0213,
+        "2": 0.0242,
+        "3": 0.0532,
+        "4": 0.8836
+      },
+      "request_sha256": "c2f48fe54b7fc1c49b8f250f9af6a54c7638dfe06ddb4a63d377d1c921182ebb"
+    },
+    {
+      "id": "M02",
+      "label": 1,
+      "probabilities": {
+        "0": 0.6722,
+        "1": 0.2411,
+        "2": 0.0374,
+        "3": 0.026,
+        "4": 0.0233
+      },
+      "request_sha256": "651af904024cbfee6b26dc81007825a045b5b209fabd877289fa97475c182580"
+    },
+    {
+      "id": "F03",
+      "label": 5,
+      "probabilities": {
+        "0": 0.0185,
+        "1": 0.0202,
+        "2": 0.0206,
+        "3": 0.0562,
+        "4": 0.8845
+      },
+      "request_sha256": "707c05a468dbc623bc7ff4e8aaa59220f3bfa70084bf4570faedbbf6cb19a135"
+    },
+    {
+      "id": "M03",
+      "label": 1,
+      "probabilities": {
+        "0": 0.4585,
+        "1": 0.3813,
+        "2": 0.0695,
+        "3": 0.0517,
+        "4": 0.039
+      },
+      "request_sha256": "4010c8c9c5bdbc6a7d97c2ad55feb9a8f8b39c887d6b5bb574f208701bc19636"
+    },
+    {
+      "id": "F04",
+      "label": 5,
+      "probabilities": {
+        "0": 0.0192,
+        "1": 0.028,
+        "2": 0.0282,
+        "3": 0.0634,
+        "4": 0.8612
+      },
+      "request_sha256": "47581314d3c5d95108eba98b4a155d23141470cc7125314f3a945de31f543dba"
+    },
+    {
+      "id": "M04",
+      "label": 1,
+      "probabilities": {
+        "0": 0.555,
+        "1": 0.3457,
+        "2": 0.0434,
+        "3": 0.0314,
+        "4": 0.0245
+      },
+      "request_sha256": "199a24a716c63fe61a9ce4d0564605faecd1e40584f8802c7ed6976340007e4d"
+    },
+    {
+      "id": "F05",
+      "label": 5,
+      "probabilities": {
+        "0": 0.0184,
+        "1": 0.0207,
+        "2": 0.0195,
+        "3": 0.0513,
+        "4": 0.8901
+      },
+      "request_sha256": "744f9626179f50beb9c33939d45df63665232142bf0f1788cea698a7dd3b4ea0"
+    },
+    {
+      "id": "M05",
+      "label": 1,
+      "probabilities": {
+        "0": 0.731,
+        "1": 0.1735,
+        "2": 0.026,
+        "3": 0.0253,
+        "4": 0.0442
+      },
+      "request_sha256": "6d84cb77b53c2f172e4958b57152b118f10edb1b77baa8ef57165d9e6399f6e6"
+    },
+    {
+      "id": "F06",
+      "label": 5,
+      "probabilities": {
+        "0": 0.0156,
+        "1": 0.0184,
+        "2": 0.0201,
+        "3": 0.0508,
+        "4": 0.8951
+      },
+      "request_sha256": "3f508a4e35c6038b45b185d116ab2f935df180759049cba5fab2ab98b7c487f3"
+    },
+    {
+      "id": "M06",
+      "label": 1,
+      "probabilities": {
+        "0": 0.7438,
+        "1": 0.1454,
+        "2": 0.0305,
+        "3": 0.0308,
+        "4": 0.0495
+      },
+      "request_sha256": "21e6ee071f96e004cbb5c4f80d6821725424fcde06e92d25ce8fec4fc3da14c9"
+    },
+    {
+      "id": "F07",
+      "label": 5,
+      "probabilities": {
+        "0": 0.016,
+        "1": 0.017,
+        "2": 0.0164,
+        "3": 0.0361,
+        "4": 0.9145
+      },
+      "request_sha256": "487f8c79f30a53f4744a630802672b12b0021af2e645fc96d97c90741618cbfb"
+    },
+    {
+      "id": "M07",
+      "label": 1,
+      "probabilities": {
+        "0": 0.522,
+        "1": 0.3561,
+        "2": 0.0568,
+        "3": 0.0397,
+        "4": 0.0254
+      },
+      "request_sha256": "2ca1d48994af008424cd7fe371dd4cd8dd4bab24c9f629421bd63f0bc424bf3f"
+    },
+    {
+      "id": "D01",
+      "label": 2,
+      "probabilities": {
+        "0": 0.0914,
+        "1": 0.6071,
+        "2": 0.1883,
+        "3": 0.0717,
+        "4": 0.0415
+      },
+      "request_sha256": "c123b0a3cddb610f7f37d7b01730a43c4cf36649eb59b438566f31dbbc3531a3"
+    },
+    {
+      "id": "T01",
+      "label": 4,
+      "probabilities": {
+        "0": 0.0333,
+        "1": 0.0508,
+        "2": 0.0651,
+        "3": 0.2719,
+        "4": 0.5789
+      },
+      "request_sha256": "8ae23089788ecd3013eee64503cf87551b9964f1043da070ccf9f4101156a3c4"
+    },
+    {
+      "id": "D02",
+      "label": 2,
+      "probabilities": {
+        "0": 0.1124,
+        "1": 0.6356,
+        "2": 0.1354,
+        "3": 0.074,
+        "4": 0.0426
+      },
+      "request_sha256": "18307a2db02692a24f2b28ff94fc4c0c019f1315579527b6115587f3a31dd60b"
+    },
+    {
+      "id": "T02",
+      "label": 4,
+      "probabilities": {
+        "0": 0.0398,
+        "1": 0.0615,
+        "2": 0.1262,
+        "3": 0.4745,
+        "4": 0.298
+      },
+      "request_sha256": "0b3f8a97f682272561e650de0eb268b761b57821f35e5096afaff9a167e0e1b7"
+    },
+    {
+      "id": "D03",
+      "label": 2,
+      "probabilities": {
+        "0": 0.0886,
+        "1": 0.6863,
+        "2": 0.1196,
+        "3": 0.0695,
+        "4": 0.036
+      },
+      "request_sha256": "999dd9fbd03ef5a4db8f2aeae94040c425392680f6cad9fb7df560ee61a6e0dc"
+    },
+    {
+      "id": "T03",
+      "label": 4,
+      "probabilities": {
+        "0": 0.0327,
+        "1": 0.0501,
+        "2": 0.0865,
+        "3": 0.5382,
+        "4": 0.2925
+      },
+      "request_sha256": "0b7d52dfc4433b3b82454c6f8bb243dc22208e32330b37fa77184aef7c6f2d0d"
+    },
+    {
+      "id": "D04",
+      "label": 2,
+      "probabilities": {
+        "0": 0.0744,
+        "1": 0.6884,
+        "2": 0.1312,
+        "3": 0.0656,
+        "4": 0.0404
+      },
+      "request_sha256": "e2b2bac7674b38692fdf28e3185834c906fee42c605a189e0e934c94eda118bb"
+    },
+    {
+      "id": "T04",
+      "label": 4,
+      "probabilities": {
+        "0": 0.0441,
+        "1": 0.0903,
+        "2": 0.3378,
+        "3": 0.4726,
+        "4": 0.0552
+      },
+      "request_sha256": "22ab1b0dc3d774b74b7f6478765eb72a34c178b0198b9620df5bf8328a3e9144"
+    },
+    {
+      "id": "D05",
+      "label": 2,
+      "probabilities": {
+        "0": 0.2303,
+        "1": 0.5434,
+        "2": 0.1254,
+        "3": 0.06,
+        "4": 0.0409
+      },
+      "request_sha256": "70e30a07ab6a8c1626c537f35d23f20b08604a9039d201c6d70309a123eb2a86"
+    },
+    {
+      "id": "T05",
+      "label": 4,
+      "probabilities": {
+        "0": 0.0785,
+        "1": 0.145,
+        "2": 0.3942,
+        "3": 0.3392,
+        "4": 0.0431
+      },
+      "request_sha256": "a90a6e6efe9f2b7ab8be77dcefab782e55a3130e30ca6f434c3fa6563e7a6c59"
+    },
+    {
+      "id": "D06",
+      "label": 2,
+      "probabilities": {
+        "0": 0.1421,
+        "1": 0.6575,
+        "2": 0.0963,
+        "3": 0.0612,
+        "4": 0.0429
+      },
+      "request_sha256": "3a9f31a51b962e04ebdbb8ee3206c8f4a20e3e018314add586cba0a13d57f5ac"
+    },
+    {
+      "id": "T06",
+      "label": 4,
+      "probabilities": {
+        "0": 0.0294,
+        "1": 0.0579,
+        "2": 0.0759,
+        "3": 0.3636,
+        "4": 0.4732
+      },
+      "request_sha256": "f2ddf8fcce1b7c2ac1f0157229e8e55634ff3e8725a0857b3382dcffa8f21704"
+    },
+    {
+      "id": "D07",
+      "label": 2,
+      "probabilities": {
+        "0": 0.128,
+        "1": 0.6264,
+        "2": 0.125,
+        "3": 0.0746,
+        "4": 0.046
+      },
+      "request_sha256": "f80e64c350b5ed4847b70147ccb234febba6b4ccfd812977dfda21d3c85a1d53"
+    },
+    {
+      "id": "T07",
+      "label": 3,
+      "probabilities": {
+        "0": 0.0398,
+        "1": 0.062,
+        "2": 0.2008,
+        "3": 0.6472,
+        "4": 0.0502
+      },
+      "request_sha256": "8ff954cb469f7a27f06a71e9b5e796aaf070b8fba55b3e50e3d03216c4c3e9f1"
+    }
+  ]
+}

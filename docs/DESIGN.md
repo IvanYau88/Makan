@@ -1046,6 +1046,39 @@ The 70 percent routing threshold, the taste-fading speed, and the model choice a
 - **Not in this step:** deterministic taste arithmetic, visit and dish capture, any backend adapter (local Qwen, Laya, or Gemini), the clarification flow, restaurant research, the weekly list, and the user-report and outreach safety system.
   The scorer is never given Jev, Laya, Qwen, Gemini, or OpenRouter here, and no variable was added to `.env.example`.
 
+### Frozen Clef fit contract and historical replay
+
+Cloudflare Clef-flash (`@cf/cloudflare/clef-flash`) is the selected future profile classifier, but this slice adds only an offline archive, proposed contract data and pure validation/math helpers.
+There is no transport, configuration, feature switch, product call, web change or fallback, and existing taste-fit v1 and Jev behavior are unchanged.
+`PROFILE_FIT_SCORE` in `makan.decisions` names a separate five-level ordinal rubric; it is absent from both decision registries and cannot masquerade as a four-choice posterior.
+
+`src/makan/evals/sets/clef/README.md` describes the archived inputs, schemas, versioned policies and content-hashed manifest.
+The original 40 cases and full labels file retain their exact byte hashes, variants and model-written label provenance.
+Their 26 family groups are preserved, with no invented development/calibration/held-out assignments because the original files contain none.
+Hard-limit text remains only in the historical replay lane, and those labels cannot qualify modified soft-only inputs.
+
+No raw Clef response ledger survived in the authorized investigation directory.
+`tests/fixtures/clef/isolated-vectors.json` is explicitly reconstructed from the report table and retains the reported isolated request-body hashes, rather than claiming a new recording or a native response fixture.
+`python -m makan.evals.fit` replays the vectors, and offline tests reconstruct the original single-question envelope, check all 40 request hashes and reproduce 28/40 exact agreement and normalized MAE 0.102837.
+Labels are model-written construction labels, so this establishes arithmetic regression rather than diner accuracy or qualification of a changed prompt.
+
+The proposed envelope asks the exact `TASTE_FIT` v1 choice question and a separate ordinal `fit_score` question about the same one-person, one-candidate state.
+The initial state schema allowlists explicit cuisine tastes and sourced categories, omits restaurant names and identifying/hard fields, and records source and missing-fact markers.
+No production state builder is introduced here.
+The response schema is a bounded offline projection, explicitly unqualified; the future native adapter must validate and project the provider response, metadata, errors and `result.usage` separately.
+Pure validators reject wrong model/type/ids/legend, incomplete distributions, boolean or non-finite numbers, invalid sums and inconsistent wire scores.
+Distributions are validated before small rounding normalization; wire scores are checked against the reconstructed normalized expectation.
+The sum tolerance is 1e-3 and score reconstruction tolerance is 0.0006.
+
+All proposed acceptance and display policies await qualification.
+For normalized ordinal probabilities, E is the zero-based expectation and the display index is `floor(25*E + 0.5)`, rounded once, giving pure-level endpoints 0/25/50/75/100 and uniform 50.
+This is an ordinal policy index, never probability of enjoyment or a public star rating.
+The independent proposed fit threshold is 0.70 on a unique top choice, following `makan.evals.threshold.accepted_choice` rather than a margin or the router's configuration.
+The proposed consistency grouping uses `min(5, floor(1 + E + 0.5))`, with levels 1-2/3/4-5 corresponding to poor/partial/strong; disagreement suppresses a number rather than fabricating choice probabilities.
+Accepted unknown, low acceptance, sparse/stale/conflicting evidence or missing material facts mean null/insufficient evidence; infrastructure failures mean null/unavailable and no profile means null/no taste without a request.
+Zero remains distinct from null, and a uniform ordinal vector alone cannot justify 50.
+The revised soft-only prompt, two-question interaction, thresholds, consistency coverage and unknown behavior need independently labelled qualification before any runtime integration or enablement.
+
 ## Web stack
 
 - The web frontend is React.
