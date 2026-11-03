@@ -343,6 +343,36 @@ describe("failure accounting and breakers", () => {
       expect(send).toHaveBeenCalledTimes(1);
     });
   });
+  it.each(["refused", "malformed_response"])(
+    "keeps a %s case local without blocking admission for other cases",
+    async (reason) => {
+      await runInDurableObject(stub(), async (_instance, ctx) => {
+        const bad = success();
+        if (reason === "refused") bad.refused = true;
+        else (bad.result as Record<string, unknown>).answers = {};
+        const send = vi
+          .fn<typeof fetch>()
+          .mockResolvedValueOnce(
+            new Response(JSON.stringify(bad), {
+              headers: { "cf-ai-neurons": "1" },
+            }),
+          )
+          .mockResolvedValueOnce(response());
+        const core = new Coordinator(
+          ctx.storage,
+          upstream,
+          send,
+          () => baseTime,
+        );
+        expect((await core.score(request())).reason).toBe(reason);
+        expect((await core.score(request())).reason).toBe(reason);
+        const other = await core.score(request(baseTime, "c".repeat(64)));
+        expect(other.status).toBe("ok");
+        expect(send).toHaveBeenCalledTimes(2);
+        expect(core.metrics().breakers).toEqual([]);
+      });
+    },
+  );
   it.each([401, 403, 500, 302])(
     "sanitizes HTTP %i failures without any fallback",
     async (status) => {

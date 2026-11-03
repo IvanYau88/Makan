@@ -425,7 +425,11 @@ export class Coordinator {
         this.breaker("configuration", reason, Number.MAX_SAFE_INTEGER);
       else if (reason === "quota_exhausted")
         this.breaker("daily", reason, resetAt(attempt.started));
-      else if (reason)
+      else if (
+        reason === "rate_limited" ||
+        reason === "timeout" ||
+        reason === "service_unavailable"
+      )
         this.breaker(
           "cooldown",
           reason,

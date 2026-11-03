@@ -155,6 +155,7 @@ Validated results expire at the earlier of fact expiry or 24 hours.
 Only documented Workers AI error code `3036` identifies daily exhaustion and opens the breaker until the reservation day's UTC reset.
 An unrecognized 429, including other numeric codes, means `rate_limited`.
 Timeouts, network failures, and 5xx use sanitized `timeout` or `service_unavailable` with a shared cooldown and conservative accounting.
+A refused or malformed response settles only its own case and tombstone, never the shared cooldown.
 Auth/configuration/model mismatches open a persistent breaker until a reviewed gateway policy/configuration version changes.
 A version change clears incompatible breakers but preserves every reservation and daily counter; never delete or replace the Durable Object namespace to clear a breaker.
 Valid cache hits still work while admission is blocked.

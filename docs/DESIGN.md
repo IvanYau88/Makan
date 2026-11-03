@@ -1155,6 +1155,7 @@ Model/source/prompt/policy changes receive new cache keys or namespaces, and suc
 Reason vocabulary v2 adds `ClefReason.QUOTA_EXHAUSTED`, mapped to `ErrorKind.BUDGET`, while all other reasons remain slice-2 sanitized values.
 The [Workers AI errors table](https://developers.cloudflare.com/workers-ai/platform/errors/) identifies structured code `3036` as daily exhaustion; only that code on HTTP 429 opens the daily breaker until reset.
 Unidentified 429s remain rate limited, with a shared durable breaker honoring delay-seconds or HTTP-date Retry-After and a minimum five-second cooldown.
+Only rate limits, timeouts and service failures open that shared cooldown; a refused or malformed response settles only its own case and tombstone.
 Auth/configuration/model errors and pricing overruns require an explicit reviewed gateway version change to clear their persistent breakers, preserving all prior account reservations and counters.
 Cache hits still precede quota/breaker admission.
 Metrics expose only seven UTC days of aggregate calls/cache hits, tokens, measured/reserved Neurons, latency buckets, response categories, breaker state, and versions; automatic Worker logs/traces and body/header capture stay off.
