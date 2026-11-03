@@ -1,0 +1,34 @@
+// Changes require review of pricing, qualification and cache compatibility.
+export const POLICY = {
+  version: "fit-gateway-v1",
+  reasonsVersion: 2,
+  manifest: "dce0bdf6b62813c26d8447dcd0c31eac0e5633a094aebc126b0fa3c6bf1f0641",
+  pricingVersion: "clef-3455-per-million-full-24576-v1",
+  attemptsPerMinute: 240,
+  inFlight: 4,
+  dailyMilliNeurons: 9_000_000,
+  reservationMilliNeurons: 85_000,
+  roundingSlackMilliNeurons: 10,
+  upstreamDeadlineMs: 3000,
+  cacheTtlMs: 86_400_000,
+  cooldownMs: 5000,
+  metricsDays: 7,
+} as const;
+
+export type Reason =
+  | "configuration"
+  | "rate_limited"
+  | "quota_exhausted"
+  | "timeout"
+  | "service_unavailable"
+  | "malformed_response"
+  | "refused"
+  | "invalid_input";
+
+export class Failure extends Error {
+  constructor(public reason: Reason) {
+    super(reason);
+  }
+}
+export const dayOf = (now: number) => Math.floor(now / 86_400_000);
+export const resetAt = (now: number) => (dayOf(now) + 1) * 86_400_000;

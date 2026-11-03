@@ -82,6 +82,7 @@ class ClefReason(StrEnum):
 
     CONFIGURATION = "configuration"
     RATE_LIMITED = "rate_limited"
+    QUOTA_EXHAUSTED = "quota_exhausted"  # gateway reason vocabulary v2
     TIMEOUT = "timeout"
     SERVICE_UNAVAILABLE = "service_unavailable"
     MALFORMED_RESPONSE = "malformed_response"

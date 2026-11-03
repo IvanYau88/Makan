@@ -33,6 +33,7 @@ Read `docs/DESIGN.md` before making architectural decisions.
 
 Setup and the check commands (`pytest`, `ruff check .`, `ruff format .`, `mypy`) are in the README under Development.
 Run all four before committing.
+Gateway setup and offline checks are in `cloudflare/fit-gateway/README.md`; keep its Node dependencies separate from Python and Vercel.
 When you change `web/`, also run `npm run lint`, `npm test`, and `npm run build` there.
 Run the app in two terminals: `python -m makan.web --demo` (`--reload` while developing), and `npm run dev` in `web/`.
 When you change a scorer decision point or its eval sets, run `python -m makan.evals`, which is offline.

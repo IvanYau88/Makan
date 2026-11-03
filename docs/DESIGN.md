@@ -1120,6 +1120,52 @@ They exercise single-call dual evidence, validation, unavailable versus semantic
 No raw success or qualified dual-question recording is claimed, no live inference runs, and no dependency is added.
 No request path, `FitAssessment`, web code, default selection, ranking, gateway or shared cache changes in this slice.
 
+### Shared Clef gateway, disabled and unwired
+
+`cloudflare/fit-gateway/` isolates the Worker, its Node dependencies, and offline Workers/SQLite tests from the Python package and Vercel public dependency group.
+The gateway imports the slice-1 frozen questions and state schema directly, checks their manifest hashes locally and in CI, and rejects all other models, prompts, schemas, or proxy operations.
+The selected package is the maintained `@cloudflare/vitest-plugin` 1.5.1, replacing the deprecated Workers test pool, with compatible Vitest 4.1 and Workers types 5.20261103.1 locked in `package-lock.json`.
+Strict TypeScript and Prettier form its lint command, alongside frozen-contract hash checks.
+Its own CI job runs only local tests, without deployment, inference, Cloudflare credentials, or changes to Makan's database.
+Vercel upload and function packaging exclude this directory.
+
+Every server using one dedicated inference account must address one deployed gateway and the fixed `scorer-account-v1` SQLite-backed Durable Object, never an object per diner, tab, or server.
+Preview and production have independent credentials, HMAC secrets, scopes, and dedicated free inference accounts; two deployments must never independently reserve the same account's allowance.
+The versioned configuration reserves at most 240 attempts per rolling minute, four upstream calls in flight, and 9,000 Neurons per UTC day.
+One synchronous SQLite transaction checks valid cache first, coalesces a durable unique case key, and reserves the attempt id, rate slot, original day, and 85-Neuron worst case before dispatch.
+It ends before any awaited I/O and explicitly flushes storage before the one pinned upstream request.
+The [SQLite Durable Object storage API](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/) supplies transactional persistent storage; actual account availability and capacity remain unverified rollout gates.
+
+Pricing assumption `clef-3455-per-million-full-24576-v1` reserves the full model window at 3,455 Neurons per million input tokens.
+Settlement uses integer milli-Neurons, rounds measured `cf-ai-neurons` upward, and adds 0.01 Neuron slack.
+Absent usage or uncertain network/timeout billing keeps the reservation, failed settlement leaves the durable pending row intact, and measured usage above the ceiling opens a persistent configuration breaker.
+Settlement always adjusts the original reservation day, including across midnight; daily rollover never receives a refund from yesterday.
+The three-second total upstream deadline includes dispatch wait and bounded body reading, uses AbortController cancellation, and never retries inline, follows redirects, switches model/provider, or scores in the background.
+A duplicate gets its existing attempt id and validated result or bounded pending/unknown state; a crash after inference and before settlement leaves a non-replay tombstone until its original day's UTC reset.
+A known failed call can be retried later only after the durable rate slot and shared cooldown expire; uncertain failures remain tombstones.
+
+The server-only pure `makan.providers.scoring.gateway.GatewayKeys` helper constructs domain-separated HMAC-SHA256 keys over owner/tab scope, canonical soft inputs, profile/evidence revisions, provider-qualified candidate identity, source release/facts/freshness, and frozen model/manifest/policy versions.
+Search wording, center, and unrelated candidates never enter case identity.
+The authenticated gateway trusts server-computed HMACs without holding the HMAC secret, and the future server integration must never accept browser keys as authorization.
+SQLite persists only HMAC scope/key, random attempt ids, bounded validated native response projections, versions, usage/accounting, states, and expiry, never requests or private profiles.
+The maximum cache TTL is 24 hours or earlier source expiry, with alarms removing expired payloads and pruning aggregate metrics even when requests stop; delayed platform alarms may delay physical deletion but cannot make an expired result usable.
+Scoped invalidation covers edited/forgotten profile or history facts and consent withdrawal; owner deletion/guest clearing purges result payloads and suppresses late writes while retaining only conservative accounting and HMAC non-replay tombstones through reset.
+Model/source/prompt/policy changes receive new cache keys or namespaces, and successful semantic unknowns may be cached without becoming fabricated fit numbers.
+
+Reason vocabulary v2 adds `ClefReason.QUOTA_EXHAUSTED`, mapped to `ErrorKind.BUDGET`, while all other reasons remain slice-2 sanitized values.
+The [Workers AI errors table](https://developers.cloudflare.com/workers-ai/platform/errors/) identifies structured code `3036` as daily exhaustion; only that code on HTTP 429 opens the daily breaker until reset.
+Unidentified 429s remain rate limited, with a shared durable breaker honoring delay-seconds or HTTP-date Retry-After and a minimum five-second cooldown.
+Auth/configuration/model errors and pricing overruns require an explicit reviewed gateway version change to clear their persistent breakers, preserving all prior account reservations and counters.
+Cache hits still precede quota/breaker admission.
+Metrics expose only seven UTC days of aggregate calls/cache hits, tokens, measured/reserved Neurons, latency buckets, response categories, breaker state, and versions; automatic Worker logs/traces and body/header capture stay off.
+The gateway returns only authenticated private/no-store responses and never logs arbitrary exception text, account URLs, auth, keys, profiles, or provider bodies.
+
+The gateway alone holds the account id and narrowly scoped Workers AI token; the future Makan server holds its server-to-gateway credential and HMAC secret.
+`.env.example` and the gateway README document the variables without real values, and the existing native adapter remains an isolated tooling building block rather than a production bypass.
+The shared synthetic fixture passes both the Workers validator and slice-2 Python parser, without claiming a qualified dual-question response.
+The deployed account's Free/cardless status, terms, token permissions, Durable Object limits, model quality/cost, and cold/warm latency remain unverified and must keep public scoring disabled until later qualification.
+No factory, web strategy, consent flow, UI, feature default, ranking, deployment, billing, or live request changes in this slice.
+
 ## Web stack
 
 - The web frontend is React.
