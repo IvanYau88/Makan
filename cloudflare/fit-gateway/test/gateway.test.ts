@@ -603,6 +603,22 @@ describe("Worker boundary and real eviction", () => {
     );
     expect(JSON.parse(call[1]!.body as string)).toEqual(req.body);
   });
+  it("scores through the runtime's own fetch when no transport is injected", async () => {
+    // No stub: the Worker's default transport reaches the offline upstream in vitest.config.ts.
+    vi.mocked(globalThis.fetch).mockRestore();
+    const req = request(Date.now(), "c".repeat(64), "d".repeat(64));
+    const make = () =>
+      new Request("https://gateway.invalid/v1/score", {
+        method: "POST",
+        headers: { Authorization: auth },
+        body: JSON.stringify(req),
+      });
+    const first = await worker.fetch(make(), bindings);
+    const value = (await first.json()) as Reply;
+    expect(value).toMatchObject({ status: "ok", data: fixture.response });
+    const cached = await worker.fetch(make(), bindings);
+    expect(await cached.json()).toEqual(value);
+  });
   it("requires server authentication and stays disabled without explicit configuration", async () => {
     const unauth = await worker.fetch(
       new Request("https://gateway.invalid/v1/score", {

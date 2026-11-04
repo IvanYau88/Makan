@@ -58,7 +58,8 @@ export class Coordinator {
   constructor(
     private storage: DurableObjectStorage,
     private upstream: Upstream,
-    private send: typeof fetch = fetch,
+    // Unbound `fetch` throws "Illegal invocation" in workerd when called as a method.
+    private send: typeof fetch = (input, init) => fetch(input, init),
     private now: () => number = Date.now,
   ) {
     this.sql = storage.sql;
