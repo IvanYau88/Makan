@@ -103,6 +103,7 @@ class ClefScorer(BaseScorer):
     def _failure(self, reason: ClefReason, usage: Usage | None = None) -> ScoreResult:
         kind = {
             ClefReason.RATE_LIMITED: ErrorKind.BUSY,
+            ClefReason.QUOTA_EXHAUSTED: ErrorKind.BUDGET,
             ClefReason.TIMEOUT: ErrorKind.TIMEOUT,
             ClefReason.MALFORMED_RESPONSE: ErrorKind.MALFORMED,
             ClefReason.REFUSED: ErrorKind.REFUSED,

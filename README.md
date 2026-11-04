@@ -63,6 +63,7 @@ Set up once, from the repository root:
 python -m venv .venv
 .venv/bin/python -m pip install -e ".[dev]"      # on Windows: .venv\Scripts\python -m pip ...
 npm --prefix web ci
+npm --prefix cloudflare/fit-gateway ci
 ```
 
 The `dev` extra includes DuckDB, which the Overture places provider needs, and FastAPI.
@@ -75,6 +76,8 @@ pytest          # tests, with no network calls
 ruff check .    # lint
 ruff format .   # format
 mypy            # types
+npm --prefix cloudflare/fit-gateway run lint
+npm --prefix cloudflare/fit-gateway test  # local Workers/SQLite, no inference or network
 ```
 
 The database schema is plain SQL in `migrations/`, applied in file name order to any Postgres 13 or newer.
@@ -83,6 +86,7 @@ They create and drop their own schema, so a throwaway database is enough.
 GitHub Actions runs the development checks on pull requests and pushes to `main`, using Python 3.12 and a throwaway Postgres service so the database tests run too.
 CI checks formatting with `ruff format --check .`.
 A second CI job lints, tests, and builds the front end.
+A separate job validates the disabled Clef gateway; see [its configuration and recovery contract](cloudflare/fit-gateway/README.md).
 
 ### Hosted database
 

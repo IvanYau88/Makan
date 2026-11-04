@@ -72,3 +72,25 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+
+  fit-gateway:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: cloudflare/fit-gateway
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: cloudflare/fit-gateway/package-lock.json
+      - name: Install isolated gateway development dependencies
+        run: npm ci
+      - name: Lint, format, type and frozen-contract checks
+        run: npm run lint
+      - name: Offline Workers and SQLite Durable Object tests
+        run: npm test
