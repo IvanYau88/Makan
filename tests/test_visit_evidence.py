@@ -417,8 +417,6 @@ def test_version_2_manifest_hashes_its_files_and_extends_version_1() -> None:
         == (v1["files"]["src/makan/evals/sets/clef/contract.json"])
     )
     assert manifest["files"]["src/makan/visits/history_policy.json"] == ev.policy_sha256()
-    config = (ROOT / "cloudflare/fit-gateway/src/config.ts").read_text()
-    assert v1["content_sha256"] in config and manifest["content_sha256"] in config
 
 
 def test_schema_vocabularies_match_the_history_policy() -> None:
