@@ -1639,8 +1639,9 @@ Most checks below ran locally, the live places lookup was verified on a real pre
 - **Real places are the default:** the captain wants to try real nearby results in the preview, so a public site with no setting browses real Overture places.
   Setting `MAKAN_DEMO=1` is the one change that falls back to the sample places.
 - **Honest banners:** `demo` keeps its banner, "Demo mode: sample places, not real venues or a real language model."
-  `places` has its own, in the page's neutral colors and not the warning color: "Real places from Overture Maps, nearest first. This site only browses: it makes no recommendations and calls no language model."
-  The Execution page names the mode as "Demo", "Live", or "Real places, no model".
+  `places` has its own, in the page's neutral colors and not the warning color: "Real places from Overture Maps, nearest first. Searches call no language model." followed by a sentence that it browses without choosing a recommendation.
+  When the server offers online fit, the banner instead says online taste scoring calls Cloudflare only with consent and does not change the order (see "Selected web fit strategy and explicit consent").
+  The Execution page names the mode as "Demo", "Live", or "Real places, no model", and a places run that used online fit as "Real places, optional online fit".
   Results carry the Overture attribution as before.
   Pick for me is not offered in `places` mode and the device's remembered choice is left alone, so the choice a person made on a deployment that has a model is not overwritten.
 - **Bounded DuckDB work:** `DuckDbLimits` sets 2 threads, 1024 MB of memory, 256 MB of spill, an `httpfs` timeout of 10 seconds with one retry, a 20 second application deadline, and a 15 second deadline for the one-time `httpfs` download (see "`httpfs` on a read-only host").

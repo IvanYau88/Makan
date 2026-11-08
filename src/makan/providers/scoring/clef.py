@@ -1,4 +1,4 @@
-"""Native Clef evidence, deliberately unwired from product requests.
+"""Native Clef evidence; product requests reuse only its pure request and parse helpers.
 
 The frozen dual-question proposal supplies both kinds of evidence in one HTTP request.
 No acceptance threshold, public assessment, fallback, cache or admission policy lives here.
