@@ -17,6 +17,7 @@ Admission reserves a byte-derived upper bound per call (`(body bytes + 256) * 3,
 The qualification runs once, as its own explicit command, with `--max-requests 173 --max-neurons 500`, under the same stop rules as the smoke except that a timeout or 5xx is recorded and the run continues until three consecutive failures.
 Lanes, in fixed order: `control` (the archived single-question envelope, byte-identical to the 2026-10-23 calls), `dual` (the frozen same-case two-question envelope on the same 40 historical states), `production` (24 production-shaped states built by the product's own `ClefScorer.profile_body`), `contract` (the 33 draft taste-fit cases rendered by `render_taste_state`, two-question envelope), then 12 identical `control_repeat` and `dual_repeat` calls and 12 `dual_reversed` calls with the two questions in the opposite order.
 No threshold, prompt, label or policy is changed after seeing results; a failed gate is reported as failed.
+On a ledger that a stop rule ended early, a gate whose lane is missing fails rather than passing on absent evidence, and a `dual_reversed` call counts only when its `dual` call succeeded.
 
 | Gate | Passes when |
 | --- | --- |
