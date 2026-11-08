@@ -1,3 +1,8 @@
+// Top level: the disabled local/test configuration, never deployed.
+// env.preview / env.production: deploy scopes, each for its own dedicated free inference
+// account. With one account, deploy exactly one of them (see README "Deploy runbook").
+// GATEWAY_ENABLED stays "0" here; enabling is an explicit `--var GATEWAY_ENABLED:1` deploy.
+// No account id, token or secret belongs in this file.
 {
   "name": "makan-fit-gateway",
   "main": "src/index.ts",
@@ -5,9 +10,36 @@
   "workers_dev": false,
   "preview_urls": false,
   "observability": { "enabled": false },
+  "send_metrics": false,
   "vars": { "GATEWAY_SCOPE": "preview", "GATEWAY_ENABLED": "0" },
   "durable_objects": {
     "bindings": [{ "name": "COORDINATOR", "class_name": "FitCoordinator" }],
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["FitCoordinator"] }],
+  "env": {
+    "preview": {
+      "name": "makan-fit-gateway-preview",
+      "workers_dev": true,
+      "preview_urls": false,
+      "observability": { "enabled": false },
+      "logpush": false,
+      "vars": { "GATEWAY_SCOPE": "preview", "GATEWAY_ENABLED": "0" },
+      "durable_objects": {
+        "bindings": [{ "name": "COORDINATOR", "class_name": "FitCoordinator" }],
+      },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["FitCoordinator"] }],
+    },
+    "production": {
+      "name": "makan-fit-gateway-production",
+      "workers_dev": true,
+      "preview_urls": false,
+      "observability": { "enabled": false },
+      "logpush": false,
+      "vars": { "GATEWAY_SCOPE": "production", "GATEWAY_ENABLED": "0" },
+      "durable_objects": {
+        "bindings": [{ "name": "COORDINATOR", "class_name": "FitCoordinator" }],
+      },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["FitCoordinator"] }],
+    },
+  },
 }

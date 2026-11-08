@@ -1240,6 +1240,58 @@ Browser inspection used the real app on ports 8100/5273 with a synthetic mocked 
 The scoring summary and quota notice were moved ahead of the list so they remain visible without scrolling through candidates; provenance, null plates and reason copy fit both widths without horizontal page overflow.
 The native and gateway contract archives remain unchanged and no live scoring, account verification, deployment or spend is part of this slice.
 
+### Live Clef qualification and enablement gate
+
+Slice 5 moves from offline contracts to the real inference account, with online fit still off by default and no deployment.
+`python -m makan.evals.clef_live` is the only live entry point: `account` makes read-only probes, `smoke` and `qualify` make capped inference calls, and `summarize` recomputes every metric and gate offline from a sanitized ledger.
+Every network command needs `--live` and explicit `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`, and refuses under `CI`, `GITHUB_ACTIONS` or Vercel build variables, so CI, tests, builds and deploys never spend allowance.
+Smoke and qualification also need explicit `--max-requests` and `--max-neurons`; the smoke is capped at 3 requests and 30 Neurons, and any run at 600 Neurons.
+They send through the product's `CloudflareTransport`, validate dual-question answers with the product's own `ClefScorer.parse_profile_response` and `accepted_assessment`, and never retry: a job with any ledger row, failed or not, is never sent again on resume.
+Admission reserves `(body bytes + 256) * 3,455 / 1,000,000` Neurons per call before dispatch, and a call is refused if it could cross the cap.
+That byte bound replaces the gateway's 85-Neuron full-window reservation for these short synthetic bodies, because it is still an upper bound (the 2026-10-23 run measured about three body bytes per token) while letting a 500-Neuron cap cover the whole qualification.
+Uncertain usage keeps the full reservation.
+Runs stop on HTTP 401, 402 or 403, billing or plan wording, 429 or quota codes, a non-OK 200, unexpected model or schema, missing usage, usage above the reservation, and, for the smoke, any failure or any call above five measured Neurons.
+Qualification records a timeout or 5xx and continues, stopping after three consecutive failures.
+Ledger rows keep only request hashes and sizes, HTTP status, Cloudflare error codes, the `api-version` header, usage, latency, validated probabilities, the product assessment and the model's success body; credentials, the account URL, request ids, provider error text and exception text are never stored or printed.
+The ledgers, summaries and pre-registered gates live in `tests/fixtures/clef/live/`, outside the Vercel bundle, and tests prove the summaries reproduce, the recorded bodies pass the product parser and the files hold no credential-shaped value.
+
+The read-only probe on 2026-11-08 found the token active and able to run and list Workers AI models, and to list Workers scripts (none exist).
+Billing profile, subscriptions, account details, memberships, Durable Object namespaces, the workers.dev subdomain and Workers account settings all returned 403, so the account's Free plan and absence of a card remain unverified, and this token cannot deploy the gateway.
+Access was not widened; the captain verifies the plan in the dashboard or with a separate Billing Read token, and creates a separate account-scoped deploy token for the runbook in `cloudflare/fit-gateway/README.md`.
+
+The smoke made two synthetic production-shaped calls and one identical repeat: all HTTP 200 and valid, 665 input tokens and 2.30 Neurons each, 6.90 Neurons total, p50 158 ms, and a byte-identical repeat result.
+The qualification gates were committed before the qualification ran, and the qualification then made all 173 planned calls: 173 HTTP 200 valid responses, 97,712 input tokens, 337.55 measured Neurons, p50 112.6 ms, p95 153.1 ms, max 549.3 ms, and no 401, 402, 403, 429 or billing wording.
+Results against those gates:
+
+| Gate | Result | Measurement |
+| --- | --- | --- |
+| Q1 availability | Pass | 173 of 173 valid. |
+| Q2 spend and plan | Pass | 337.55 of 500 Neurons; every call within its reservation. |
+| Q3 control canary | Fail | All 40 archived request bodies matched byte for byte, but all 40 vectors moved (largest single probability shift 0.1267) and 4 rounded levels changed, giving 26/40 exact and MAE 0.106014 against the archive's 28/40 and 0.102837. Model metadata still shows created 2026-09-29, `api-version` 2026-10-01.epoch and the same price, so the alias moved without a visible identity change. |
+| Q4 repeatability | Pass | 12 control and 12 dual identical repeats returned identical vectors within the run. |
+| Q5 question interference | Pass | Dual `fit_score` 28/40 exact, MAE 0.104705; dual minus control MAE -0.001309, family-bootstrap 95% [-0.010077, 0.008259]. The dual envelope costs 2.19 times the control's tokens. |
+| Q6 question order | Fail | Reversing question order moved 5 of 12 assessments; T03 went from rated 78 to Unrated as its top taste-fit probability fell from 0.755 to 0.661, across the 0.70 acceptance threshold. |
+| Q7 production direction | Fail | No rated case contradicted the exact-cuisine baseline, but only 11 of 16 liked or disliked cases were rated (8 of 8 likes at 87-91, 3 of 8 dislikes at 9-13), against the local baseline's 16; all 8 unrelated-cuisine cases stayed Unrated, as with the local baseline. |
+| Q8 draft taste-fit labels | Fail | 14 of 33 accepted at 0.70 and 3 accepted wrong (21.4%, above 20%): all three were labelled partial and shown as strong at 81-86, the model never accepted partial, and no rated index contradicted a strong or poor label. |
+| Q9 human diner labels | Open | No independently reviewed human diner comparison exists. |
+
+At the measured 2.30 Neurons per production case, 9,000 Neurons a day covers about 3,913 uncached cases, or 195 fully cold 20-place browse searches.
+On today's category-only state, Clef rated fewer places than the local exact-cuisine baseline and its rated numbers only restate that baseline's direction, so it adds no information yet while costing allowance, latency and a data transfer.
+A changed canary pauses enablement for requalification under the plan; no threshold, prompt, label or archive was changed after the results.
+The frozen 2026-10-23 archive stays the historical control, and the live ledger is the new evidence, not a replacement.
+
+`cloudflare/fit-gateway/wrangler.jsonc` now has `preview` and `production` environments, each with its own Worker name and coordinator, `GATEWAY_ENABLED=0`, workers.dev on, preview URLs, observability and Logpush off, and no account id.
+One inference account serves exactly one deployed scope, so the same account is never reserved by two coordinators.
+Enabling is an explicit `--var GATEWAY_ENABLED:1` deploy rather than a committed change, and `npm run check:deploy` dry-runs both scopes in CI with credentials stripped.
+The README runbook lists the preconditions, the separate deploy and runtime tokens, disabled-first deployment, enabling and rollback.
+Nothing was deployed, no Cloudflare resource or Vercel setting changed, and `MAKAN_FIT_ONLINE_ENABLED` stays `0`.
+
+Enablement stopped at this qualification gate by the captain's decision on 2026-11-08.
+Q3, Q6, Q7 and Q8 failed and Q9 is open, so the gateway is not deployed, the guest preview and wider enablement are cancelled, and online fit stays off with `MAKAN_FIT_ONLINE_ENABLED=0`.
+The deploy configuration and runbook remain prepared but unused.
+Enablement is revisited only when all of these hold: richer soft inputs exist, such as slice 6's owner-only visit and dish evidence; the captain has provided independently reviewed human diner labels; a new canary has been frozen; and a fresh pre-registered qualification passes.
+Free plan and no-card status must still be confirmed before any deploy.
+
 ## Web stack
 
 - The web frontend is React.
