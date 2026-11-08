@@ -109,7 +109,8 @@ class RecommendBody(BaseModel):
     a verified access token in the `Authorization` header, never from the body.
 
     The `mode` is always stated, so no request is guessed at. `recommend` needs a `request`, and
-    `browse` takes none: there is nothing to read, and no model is called.
+    `browse` takes none: its places graph calls no recommendation model.
+    Optional online fit requires independent explicit consent.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -171,8 +172,8 @@ def create_app(
     With `config.groups_enabled` False, or in `places` mode, there are no group routes, no group
     page, no sessions, and no purge task.
 
-    In `places` mode the app answers Browse nearby only, with no model: a recommendation is
-    refused, and `provider` is never called.
+    In `places` mode the app answers Browse nearby only: a recommendation is
+    refused, and `provider` is never called. Optional consented fit decorates graph results.
     """
     # A group needs the language model to pick, so there are none in a run with no model.
     fit_strategy = fit_strategy or FitStrategy(config)
@@ -642,7 +643,7 @@ def demo_requested(env: Mapping[str, str]) -> bool:
 
 
 def places_only_requested(env: Mapping[str, str]) -> bool:
-    """Whether `MAKAN_PLACES_ONLY` asks for real places with Browse nearby and no model."""
+    """Whether `MAKAN_PLACES_ONLY` asks for Browse nearby without a recommendation model."""
     return _requested(env, "MAKAN_PLACES_ONLY")
 
 

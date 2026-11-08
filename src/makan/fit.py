@@ -11,6 +11,7 @@ from enum import StrEnum
 from typing import Any
 
 POLICY_VERSION = "exact-cuisine-v1"
+MODEL_POLICY_VERSION = "clef-profile-fit-v1-proposed"
 
 
 class FitReason(StrEnum):
@@ -117,7 +118,7 @@ class FitAssessment:
             "status": self.status,
             "basis": self.basis,
             "policy_version": (
-                "clef-profile-fit-v1-proposed" if self.basis == "profile_model" else POLICY_VERSION
+                MODEL_POLICY_VERSION if self.basis == "profile_model" else POLICY_VERSION
             ),
             "cached": self.cached,
             "reason": self.reason.value,

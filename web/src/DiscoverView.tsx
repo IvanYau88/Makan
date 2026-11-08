@@ -211,6 +211,8 @@ export function DiscoverView(props: Props) {
         />
       )}
 
+      {result && <FitNotice summary={result.run?.fit} />}
+
       {result && result.partial && (
         <p className="notice notice-warn" role="status">
           Part of the search failed, so this list may be missing places.
@@ -457,7 +459,6 @@ function ResultNotes({ result }: { result: Recommendation }) {
           </ul>
         </section>
       )}
-      <FitNotice summary={result.run?.fit} />
       {result.warnings.length > 0 && (
         <section>
           <h3 className="subtitle">Good to know</h3>

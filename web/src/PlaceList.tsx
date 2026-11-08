@@ -98,8 +98,9 @@ function rowLabel(place: Place, isPick: boolean, hasTerms: boolean): string {
     parts.push(
       place.fit.score === null
         ? `Unrated. ${place.fit.explanation}`
-        : `Cuisine fit ${place.fit.score} out of 100`,
+        : `${place.fit.basis === "profile_model" ? "Cloudflare taste estimate" : "Cuisine fit"} ${place.fit.score} out of 100`,
     );
+    if (place.fit.cached) parts.push("Cached");
   }
   return parts.join(", ");
 }

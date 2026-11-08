@@ -26,6 +26,7 @@ from makan.providers.scoring.gateway import GATEWAY_REASONS_VERSION, GatewayKeys
 from makan.providers.scoring.transport import ClefReason, _strict_json
 from makan.solo import RankedCandidate
 
+FIT_MIN_PROBABILITY = 0.70
 FIT_BUDGET_S = 8.0
 CASE_DEADLINE_S = 3.0
 MAX_CONCURRENCY = 4
@@ -54,7 +55,7 @@ def accepted_assessment(result: ProfileCaseResult, *, cached: bool) -> FitAssess
         or ordinal is None
         or choice.choice != distribution.top
         or distribution.margin == 0
-        or dict(distribution.probabilities)[distribution.top] + 1e-9 < 0.70
+        or dict(distribution.probabilities)[distribution.top] + 1e-9 < FIT_MIN_PROBABILITY
         or choice.choice == "unknown"
     ):
         return model_assessment(FitReason.INSUFFICIENT, cached=cached)
@@ -219,7 +220,9 @@ class FitStrategy:
                             )
 
                     try:
-                        async with asyncio.timeout(FIT_BUDGET_S):
+                        async with asyncio.timeout(
+                            max(0, FIT_BUDGET_S - (time.monotonic() - start))
+                        ):
                             await asyncio.gather(*(worker() for _ in range(MAX_CONCURRENCY)))
                     except TimeoutError:
                         pass

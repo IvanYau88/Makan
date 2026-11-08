@@ -988,7 +988,8 @@ Makan has no way to know a meal happened except what the person does in the app,
 
 This is step 1 of Makan's own replacement for paid Jev: the decision definitions, draft labels, and offline harness that later numbers are tuned and compared against.
 It changes nothing a user sees.
-Nothing in the solo workflow, the group workflow, the web app, ranking, or any backend asks these questions yet.
+At that initial evaluation-only boundary, no product workflow asked these questions.
+The later selected web fit strategy below uses only the frozen Clef taste envelope for display, without changing the solo or group graph or ranking.
 The 70 percent routing threshold, the taste-fading speed, and the model choice are all open, and each is to be set from this data and not guessed.
 
 - **Decisions:** `makan.decisions` has `TASTE_FIT` (`strong`, `partial`, `poor`, `unknown`), `PRIMARY_INTENT` (`cuisine_search`, `attribute_search`, `discovery`, `history_lookup`, `group_planning`, `mood`, `other`), and six `intent_presence.<kind>` questions (`present`, `absent`), one per named intent.
@@ -1165,7 +1166,80 @@ The gateway alone holds the account id and narrowly scoped Workers AI token; the
 `.env.example` and the gateway README document the variables without real values, and the existing native adapter remains an isolated tooling building block rather than a production bypass.
 The shared synthetic fixture passes both the Workers validator and slice-2 Python parser, without claiming a qualified dual-question response.
 The deployed account's Free/cardless status, terms, token permissions, Durable Object limits, model quality/cost, and cold/warm latency remain unverified and must keep public scoring disabled until later qualification.
-No factory, web strategy, consent flow, UI, feature default, ranking, deployment, billing, or live request changes in this slice.
+The infrastructure slice changed no factory, web strategy, consent flow, UI, feature default, ranking, deployment, billing or live requests.
+The default-off web connection is described in the next section.
+
+### Selected web fit strategy and explicit consent
+
+Slice 4 connects the earlier native parser and shared gateway to the existing web decoration point through `makan.profile_fit.FitStrategy`.
+It decorates all eligible browse and recommendation candidates once, after their graph finishes, and reuses each immutable `FitAssessment` in JSON, NDJSON, pick, runners-up, list and detail.
+Fit changes no ranking, nearest-first browse ordering, request-match evidence or rank pins.
+`MAKAN_FIT_ENABLED=0` still disables display fit, and the new `MAKAN_FIT_ONLINE_ENABLED=0` separately keeps online scoring off by default.
+With online fit off, the selected strategy remains the existing deterministic exact-cuisine baseline.
+Online selection requires both fit switches and `MAKAN_FIT_BACKEND=clef` with the explicit frozen model id.
+A selected online strategy with absent or invalid gateway credentials returns Unrated/configuration without constructing an HTTP client or falling back to local numbers, native Clef, Jev or OpenRouter.
+The public Vercel import remains inert, guest-only and independent of a key, network or database.
+
+The Makan server holds only `MAKAN_FIT_GATEWAY_URL`, `MAKAN_FIT_GATEWAY_TOKEN`, `MAKAN_FIT_HMAC_SECRET` and `MAKAN_FIT_GATEWAY_SCOPE` for product scoring.
+The URL is a fixed HTTPS origin, redirects and retries are disabled, and `GatewayKeys` computes every case envelope server-side.
+Neither browser keys nor browser owner ids are accepted.
+The native `ClefScorer` now exposes pure frozen request construction and response parsing so the gateway route shares its strict validation without creating a direct inference transport.
+Only supported current cuisine likes/dislikes and a material primary cuisine category from an Overture release enter state; names, identities, coordinates, raw request text, history and hard requirements stay out.
+Missing material category facts, unsupported, conflicting or stale tastes abstain before dispatch.
+The frozen proposed 0.70 unique-top acceptance, ordinal consistency groups and once-rounded expectation index are applied to validated native evidence.
+Semantic unknown and insufficient acceptance remain Unrated/insufficient_evidence, distinct from infrastructure failures.
+The proposal is still unqualified; integration is not evidence of model quality or authorization to enable it.
+
+A diner explicitly opts in under Your tastes after the page explains the transfer of selected cuisine tastes and place categories to Cloudflare.
+`POST /api/fit/session` exchanges `{consent, session?}` for a random, signed, one-day tab token bound to the verified identity, or to a guest nonce.
+The recommendation API requires both `online_fit.consent=true` and a valid server-issued token; consent is not inferred from having saved tastes, an account, request wording or an old result.
+Tokens and preferences stay only in React memory, reset at identity changes and rotate on withdrawal or clearing/editing guest tastes.
+An authenticated search always reads that owner's current stored cuisines and ignores the guest taste field.
+Two owners and separate guest tabs have different HMAC scopes; a token from one identity cannot authorize another.
+A consent token only isolates scoring and cannot fetch cached evidence.
+Owner cache scopes are stable for owner-wide purges, while consent generation and a digest of current owner cuisine fact ids/confirmation/expiry enter profile revision keys.
+That revision distinguishes forgotten/recreated evidence even when cuisine text happens to match.
+After scoring, owner inputs are read again: a changed profile suppresses old evidence, and changed hard exclusions are applied before returning.
+The page aborts/discards in-flight results on taste, consent or identity changes, including a token refresh that completes after clearing.
+
+Withdrawal sends an authenticated scope purge to the gateway and immediately discards local scores even if purging is unavailable.
+Successful owner taste edits and account deletion also purge the owner scope; no visit or dish evidence is loaded or persisted.
+Purges are bounded best-effort requests because an unavailable gateway must not prevent withdrawal or local account changes.
+The gateway suppresses late writes when a purge reaches it; if unreachable, old payloads are bounded by their existing expiry and new profile/consent revisions cannot reuse them.
+Consent remains explicit per request rather than a new stored account setting, so no database migration is needed.
+As elsewhere, signed credentials remain usable until expiry if deliberately replayed; this slice adds no durable consent-revocation store.
+
+Each search dispatches at most four cancellable async gateway requests concurrently, with a three-second total deadline per case and an eight-second overall fit budget including queue wait.
+Work that cannot finish in the remaining budget is not launched, and every candidate still receives an assessment, including Unrated/deadline for unreached cases.
+A disconnected NDJSON client stops new fit dispatches; calls already sent may have consumed allowance.
+No retry, post-response scoring or uncoordinated direct request is started.
+The complete encoded native body stays under 8 KiB and gateway replies are bounded to 64 KiB before parsing.
+The source-category freshness policy uses a stable daily UTC expiry boundary, at most 24 hours, with the source release, actual facts and frozen manifest also in the key.
+The existing places source supplies no per-fact expiry, so that conservative daily boundary is the documented default rather than an invented source timestamp.
+Source-specific freshness and actual deployment latency remain slice 5 qualification questions.
+
+`FitAssessment` deliberately distinguishes `basis=cuisine_profile` from `basis=profile_model`, carries the proposed model policy version, and preserves numeric zero separately from null.
+Its public allowlist includes `cached`, supplied by an explicit gateway protocol field rather than inferred from latency or attempt ids.
+Successful stored gateway replies say cached=true, fresh results and infrastructure states say false, and validated semantic unknowns may still be marked cached.
+A gateway lacking the new success provenance field fails closed as malformed_response until its separately authorized deployment includes it.
+Sanitized slice-2/3 reasons, no_consent, insufficient_evidence and deadline are carried through to the TypeScript assessment vocabulary and fixed user copy.
+The existing light plate design is reused, with provenance and unrated reasons beside list/detail plates and a local-time UTC-reset notice for exhausted allowance.
+Map pins keep their separate rank badges.
+The places banner and Execution descriptions distinguish the places graph from optional consented online scoring.
+Fit is not a graph stage, so `stages.ts` registers no new stage; `RunRecorder` adds only `FitSummary.trace_summary()` counts, fixed reasons and duration to bounded run output.
+No profile, prompt, probability distribution, cache key, scope, attempt id or provider error reaches that summary or the browser.
+
+Hard eligibility runs in plain code before either strategy through `eligible_for_display` and is independent of both fit switches and every scorer response.
+The optional structured API `requirements.max_distance_m` is rechecked against each returned candidate in addition to the search radius, so a venue 1.2 miles away cannot meet a 0.5-mile ceiling.
+Distances remain straight-line from the rounded center; route length and walking time are explicitly unverified.
+`requirements.step_free_required` excludes currently unknown access from satisfying results and emits a specific warning because the source has no verified access facts.
+Existing owner never-go exclusions and allergy/diet warnings remain effective with online fit off, wrong, malformed, timed out or exhausted.
+Free-text requirements remain unverified warnings in the existing graph; this slice does not claim to parse or verify them with a fit model.
+
+Offline product tests in `tests/test_web_online_fit.py` use synthetic native envelopes and `httpx.MockTransport` for both transports and search modes, every candidate/view, consent and key gates, cache provenance, ownership/guest isolation, stale and cleared in-flight tastes, bounded dispatch/cancellation, and the distance/access hard-rule cases.
+Browser inspection used the real app on ports 8100/5273 with a synthetic mocked gateway at 1440 by 1000 and 390 by 844, covering rated/cached lists and details, no-taste and exhausted screens.
+The scoring summary and quota notice were moved ahead of the list so they remain visible without scrolling through candidates; provenance, null plates and reason copy fit both widths without horizontal page overflow.
+The native and gateway contract archives remain unchanged and no live scoring, account verification, deployment or spend is part of this slice.
 
 ## Web stack
 
@@ -1207,8 +1281,8 @@ No factory, web strategy, consent flow, UI, feature default, ranking, deployment
     The error line carries the same code and message as the plain route would, so the page treats both alike.
     Bad input is still a 422 before the stream starts.
     The page uses the stream, and the plain route stays for any other caller.
-    A browser that leaves does not cancel the run: threads cannot be stopped, so the server finishes it and drops the answer.
-  - `GET /api/config` reports `{"mode", "map": {"tile_url", "attribution", "attribution_url"}, "auth", "features": {"recommend", "groups", "accounts"}}`, which the page needs before it can draw the map and know what the server offers.
+    A browser that leaves does not cancel graph threads, so that graph may finish unseen; the separate online fit decorator stops launching new work after a disconnect.
+  - `GET /api/config` reports `{"mode", "map": {"tile_url", "attribution", "attribution_url"}, "auth", "features": {"recommend", "groups", "accounts", "fit", "online_fit"}}`, which the page needs before it can draw the map and know what the server offers.
     `auth` is `{"url", "anon_key", "redirect_url"}` or null.
     `features` says which screens exist, so the page shows none that would only fail: without `recommend` there is no Pick for me, without `groups` no Group tab, and without `accounts` no Account tab.
     A server that omits `features` is read as offering everything, which is what every server did before it said.
@@ -1357,7 +1431,7 @@ Before this, a blank request was silently turned into "something good to eat" an
 ### Local cuisine fit decisions
 
 `makan.fit` implements the optional fit value and an exact-category baseline, independently of the fixed-answer scorer, the request matcher, and the ranking policy.
-`MAKAN_FIT_ENABLED` defaults to false in every deployment, including public Vercel, and enabling it never enables a model or accounts.
+`MAKAN_FIT_ENABLED` defaults to false in every deployment, including public Vercel, and enabling it alone never enables a model or accounts; online fit has its separate default-off switch above.
 There is no generated evidence table, inference transport, background enrichment, daily discovery list, new dependency, or schema change in this slice.
 
 - **One bounded value:** every serialized place has a `fit` object with integer-or-null `score`, derived `status`, fixed `reason` and explanation, `basis=cuisine_profile`, and `policy_version=exact-cuisine-v1`.

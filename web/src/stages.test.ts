@@ -101,7 +101,7 @@ describe("stages", () => {
     running.stages[3] = stage("nearby_places", { status: "running" });
     expect(phaseText(running)).toBe("Searching nearby places (0 of 1 stage done)");
     expect(runSummary(browseRun())).toBe(
-      "Browse nearby ran only the places search. The other 7 stages were skipped, No model was called.",
+      "Browse nearby ran only the places search. The other 7 stages were skipped. No model was called.",
     );
     expect(runSummary(browseRun({ outcome: "no_result" }))).toContain(
       "No place was within the radius.",
@@ -116,7 +116,7 @@ describe("stages", () => {
     running.stages[3] = stage("nearby_places", { status: "running" });
     expect(phaseText(running)).toBe("Searching nearby places (0 of 1 stage done)");
     expect(runSummary(browseRun({}, true))).toBe(
-      "Browse nearby ran only the places search. The other 8 stages were skipped, No model was called.",
+      "Browse nearby ran only the places search. The other 8 stages were skipped. No model was called.",
     );
   });
 

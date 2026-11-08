@@ -1,7 +1,7 @@
 # Clef fit gateway
 
-This is slice 3 infrastructure only.
-It is disabled by default, has no public routes configured, and is not connected to Makan's web request path.
+The slice 3 coordinator is connected through the default-off slice 4 web strategy.
+The gateway remains disabled by default, with no public routes configured.
 Nothing here deploys, creates an account, performs inference, upgrades billing, or enables public fit scores.
 
 From the repository root, with Node 24:
@@ -34,15 +34,16 @@ There is no deploy script or CI deploy step.
 | `MAKAN_FIT_GATEWAY_TOKEN` | Gateway secret and matching Makan server secret: `<independent random credential, 32-256 characters>` |
 | `CLOUDFLARE_ACCOUNT_ID`   | Gateway secret only: `<dedicated free account id, 32 hex characters>`                                 |
 | `CLOUDFLARE_API_TOKEN`    | Gateway secret only: `<account-restricted Workers AI token>`                                          |
-| `MAKAN_FIT_GATEWAY_URL`   | Future Makan server setting only: `<HTTPS gateway origin>`                                            |
+| `MAKAN_FIT_GATEWAY_URL`   | Makan server setting only: `<HTTPS gateway origin>`                                                   |
 | `MAKAN_FIT_HMAC_SECRET`   | Makan server secret only: `<independent random secret, at least 32 bytes>`                            |
-| `MAKAN_FIT_GATEWAY_SCOPE` | Future Makan server setting: `preview` or `production`, matching the gateway                          |
+| `MAKAN_FIT_GATEWAY_SCOPE` | Makan server setting: `preview` or `production`, matching the gateway                                 |
 | `COORDINATOR`             | Worker Durable Object binding to the SQLite-backed `FitCoordinator` class                             |
 
-The URL, HMAC secret, and server scope are documented for slice 4; this slice does not read them from application configuration or build a gateway HTTP client.
+The Makan web strategy reads these settings only for explicit online fit selection and routes all product inference through this gateway.
+`MAKAN_FIT_ONLINE_ENABLED=0` keeps that route off until separately authorized qualification.
 The pure `makan.providers.scoring.gateway.GatewayKeys` helper constructs the server-side protocol envelope, without any I/O.
 The existing explicit native adapter remains an offline/testing building block; it must not be used as a production bypass around this coordinator.
-A production Makan server will hold only its gateway credential and HMAC secret, never the Cloudflare account id or Workers AI token.
+A production Makan server holds only its gateway credential and HMAC secret, never the Cloudflare account id or Workers AI token.
 Use distinct credentials, HMAC secrets, scopes, and dedicated free inference accounts for preview and production.
 All servers sharing an inference account must use the same deployed gateway and its one `scorer-account-v1` Durable Object.
 Do not create per-server or per-owner coordinators, deploy two gateways for one account, use gradual namespace replacement, or use this account for other inference outside the same quota pool.
@@ -98,9 +99,10 @@ Changing request wording, search center, or unrelated candidate ordering does no
 Never accept a browser-provided HMAC key/scope as authority; derive the scope from trusted server session state.
 The gateway trusts the authenticated server's HMACs and does not have the secret with which to recompute them.
 The server must reauthorize consent, ownership, current revisions, and eligibility before constructing or reusing an envelope.
-Guest nonce lifecycle and product checks belong to slice 4.
+The server-issued tab scope and product checks live in `makan.web.fit_sessions` and `makan.profile_fit`.
 
-Replies contain `v=1`, `reasons_version=2`, `status`, `reason`, and `attempt_id`.
+Replies contain `v=1`, `reasons_version=2`, `status`, `reason`, `cached`, and `attempt_id`.
+`cached` is true only for an unexpired validated result read from durable storage; fresh successful results and infrastructure states return false.
 A successful `ok` response adds `data`, a bounded native success projection that the slice-2 `ClefScorer` parser accepts, and `neurons`, which may be null.
 `pending` means the original durable attempt is in flight, and `unknown` means it cannot safely be replayed.
 Neither contains evidence.

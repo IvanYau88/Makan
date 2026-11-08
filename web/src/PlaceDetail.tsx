@@ -53,9 +53,9 @@ export function PlaceDetail({ place, isPick, mode, expanded = true, onToggle, on
 
       {open && (
         <div className="detail-body">
-          {place.fit && (
+          {place.fit && place.fit.score !== null && (
             <p className="hint">
-              {place.fit.explanation} Taste fit is an estimate, not a probability.
+              {place.fit.explanation} The score is an estimate, not a probability.
             </p>
           )}
           {place.address && <p className="meta">{place.address}</p>}

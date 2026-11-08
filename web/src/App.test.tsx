@@ -1301,7 +1301,7 @@ describe("Search mode", () => {
 
     const summary = screen.getByRole("region", { name: "Run summary" });
     expect(summary).toHaveTextContent("Browse nearby ran only the places search");
-    expect(summary).toHaveTextContent("The other 7 stages were skipped, No model was called.");
+    expect(summary).toHaveTextContent("The other 7 stages were skipped. No model was called.");
     expect(within(summary).getByText("Places listed")).toBeInTheDocument();
     expect(within(summary).queryByText("Complete recommendation")).not.toBeInTheDocument();
     const stages = within(screen.getByRole("list", { name: "Stages" }));
@@ -1328,7 +1328,7 @@ describe("Search mode", () => {
     await user.click(screen.getByRole("button", { name: "Execution" }));
 
     expect(screen.getByRole("region", { name: "Run summary" })).toHaveTextContent(
-      "The other 8 stages were skipped, No model was called.",
+      "The other 8 stages were skipped. No model was called.",
     );
     const stages = within(screen.getByRole("list", { name: "Stages" }));
     expect(stages.getByRole("button", { name: /^Signals\s*skipped/ })).toBeInTheDocument();

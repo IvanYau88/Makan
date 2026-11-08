@@ -171,7 +171,8 @@ The page has three views, and a fourth, Account, when the server has accounts.
 Discover is a map beside a list of nearby options: pins and rows share one numbering, selecting either opens the same detail, and the radius, category filter, and sort are on the page.
 Discover starts with a choice, "Pick for me" or "Browse nearby", remembered on the device.
 Pick for me asks for what you feel like and suggests a place.
-Browse nearby lists the places nearest you with no request, no suggestion, and no model call.
+Browse nearby lists the places nearest you with no request or suggestion.
+Its search graph calls no model; optional online taste scoring runs separately only with explicit consent.
 Group is for eating with friends, with no account for anyone, even when accounts are on.
 The host says what the group wants and gets a link to share, which looks like `/g/<token>`.
 A friend opens it, adds their name, what they cannot eat, and what they like, and the host sees who has answered as they do.
@@ -190,6 +191,10 @@ Latitude 90 or -90 finds nothing, which shows the no-results state.
 
 Add `--places-only` (or set `MAKAN_PLACES_ONLY=1`) to browse real places from Overture Maps with no model and no key.
 Only Browse nearby works there, and the page says so in a banner.
+Optional display fit is off by default (`MAKAN_FIT_ENABLED=0`); its local strategy uses exact cuisine categories.
+Online fit additionally requires the separate default-off `MAKAN_FIT_ONLINE_ENABLED` flag, explicit Clef selection, server gateway settings and diner opt-in.
+Keep online fit disabled until the qualification and rollout described in [the design](docs/DESIGN.md#selected-web-fit-strategy-and-explicit-consent).
+With online fit selected, unavailable scoring leaves places Unrated with a reason and never falls back to another model or local numbers.
 The first search in this mode installs DuckDB's `httpfs` extension and reads Overture over the network, which takes several seconds.
 
 For real providers, copy `.env.example` to `.env` and set `MAKAN_MODEL` and `OPENROUTER_API_KEY`.
