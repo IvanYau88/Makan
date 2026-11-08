@@ -1064,7 +1064,11 @@ def gates(rows: Sequence[Mapping[str, Any]], summary: Mapping[str, Any]) -> dict
     """The pre-registered qualification gates (tests/fixtures/clef/live/README.md), unchanged."""
     first = {(r["lane"], r["case"]): r for r in rows if r["outcome"] == "ok"}
     usage, control = summary["usage_all"], summary["control"]
-    reversed_rows = [r for r in rows if r["lane"] == "dual_reversed" and r["outcome"] == "ok"]
+    reversed_rows = [
+        r
+        for r in rows
+        if r["lane"] == "dual_reversed" and r["outcome"] == "ok" and ("dual", r["case"]) in first
+    ]
 
     def moved(row: Mapping[str, Any]) -> bool:
         before, after = (
@@ -1075,13 +1079,14 @@ def gates(rows: Sequence[Mapping[str, Any]], summary: Mapping[str, Any]) -> dict
             return (before is None) != (after is None)
         return bool(abs(before - after) > 10)
 
-    order_ok = not any(moved(row) for row in reversed_rows)
+    order_ok = bool(reversed_rows) and not any(moved(row) for row in reversed_rows)
     production = summary["production"]["by_pattern"]
     contract = summary["contract"]
     accepted_error = (
         1 - contract["accepted_correct"] / contract["accepted"] if contract["accepted"] else None
     )
-    delta = summary["dual_minus_control"]
+    delta = summary.get("dual_minus_control")
+    control_repeat, dual_repeat = summary.get("control_repeat"), summary.get("dual_repeat")
     result = {
         "Q1_availability": usage["outcomes"] == {"ok": usage["calls"]},
         "Q2_spend_and_plan": not summary["billing_hints"]
@@ -1089,10 +1094,13 @@ def gates(rows: Sequence[Mapping[str, Any]], summary: Mapping[str, Any]) -> dict
         and all(r["charged_neurons"] <= r["reserved_neurons"] + 1e-9 for r in rows),
         "Q3_control_canary": control["request_hashes_match_archive"] == 40
         and control["cases_shifted_beyond_rounding"] == 0,
-        "Q4_repeatability": summary["control_repeat"]["max_fit_score_shift"] == 0
-        and summary["dual_repeat"]["max_fit_score_shift"] == 0
-        and summary["dual_repeat"]["max_taste_fit_shift"] == 0,
-        "Q5_question_interference": delta["mae_difference"] <= 0.025
+        "Q4_repeatability": control_repeat is not None
+        and dual_repeat is not None
+        and control_repeat["max_fit_score_shift"] == 0
+        and dual_repeat["max_fit_score_shift"] == 0
+        and dual_repeat["max_taste_fit_shift"] == 0,
+        "Q5_question_interference": delta is not None
+        and delta["mae_difference"] <= 0.025
         and delta["mae_difference_95"][1] < 0.05,
         "Q6_question_order": order_ok,
         "Q7_production_direction": not summary["production"]["direction_contradictions_vs_local"]

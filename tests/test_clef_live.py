@@ -377,6 +377,38 @@ def test_recorded_ledgers_reproduce_their_committed_summaries(name: str) -> None
     assert json.loads(json.dumps(clef_live.summarize(rows))) == committed
 
 
+def test_a_ledger_stopped_before_the_repeat_lanes_fails_their_gates_instead_of_raising() -> None:
+    rows = clef_live._read_ledger(LIVE / "qualification-2026-11-08.jsonl")
+    stopped = [
+        r for r in rows if r["lane"] not in ("control_repeat", "dual_repeat", "dual_reversed")
+    ]
+    gates = clef_live.summarize(stopped)["gates"]
+    assert gates["Q4_repeatability"] is False
+    assert gates["Q6_question_order"] is False
+    full = clef_live.summarize(rows)["gates"]
+    assert gates["Q5_question_interference"] == full["Q5_question_interference"]
+
+
+def test_a_failed_dual_call_skips_its_reversed_row_and_the_interference_gate_fails() -> None:
+    rows = clef_live._read_ledger(LIVE / "qualification-2026-11-08.jsonl")
+    reversed_cases = {r["case"] for r in rows if r["lane"] == "dual_reversed"}
+    failed = [
+        {**r, "outcome": "rate_limited"}
+        if r["lane"] == "dual" and r["case"] in reversed_cases
+        else r
+        for r in rows
+    ]
+    summary = clef_live.summarize(failed)
+    assert "dual_reversed" not in summary
+    assert summary["gates"]["Q1_availability"] is False
+    assert summary["gates"]["Q6_question_order"] is False
+
+    no_dual = [r for r in rows if r["lane"] not in ("dual", "dual_repeat", "dual_reversed")]
+    gates = clef_live.summarize(no_dual)["gates"]
+    assert gates["Q4_repeatability"] is False
+    assert gates["Q5_question_interference"] is False
+
+
 def test_recorded_live_responses_pass_the_product_parser_unchanged() -> None:
     """Real sanitized dual-question bodies, validated by the exact production parser."""
     scorer = ClefScorer(None, CLEF_FIT_MODEL)
