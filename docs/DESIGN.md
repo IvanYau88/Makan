@@ -1286,6 +1286,12 @@ Enabling is an explicit `--var GATEWAY_ENABLED:1` deploy rather than a committed
 The README runbook lists the preconditions, the separate deploy and runtime tokens, disabled-first deployment, enabling and rollback.
 Nothing was deployed, no Cloudflare resource or Vercel setting changed, and `MAKAN_FIT_ONLINE_ENABLED` stays `0`.
 
+Enablement stopped at this qualification gate by the captain's decision on 2026-11-08.
+Q3, Q6, Q7 and Q8 failed and Q9 is open, so the gateway is not deployed, the guest preview and wider enablement are cancelled, and online fit stays off with `MAKAN_FIT_ONLINE_ENABLED=0`.
+The deploy configuration and runbook remain prepared but unused.
+Enablement is revisited only when all of these hold: richer soft inputs exist, such as slice 6's owner-only visit and dish evidence; the captain has provided independently reviewed human diner labels; a new canary has been frozen; and a fresh pre-registered qualification passes.
+Free plan and no-card status must still be confirmed before any deploy.
+
 ## Web stack
 
 - The web frontend is React.

@@ -32,3 +32,8 @@ No threshold, prompt, label or policy is changed after seeing results; a failed 
 
 The historical labels are model-written construction labels, and the historical states keep hard-limit text only in this lane.
 The production lane has no labels: it measures agreement with the deterministic exact-cuisine baseline and how many places stay Unrated, not diner accuracy.
+
+## Outcome
+
+Q1, Q2, Q4 and Q5 passed; Q3, Q6, Q7 and Q8 failed; Q9 stays open (see `qualification-2026-11-08.summary.json`, key `gates`).
+Enablement stopped here on 2026-11-08: no gateway deploy, no guest preview, and online fit stays off.

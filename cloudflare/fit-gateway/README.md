@@ -60,7 +60,11 @@ There is no process-local quota substitute and no Makan database migration.
 
 ## Deploy runbook
 
-Nothing here is authorized yet: deploying and enabling each wait for an explicit go-ahead with the slice 5 evidence in hand.
+Enablement stopped at the slice 5 qualification gate on 2026-11-08, so this runbook is prepared but unused and the gateway is not deployed.
+The control canary moved without a visible model identity change (Q3), reversing question order flipped a case across the acceptance threshold (Q6), production-shaped states rated fewer places than the local baseline (Q7), and draft-label accepted error was 21.4% (Q8); human diner labels (Q9) do not exist yet.
+Online fit stays off (`MAKAN_FIT_ONLINE_ENABLED=0`).
+Revisit only with richer soft inputs such as slice 6 owner evidence, captain-provided human diner labels, a new frozen canary and a passing fresh qualification; see `docs/DESIGN.md` and `tests/fixtures/clef/live/README.md`.
+Any later deploy still needs its own explicit go-ahead.
 Run every command from `cloudflare/fit-gateway`, typing secrets only into `wrangler secret put` prompts, never into arguments, files or shell history.
 
 Preconditions, all recorded before deploying:
