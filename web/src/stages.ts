@@ -179,7 +179,7 @@ export function runSummary(run: Run): string {
   }
   if (browsing) {
     const skipped = run.stages.filter((s) => s.status === "skipped").length;
-    const ran = `Browse nearby ran only the places search. The other ${skipped} stages were skipped, and no model was called.`;
+    const ran = `Browse nearby ran only the places search. The other ${skipped} stages were skipped. ${run.fit?.strategy === "clef" ? "Optional Cloudflare taste scoring is shown separately." : "No model was called."}`;
     return run.outcome === "no_result" ? `${ran} No place was within the radius.` : ran;
   }
   if (run.outcome === "no_result")

@@ -124,7 +124,11 @@ describe("shared durable admission", () => {
         send,
         () => baseTime,
       );
-      expect(await restarted.score(request())).toEqual(result);
+      expect(result.cached).toBe(false);
+      expect(await restarted.score(request())).toEqual({
+        ...result,
+        cached: true,
+      });
       expect(send).toHaveBeenCalledTimes(1);
       expect(core.metrics().charged).toBe(1010);
     });
@@ -595,7 +599,7 @@ describe("Worker boundary and real eviction", () => {
     );
     await evictDurableObject(objectStub);
     const replay = await worker.fetch(make(), bindings);
-    expect(await replay.json()).toEqual(value);
+    expect(await replay.json()).toEqual({ ...value, cached: true });
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     const call = vi.mocked(globalThis.fetch).mock.calls[0];
     expect(call[0]).toBe(
@@ -617,7 +621,7 @@ describe("Worker boundary and real eviction", () => {
     const value = (await first.json()) as Reply;
     expect(value).toMatchObject({ status: "ok", data: fixture.response });
     const cached = await worker.fetch(make(), bindings);
-    expect(await cached.json()).toEqual(value);
+    expect(await cached.json()).toEqual({ ...value, cached: true });
   });
   it("requires server authentication and stays disabled without explicit configuration", async () => {
     const unauth = await worker.fetch(

@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
@@ -41,10 +42,11 @@ from makan.accounts.tokens import Identity
 from makan.browse import BrowseRequest, BrowseResult, browse
 from makan.config import Config, ConfigError
 from makan.env import load_dotenv
-from makan.fit import FitReason, cuisine_fit
-from makan.fit_inputs import Cuisine, FitInputs, owner_fit_inputs
+from makan.fit import FitReason
+from makan.fit_inputs import Cuisine, FitInputs, eligible_for_display, owner_fit_inputs
 from makan.places.base import MAX_RADIUS_M, MIN_RADIUS_M, PlaceQuery, PlacesProvider
 from makan.places.factory import places_provider
+from makan.profile_fit import FitStrategy
 from makan.providers.base import Provider
 from makan.providers.openrouter import OpenRouterProvider
 from makan.providers.scoring import Scorer, build_scorer
@@ -67,6 +69,7 @@ from makan.web.accounts import (
 )
 from makan.web.demo import DemoPlaces, DemoProvider
 from makan.web.errors import ApiError, error, public_warnings, workflow_failure
+from makan.web.fit_sessions import FitSessions
 from makan.web.groups import register_group_routes
 from makan.web.purge import purge_forever
 from makan.web.runs import Outcome, RunRecorder, SearchMode
@@ -87,6 +90,20 @@ class GuestTastes(BaseModel):
     dislikes: list[Cuisine] = Field(default_factory=list, max_length=8)
 
 
+class OnlineFit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    consent: bool = Field(default=False, strict=True)
+    session: str | None = Field(default=None, max_length=256)
+
+
+class HardRequirements(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_distance_m: float | None = Field(default=None, gt=0, le=MAX_RADIUS_M)
+    step_free_required: bool = Field(default=False, strict=True)
+
+
 class RecommendBody(BaseModel):
     """What the browser sends. There is deliberately no user id: who is asking comes only from
     a verified access token in the `Authorization` header, never from the body.
@@ -105,6 +122,8 @@ class RecommendBody(BaseModel):
     ] = Field(default=None, validate_default=True)
     radius_m: Annotated[int, Field(ge=MIN_RADIUS_M, le=MAX_RADIUS_M)] = 1000
     tastes: GuestTastes | None = None
+    online_fit: OnlineFit = Field(default_factory=OnlineFit)
+    requirements: HardRequirements = Field(default_factory=HardRequirements)
 
     @field_validator("request")
     @classmethod
@@ -136,6 +155,7 @@ def create_app(
     sessions: GroupSessions | None = None,
     scorer: Scorer | None = None,
     accounts: AccountServices | None = None,
+    fit_strategy: FitStrategy | None = None,
 ) -> FastAPI:
     """Build the app around ready providers. Tests pass fakes, and the CLI passes real ones.
 
@@ -155,6 +175,8 @@ def create_app(
     refused, and `provider` is never called.
     """
     # A group needs the language model to pick, so there are none in a run with no model.
+    fit_strategy = fit_strategy or FitStrategy(config)
+    fit_sessions = FitSessions(config.fit.hmac_secret)
     groups = config.groups_enabled and mode != "places"
     group_sessions: GroupSessions | None = None
     if groups:
@@ -219,6 +241,7 @@ def create_app(
                 "groups": groups,
                 "accounts": accounts is not None,
                 "fit": config.fit_enabled,
+                "online_fit": fit_strategy.online,
             },
         }
 
@@ -226,6 +249,38 @@ def create_app(
     if accounts is not None:
         register_account_routes(app, accounts)
         register_visit_routes(app, accounts)
+
+    @app.post("/api/fit/session")
+    async def fit_session(
+        choice: OnlineFit, identity: Annotated[Identity | None, Depends(optional_identity)]
+    ) -> JSONResponse:
+        if not fit_strategy.online:
+            raise ApiError(404, "not_found", "Not found.")
+        previous = fit_sessions.scope(choice.session, identity)
+        if previous is not None:
+            await fit_strategy.purge(previous)
+        token = fit_sessions.issue(identity) if choice.consent and config.fit.ready else None
+        return JSONResponse({"session": token}, headers={"Cache-Control": "private, no-store"})
+
+    @app.middleware("http")
+    async def invalidate_owner_fit(request: Request, call_next: Any) -> Any:
+        response = await call_next(request)
+        if (
+            fit_strategy.online
+            and config.fit.ready
+            and response.status_code < 400
+            and request.method in ("PUT", "DELETE")
+            and request.url.path in ("/api/me", "/api/me/taste")
+        ):
+            try:
+                identity = await run_in_threadpool(
+                    optional_identity, request, request.headers.get("authorization")
+                )
+            except ApiError:
+                identity = None
+            if identity is not None:
+                await fit_strategy.purge(f"owner:{identity.user_id}")
+        return response
 
     # The stages of the full solo graph, so a browse run can show the ones it skipped.
     plan = tuple(
@@ -247,6 +302,7 @@ def create_app(
         body: RecommendBody,
         on_update: Callable[[dict[str, Any]], None] | None = None,
         identity: Identity | None = None,
+        cancelled: threading.Event | None = None,
     ) -> Answer:
         """Run the search with a recorder on its trace. Synchronous, so call it off the loop."""
         center = PlaceQuery.near(body.latitude, body.longitude, body.radius_m)
@@ -276,21 +332,99 @@ def create_app(
         elif config.fit_enabled and body.tastes is not None:
             inputs = FitInputs(tuple(body.tastes.likes), tuple(body.tastes.dislikes))
 
-        def assess(ranked: tuple[RankedCandidate, ...]) -> tuple[RankedCandidate, ...]:
-            return tuple(
-                replace(
-                    r,
-                    fit=cuisine_fit(
-                        r.place.category,
-                        inputs.likes,
-                        inputs.dislikes,
-                        enabled=config.fit_enabled,
-                        problem=inputs.problem,
-                    ),
-                )
-                for r in ranked
-                if not inputs.excludes(r.place.name)
+        initial_inputs = inputs
+        requirements = body.requirements
+        ceiling = min(body.radius_m, requirements.max_distance_m or body.radius_m)
+        hard_warnings = list(inputs.warnings)
+        if requirements.max_distance_m is not None:
+            hard_warnings.append(
+                "Distance limits use straight-line distance from the approximate search center; "
+                "walking time and route distance are unverified."
             )
+        if requirements.step_free_required:
+            hard_warnings.append(
+                "Required step-free access is unknown for these places. "
+                "No place can be shown as satisfying this requirement. Check with the venue."
+            )
+        inputs = replace(inputs, warnings=tuple(hard_warnings))
+
+        def assess(ranked: tuple[RankedCandidate, ...], source: str) -> tuple[RankedCandidate, ...]:
+            nonlocal inputs
+            eligible = tuple(
+                r
+                for r in ranked
+                if eligible_for_display(
+                    name=r.place.name,
+                    distance_m=r.place.distance_m,
+                    inputs=inputs,
+                    radius_m=ceiling,
+                    step_free_required=requirements.step_free_required,
+                )
+            )
+            assessed, summary = asyncio.run(
+                fit_strategy.assess(
+                    eligible,
+                    inputs,
+                    source=source,
+                    consent=body.online_fit.consent,
+                    scope=fit_sessions.scope(body.online_fit.session, identity),
+                    consent_revision=body.online_fit.session or "",
+                    cancelled=cancelled.is_set if cancelled else lambda: False,
+                )
+            )
+            if identity is not None and accounts is not None:
+                # A memory edit/deletion during I/O cannot revive withdrawn tastes or exclusions.
+                try:
+                    latest = owner_fit_inputs(accounts.accounts.memory, identity.user_id)
+                except Exception:
+                    latest = FitInputs(
+                        problem=FitReason.UNAVAILABLE,
+                        warnings=(
+                            "Saved tastes and exclusions are unavailable. Check before going.",
+                        ),
+                    )
+                if latest != initial_inputs:
+                    inputs = replace(
+                        latest,
+                        warnings=tuple(
+                            dict.fromkeys(
+                                (*latest.warnings, *hard_warnings[len(initial_inputs.warnings) :])
+                            )
+                        ),
+                    )
+                    if fit_strategy.online:
+                        inputs = replace(
+                            inputs,
+                            problem=inputs.problem
+                            or (
+                                FitReason.STALE
+                                if inputs.likes or inputs.dislikes
+                                else FitReason.NO_TASTE
+                            ),
+                        )
+                    eligible = tuple(
+                        r
+                        for r in ranked
+                        if eligible_for_display(
+                            name=r.place.name,
+                            distance_m=r.place.distance_m,
+                            inputs=inputs,
+                            radius_m=ceiling,
+                            step_free_required=requirements.step_free_required,
+                        )
+                    )
+                    assessed, summary = asyncio.run(
+                        fit_strategy.assess(
+                            eligible,
+                            inputs,
+                            source=source,
+                            consent=False,
+                            scope=None,
+                        )
+                    )
+            # A separate bounded summary: fit is decoration, never a fictional graph stage.
+            recorder.fit_summary(summary)
+            return assessed
 
         if body.mode == "browse":
             found = browse(
@@ -300,14 +434,18 @@ def create_app(
                 sink=recorder,
             )
             if found.places is not None:
-                assessed = assess(found.places)
+                assessed = assess(found.places, found.data_source)
                 excluded = len(assessed) != len(found.places)
                 found = replace(
                     found,
                     places=assessed,
                     warnings=found.warnings
                     + inputs.warnings
-                    + (("Left out places you said you will not go to.",) if excluded else ()),
+                    + (
+                        ("Left out places that do not meet your hard requirements.",)
+                        if excluded
+                        else ()
+                    ),
                 )
             recorder.finish(_browse_outcome(found))
             if found.places is None:
@@ -335,7 +473,7 @@ def create_app(
             recorder.finish(_outcome(result))
             return Answer(recorder, failure=workflow_failure(result.graph))
         rec = result.recommendation
-        ranked = assess(rec.ranked)
+        ranked = assess(rec.ranked, rec.data_source)
         # A single immutable value per candidate is reused by all three wire views.
         rec = replace(
             rec,
@@ -352,7 +490,10 @@ def create_app(
                     if ranked
                     else "No places found within this search radius."
                 ),
-                warnings=(*rec.warnings, "Left out places you said you will not go to."),
+                warnings=(
+                    *rec.warnings,
+                    "Left out places that do not meet your hard requirements.",
+                ),
             )
         recorder.finish(_outcome(replace(result, recommendation=rec)))
         payload = _recommendation_json(
@@ -387,13 +528,16 @@ def create_app(
         require_recommendations(body)
         loop = asyncio.get_running_loop()
         lines: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        cancelled = threading.Event()
 
         def push(line: dict[str, Any] | None) -> None:
             loop.call_soon_threadsafe(lines.put_nowait, line)
 
         def work() -> None:
             try:
-                answer = run_search(body, lambda run: push({"type": "run", "run": run}), identity)
+                answer = run_search(
+                    body, lambda run: push({"type": "run", "run": run}), identity, cancelled
+                )
                 if answer.failure is not None:
                     push(
                         {
@@ -426,8 +570,11 @@ def create_app(
         finished.add_done_callback(background.discard)
 
         async def body_lines() -> AsyncIterator[str]:
-            while (line := await lines.get()) is not None:
-                yield json.dumps(line, ensure_ascii=False) + "\n"
+            try:
+                while (line := await lines.get()) is not None:
+                    yield json.dumps(line, ensure_ascii=False) + "\n"
+            finally:
+                cancelled.set()
 
         return StreamingResponse(
             body_lines(),

@@ -85,10 +85,10 @@ def _refused(value: dict[str, Any]) -> bool:
 class ClefScorer(BaseScorer):
     name = "clef"
 
-    def __init__(self, transport: CloudflareTransport, model: str) -> None:
+    def __init__(self, transport: CloudflareTransport | None, model: str) -> None:
         super().__init__(model)
         self._selector = clef_selector(model)
-        if transport.selector != self._selector:
+        if transport is not None and transport.selector != self._selector:
             raise ValueError("Clef transport model mismatch")
         self._transport = transport
         root = resources.files("makan").joinpath("evals", "sets", "clef")
@@ -98,7 +98,8 @@ class ClefScorer(BaseScorer):
         )
 
     def close(self) -> None:
-        self._transport.close()
+        if self._transport is not None:
+            self._transport.close()
 
     def _failure(self, reason: ClefReason, usage: Usage | None = None) -> ScoreResult:
         kind = {
@@ -133,7 +134,7 @@ class ClefScorer(BaseScorer):
         """
         started = time.perf_counter()
         try:
-            canonical = self._canonical_state(state)
+            body = self.profile_body(state)
         except (KeyError, TypeError, ValueError, UnicodeError, RecursionError):
             return ProfileCaseResult(
                 replace(
@@ -141,15 +142,34 @@ class ClefScorer(BaseScorer):
                     latency_s=time.perf_counter() - started,
                 )
             )
-        questions = {
-            key: {field: question[field] for field in ("type", "instructions", "criteria")}
-            for key, question in self._contract["questions"].items()
-        }
-        body = {"model": self._selector, "state": canonical, "questions": questions}
-        ids = tuple(questions["taste_fit"]["criteria"])
+        ids = tuple(self._contract["questions"]["taste_fit"]["criteria"])
         result = self._request(body, "taste_fit", ids, ordinal=True)
         return replace(
             result, choice=replace(result.choice, latency_s=time.perf_counter() - started)
+        )
+
+    def profile_body(self, state: Mapping[str, Any]) -> dict[str, Any]:
+        """Pure frozen request construction, shared by native tooling and the gateway route."""
+        body = {
+            "model": self._selector,
+            "state": self._canonical_state(state),
+            "questions": {
+                key: {field: question[field] for field in ("type", "instructions", "criteria")}
+                for key, question in self._contract["questions"].items()
+            },
+        }
+        if len(json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode()) > 8192:
+            raise ValueError("profile request exceeds 8 KiB")
+        return body
+
+    def parse_profile_response(self, data: dict[str, Any]) -> ProfileCaseResult:
+        """Validate gateway evidence with exactly the native adapter's parser, without I/O."""
+        return self._request(
+            {},
+            "taste_fit",
+            tuple(self._contract["questions"]["taste_fit"]["criteria"]),
+            ordinal=True,
+            response_data=data,
         )
 
     def _canonical_state(self, state: Mapping[str, Any]) -> str:
@@ -192,13 +212,19 @@ class ClefScorer(BaseScorer):
         ids: tuple[str, ...],
         *,
         ordinal: bool = False,
+        response_data: dict[str, Any] | None = None,
     ) -> ProfileCaseResult:
         metadata = CloudflareMetadata()
         usage = Usage()
         try:
-            response = self._transport.post(body)
-            metadata = response.metadata
-            data = response.data
+            if response_data is None:
+                if self._transport is None:
+                    raise ClefError(ClefReason.CONFIGURATION)
+                response = self._transport.post(body)
+                metadata = response.metadata
+                data = response.data
+            else:
+                data = response_data
             if _refused(data):
                 raise ClefError(ClefReason.REFUSED)
             if data.get("success") is not True or data.get("errors"):

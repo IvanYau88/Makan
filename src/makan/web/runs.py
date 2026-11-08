@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from makan.config import Config
+from makan.profile_fit import FitSummary
 from makan.trace import TraceEvent
 from makan.web.errors import public_warnings
 
@@ -86,6 +87,10 @@ class RunRecorder:
             self._events.append(event)
         if self._on_update and event.type in _STRUCTURAL:
             self._on_update(self.snapshot())
+
+    def fit_summary(self, summary: FitSummary) -> None:
+        with self._lock:
+            self._meta["fit"] = summary.trace_summary()
 
     def finish(self, outcome: Outcome) -> dict[str, Any]:
         """Record the product outcome, which the graph status alone cannot say."""

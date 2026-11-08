@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { FitNotice } from "./FitCaption";
 import { FlowGraph } from "./FlowGraph";
 import { coordinateLabel, durationLabel, radiusLabel } from "./format";
 import type { HistoryEntry } from "./history";
@@ -22,9 +23,10 @@ const MODE_LABEL: Record<Mode, string> = {
 interface Props {
   history: HistoryEntry[];
   onClear: () => void;
+  onlineFit?: boolean;
 }
 
-export function ExecutionView({ history, onClear }: Props) {
+export function ExecutionView({ history, onClear, onlineFit = false }: Props) {
   const [chosenKey, setChosenKey] = useState<number | null>(null);
   const [chosenStage, setChosenStage] = useState<StageName | null>(null);
   const entry = history.find((e) => e.key === chosenKey) ?? history[0] ?? null;
@@ -43,10 +45,12 @@ export function ExecutionView({ history, onClear }: Props) {
         <h2 className="page-title">The graph Makan actually runs</h2>
         <p className="lead">
           Pick for me runs these eight stages, and a ninth, Signals, when a scorer backend is set.
-          Browse nearby runs only the nearby places search and marks the rest skipped, because it
-          makes no model call. This page shows what the server recorded for your searches in this
+          Browse nearby runs only the nearby places search and marks the rest skipped, without a
+          recommendation model. This page shows what the server recorded for your searches in this
           tab, with real inputs, outputs, timings and errors. History is kept in this tab only and
-          is gone when you reload.
+          is gone when you reload.{" "}
+          {onlineFit &&
+            "With consent, Cloudflare taste scoring runs after the graph and appears in a separate summary below. It does not change ranking."}
         </p>
       </header>
 
@@ -141,10 +145,18 @@ function RunSummary({ run, abandoned }: { run: Run; abandoned: boolean }) {
           value={run.status === "running" ? "Running" : run.status === "ok" ? "Ok" : "Failed"}
         />
         <Fact label="Outcome" value={outcomeLabel(run)} />
-        <Fact label="Mode" value={MODE_LABEL[run.mode]} />
+        <Fact
+          label="Mode"
+          value={
+            run.fit?.strategy === "clef" && run.mode === "places"
+              ? "Real places, optional online fit"
+              : MODE_LABEL[run.mode]
+          }
+        />
         <Fact label="Data source" value={run.data_source} />
         <Fact label="Duration" value={durationLabel(run.duration_ms)} />
       </dl>
+      <FitNotice summary={run.fit} />
       <p
         className={`notice ${run.outcome === "partial" || run.outcome === "failed" ? "notice-warn" : "notice-info"}`}
       >
@@ -241,7 +253,7 @@ function StageDetail({
           </dl>
           <p className="hint">
             {browsing
-              ? "Browse nearby asks for no suggestion, so this stage did not run and no model was called."
+              ? "Browse nearby asks for no suggestion, so this stage did not run. Any optional taste scoring is shown separately."
               : "This stage did not run."}
           </p>
         </>

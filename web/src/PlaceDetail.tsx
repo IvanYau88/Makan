@@ -1,3 +1,4 @@
+import { FitCaption } from "./FitCaption";
 import { Plate } from "./Plate";
 import { categoryLabel, distanceLabel } from "./format";
 import { hasCoordinates } from "./places";
@@ -28,6 +29,7 @@ export function PlaceDetail({ place, isPick, mode, expanded = true, onToggle, on
           </div>
           <p className="meta">{categoryLabel(place.category)}</p>
           <Plate score={place.fit?.score} />
+          <FitCaption fit={place.fit} />
           <p className="meta">
             {distanceLabel(place.distance_m)} straight-line from the search center
           </p>
@@ -53,7 +55,7 @@ export function PlaceDetail({ place, isPick, mode, expanded = true, onToggle, on
         <div className="detail-body">
           {place.fit && (
             <p className="hint">
-              {place.fit.explanation} Cuisine fit is an estimate, not a probability.
+              {place.fit.explanation} Taste fit is an estimate, not a probability.
             </p>
           )}
           {place.address && <p className="meta">{place.address}</p>}

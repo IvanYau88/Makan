@@ -28,7 +28,15 @@ def test_valid_score_bounds_and_public_allowlist(score: int) -> None:
     public = assessment.to_json()
     assert public["score"] == score
     assert public["status"] == "rated"
-    assert set(public) == {"score", "status", "basis", "policy_version", "reason", "explanation"}
+    assert set(public) == {
+        "score",
+        "status",
+        "basis",
+        "policy_version",
+        "reason",
+        "explanation",
+        "cached",
+    }
 
 
 def test_null_and_rated_reasons_cannot_disagree() -> None:
@@ -37,7 +45,7 @@ def test_null_and_rated_reasons_cannot_disagree() -> None:
     with pytest.raises(ValueError):
         FitAssessment(reason=FitReason.LIKE)
     for reason in FitReason:
-        if reason not in (FitReason.LIKE, FitReason.DISLIKE):
+        if reason not in (FitReason.LIKE, FitReason.DISLIKE, FitReason.MODEL):
             public = FitAssessment(reason=reason).to_json()
             assert public["score"] is None
             assert public["status"] != "rated"

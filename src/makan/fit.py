@@ -14,6 +14,18 @@ POLICY_VERSION = "exact-cuisine-v1"
 
 
 class FitReason(StrEnum):
+    MODEL = "model_estimate"
+    NO_CONSENT = "no_consent"
+    INSUFFICIENT = "insufficient_evidence"
+    DEADLINE = "deadline"
+    CONFIGURATION = "configuration"
+    RATE_LIMITED = "rate_limited"
+    QUOTA_EXHAUSTED = "quota_exhausted"
+    TIMEOUT = "timeout"
+    SERVICE_UNAVAILABLE = "service_unavailable"
+    MALFORMED_RESPONSE = "malformed_response"
+    REFUSED = "refused"
+    INVALID_INPUT = "invalid_input"
     DISABLED = "disabled"
     NO_TASTE = "no_taste"
     UNAVAILABLE = "unavailable"
@@ -26,6 +38,20 @@ class FitReason(StrEnum):
 
 
 _EXPLANATIONS = {
+    FitReason.MODEL: "Taste estimate from the preferences you shared and available place facts.",
+    FitReason.NO_CONSENT: "Online taste scoring is off. You can opt in under Your tastes.",
+    FitReason.INSUFFICIENT: "Available taste and place facts cannot support a score.",
+    FitReason.DEADLINE: "This place was not scored within the search time limit.",
+    FitReason.CONFIGURATION: (
+        "Online taste scoring is not configured. Nearby results are available."
+    ),
+    FitReason.RATE_LIMITED: "Taste scoring is busy. Try a later search.",
+    FitReason.QUOTA_EXHAUSTED: "Taste scoring's daily allowance is used up.",
+    FitReason.TIMEOUT: "Taste scoring timed out. No score was estimated.",
+    FitReason.SERVICE_UNAVAILABLE: "Taste scoring is unavailable. Try a later search.",
+    FitReason.MALFORMED_RESPONSE: "Taste scoring returned an unusable answer.",
+    FitReason.REFUSED: "Taste scoring did not return an assessment.",
+    FitReason.INVALID_INPUT: "These taste or place facts cannot be scored.",
     FitReason.DISABLED: "Cuisine fit is not enabled.",
     FitReason.NO_TASTE: "Add tastes to see fit.",
     FitReason.UNAVAILABLE: "Cuisine tastes are unavailable. Try again later.",
@@ -43,18 +69,43 @@ class FitAssessment:
     score: int | None = None
     reason: FitReason = FitReason.DISABLED
 
+    basis: str = "cuisine_profile"
+    cached: bool = False
+
     def __post_init__(self) -> None:
         if not isinstance(self.reason, FitReason):
             raise ValueError("fit needs a known reason")
         if self.score is not None and (type(self.score) is not int or not 0 <= self.score <= 100):
             raise ValueError("fit score must be an integer from 0 to 100, or None")
-        if (self.score is not None) != (self.reason in (FitReason.LIKE, FitReason.DISLIKE)):
+        if self.basis not in ("cuisine_profile", "profile_model") or type(self.cached) is not bool:
+            raise ValueError("invalid fit provenance")
+        if self.reason == FitReason.MODEL and self.basis != "profile_model":
+            raise ValueError("model estimate needs model provenance")
+        if self.basis == "profile_model" and self.reason in (FitReason.LIKE, FitReason.DISLIKE):
+            raise ValueError("model assessment cannot claim deterministic cuisine evidence")
+        if self.cached and self.basis != "profile_model":
+            raise ValueError("only gateway assessments may be cached")
+        if (self.score is not None) != (
+            self.reason in (FitReason.LIKE, FitReason.DISLIKE, FitReason.MODEL)
+        ):
             raise ValueError("only a rated assessment has a score")
 
     @property
     def status(self) -> str:
         if self.score is not None:
             return "rated"
+        if self.reason in (
+            FitReason.CONFIGURATION,
+            FitReason.RATE_LIMITED,
+            FitReason.QUOTA_EXHAUSTED,
+            FitReason.TIMEOUT,
+            FitReason.SERVICE_UNAVAILABLE,
+            FitReason.MALFORMED_RESPONSE,
+            FitReason.REFUSED,
+            FitReason.INVALID_INPUT,
+            FitReason.DEADLINE,
+        ):
+            return "unavailable"
         if self.reason in (FitReason.DISABLED, FitReason.NO_TASTE, FitReason.UNAVAILABLE):
             return self.reason.value
         return "insufficient_evidence"
@@ -64,8 +115,11 @@ class FitAssessment:
         return {
             "score": self.score,
             "status": self.status,
-            "basis": "cuisine_profile",
-            "policy_version": POLICY_VERSION,
+            "basis": self.basis,
+            "policy_version": (
+                "clef-profile-fit-v1-proposed" if self.basis == "profile_model" else POLICY_VERSION
+            ),
+            "cached": self.cached,
             "reason": self.reason.value,
             "explanation": _EXPLANATIONS[self.reason],
         }

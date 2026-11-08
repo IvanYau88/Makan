@@ -1,4 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
+import { FitNotice } from "./FitCaption";
 import { Filters } from "./Filters";
 import { MapView } from "./MapView";
 import { ModeChoice } from "./ModeChoice";
@@ -456,6 +457,7 @@ function ResultNotes({ result }: { result: Recommendation }) {
           </ul>
         </section>
       )}
+      <FitNotice summary={result.run?.fit} />
       {result.warnings.length > 0 && (
         <section>
           <h3 className="subtitle">Good to know</h3>

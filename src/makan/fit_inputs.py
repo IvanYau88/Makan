@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID
@@ -24,6 +25,7 @@ class FitInputs:
     problem: FitReason | None = None
     never_places: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+    revision: str = ""
 
     def excludes(self, name: str) -> bool:
         return any(names_place(term, name) for term in self.never_places)
@@ -40,6 +42,7 @@ def owner_fit_inputs(memory: Memory, user_id: UUID) -> FitInputs:
     never: list[str] = []
     warnings: list[str] = []
     problem = None
+    revisions: list[str] = []
     for recalled in memory.recall(
         Owner(user_id=user_id), kinds=("cuisine_like", "cuisine_dislike", "constraint")
     ):
@@ -60,6 +63,7 @@ def owner_fit_inputs(memory: Memory, user_id: UUID) -> FitInputs:
             continue
         if fact.source != "stated":
             continue
+        revisions.append(f"{fact.id}:{fact.last_confirmed_at}:{fact.expires_at}")
         if recalled.stale:
             problem = FitReason.STALE
             continue
@@ -69,4 +73,27 @@ def owner_fit_inputs(memory: Memory, user_id: UUID) -> FitInputs:
             problem = FitReason.UNSUPPORTED
             continue
         (likes if fact.kind == "cuisine_like" else dislikes).append(cuisine)
-    return FitInputs(tuple(likes), tuple(dislikes), problem, tuple(never), tuple(warnings))
+    return FitInputs(
+        tuple(likes),
+        tuple(dislikes),
+        problem,
+        tuple(never),
+        tuple(warnings),
+        hashlib.sha256("\n".join(sorted(revisions)).encode()).hexdigest(),
+    )
+
+
+def eligible_for_display(
+    *,
+    name: str,
+    distance_m: int,
+    inputs: FitInputs,
+    radius_m: float,
+    step_free_required: bool = False,
+) -> bool:
+    """Plain hard eligibility before every fit strategy, independent of scorer behavior.
+
+    Current source facts never verify step-free access, so a required venue cannot be
+    presented as satisfying that requirement. The web channel explains that omission.
+    """
+    return not inputs.excludes(name) and 0 <= distance_m <= radius_m and not step_free_required

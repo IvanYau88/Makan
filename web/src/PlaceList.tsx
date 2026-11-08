@@ -1,3 +1,4 @@
+import { FitCaption } from "./FitCaption";
 import { Plate } from "./Plate";
 import { PlatePlaceholder } from "./PlatePlaceholder";
 import { useEffect, useRef } from "react";
@@ -75,6 +76,7 @@ export function PlaceList({
                   <span className="row-reason">{place.reasons[0]}</span>
                 )}
                 <Plate score={place.fit?.score} />
+                <FitCaption fit={place.fit} />
               </span>
             </button>
             {isSelected && inlineDetail}
