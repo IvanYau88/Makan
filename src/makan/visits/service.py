@@ -14,6 +14,8 @@
   visit leaves it as it was.
 - A rating is `fresh` when the person entered the value, and `confirmed` when they accepted the
   tagger's value as it was.
+- Taste evidence (`taste_history`) reads only the person's own visits and dish rows, by owner, and
+  summarizes them with `makan.visits.evidence`. It never follows a tag to the tagger's visit.
 """
 
 from __future__ import annotations
@@ -50,6 +52,8 @@ from makan.visits.content import (
     parse_rating,
 )
 from makan.visits.errors import Conflict, InvalidVisit, NotFound, SignInRequired
+from makan.visits.evidence import TasteHistory, owner_history
+from makan.visits.evidence import policy as history_policy
 from makan.visits.store import VisitStore
 
 GOING_HERE_WINDOW = timedelta(hours=48)
@@ -323,6 +327,24 @@ class Visits:
             )
             for v in visits
         ]
+
+    def taste_history(self, user_id: UUID | None) -> TasteHistory:
+        """Deterministic owner-only summaries of the person's own ratings, for soft taste fit.
+
+        Only rows owned by the person are read: their visits, rated by them or not, and their own
+        dish rows. A tagger's visit, dishes, tags, and notes are never read, so a rating the person
+        has not confirmed or changed never counts as theirs. A history longer than the policy's
+        read limit is unusable, never truncated.
+        """
+        user = _signed_in(user_id)
+        limit = int(history_policy()["read_limit_visits"])
+        visits = self.store.list_visits(user, limit=limit + 1)
+        if len(visits) > limit:
+            return owner_history(user, (), (), self._today(), complete=False)
+        return owner_history(user, visits, self.store.dishes_by_owner(user), self._today())
+
+    def _today(self) -> date:
+        return self._clock().astimezone(UTC).date()
 
     def edit_visit(
         self,

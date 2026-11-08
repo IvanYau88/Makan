@@ -12,6 +12,7 @@ from makan.memory.content import claim
 from makan.memory.hard import names_place, parse_hard
 from makan.memory.service import Memory
 from makan.memory.store import Owner
+from makan.visits.evidence import TasteHistory
 
 Cuisine = Literal[
     "chinese", "indian", "italian", "japanese", "korean", "mexican", "thai", "vietnamese"
@@ -26,6 +27,8 @@ class FitInputs:
     never_places: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
     revision: str = ""
+    # The owner's own history summaries, only when a signed-in diner opted in to sending them.
+    history: TasteHistory | None = None
 
     def excludes(self, name: str) -> bool:
         return any(names_place(term, name) for term in self.never_places)

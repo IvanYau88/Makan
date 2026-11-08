@@ -38,3 +38,10 @@ The production lane has no labels: it measures agreement with the deterministic 
 
 Q1, Q2, Q4 and Q5 passed; Q3, Q6, Q7 and Q8 failed; Q9 stays open (see `qualification-2026-11-08.summary.json`, key `gates`).
 Enablement stopped here on 2026-11-08: no gateway deploy, no guest preview, and online fit stays off.
+
+## State version 2 requalification (not yet run)
+
+`python -m makan.evals.clef_live qualify-history --live --max-requests 38 --max-neurons <cap> --ledger <file>` requalifies the owner history state from slice 6, under the same stop rules as the qualification.
+Its 38 calls are fixed: 25 `history` states built from synthetic visits by the production evidence and state builders, 5 `history_plain` version 1 counterparts, then 4 `history_repeat` and 4 `history_reversed` probes, reserving 417 Neurons in total.
+Its gates are not pre-registered yet.
+Commit them here, together with the captain's independently reviewed human diner labels and a newly frozen canary, before that run, and never change them after seeing results.

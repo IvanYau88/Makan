@@ -63,8 +63,8 @@ class VisitStore(Protocol):
         """For code that already proved the caller may read it, such as an accepted tag."""
         ...
 
-    def list_visits(self, user_id: UUID) -> list[Visit]:
-        """Newest meal first."""
+    def list_visits(self, user_id: UUID, limit: int | None = None) -> list[Visit]:
+        """Newest meal first, at most `limit` of them when one is given."""
         ...
 
     def dishes_of(self, visit_id: UUID) -> list[VisitDish]:
@@ -72,6 +72,10 @@ class VisitStore(Protocol):
         ...
 
     def dish_counts(self, user_id: UUID) -> dict[UUID, int]: ...
+
+    def dishes_by_owner(self, user_id: UUID) -> list[VisitDish]:
+        """Every dish row the user owns, and none of anyone else's, in no particular order."""
+        ...
 
     def save_visit(self, visit: Visit, dishes: list[VisitDish]) -> None:
         """Replace the visit row and make its dishes exactly `dishes`, in one step.
@@ -233,15 +237,20 @@ class InMemoryVisitStore:
         with self._lock:
             return self._visits.get(visit_id)
 
-    def list_visits(self, user_id: UUID) -> list[Visit]:
+    def list_visits(self, user_id: UUID, limit: int | None = None) -> list[Visit]:
         with self._lock:
             found = [v for v in self._visits.values() if v.user_id == user_id]
-        return sorted(found, key=lambda v: (v.visited_on, v.created_at, v.id), reverse=True)
+        ordered = sorted(found, key=lambda v: (v.visited_on, v.created_at, v.id), reverse=True)
+        return ordered if limit is None else ordered[:limit]
 
     def dishes_of(self, visit_id: UUID) -> list[VisitDish]:
         with self._lock:
             found = [d for d in self._dishes.values() if d.visit_id == visit_id]
         return sorted(found, key=lambda d: (d.position, d.created_at, d.id))
+
+    def dishes_by_owner(self, user_id: UUID) -> list[VisitDish]:
+        with self._lock:
+            return [d for d in self._dishes.values() if d.user_id == user_id]
 
     def dish_counts(self, user_id: UUID) -> dict[UUID, int]:
         counts: dict[UUID, int] = {}
