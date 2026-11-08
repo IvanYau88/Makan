@@ -1,3 +1,4 @@
+import { FitCaption } from "./FitCaption";
 import { Plate } from "./Plate";
 import { PlatePlaceholder } from "./PlatePlaceholder";
 import { useEffect, useRef } from "react";
@@ -75,6 +76,7 @@ export function PlaceList({
                   <span className="row-reason">{place.reasons[0]}</span>
                 )}
                 <Plate score={place.fit?.score} />
+                <FitCaption fit={place.fit} />
               </span>
             </button>
             {isSelected && inlineDetail}
@@ -96,8 +98,9 @@ function rowLabel(place: Place, isPick: boolean, hasTerms: boolean): string {
     parts.push(
       place.fit.score === null
         ? `Unrated. ${place.fit.explanation}`
-        : `Cuisine fit ${place.fit.score} out of 100`,
+        : `${place.fit.basis === "profile_model" ? "Cloudflare taste estimate" : "Cuisine fit"} ${place.fit.score} out of 100`,
     );
+    if (place.fit.cached) parts.push("Cached");
   }
   return parts.join(", ");
 }

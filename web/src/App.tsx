@@ -1,9 +1,9 @@
 import wordmark from "./assets/makan-wordmark.svg";
 import { Icon } from "./Icon";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { sessionEnded } from "./accountApi";
 import { AccountView } from "./AccountView";
-import { ApiError, MODEL_BUSY, fetchConfig, recommend } from "./api";
+import { ApiError, MODEL_BUSY, fetchConfig, fitSession, recommend } from "./api";
 import { DiscoverView } from "./DiscoverView";
 import type { Status, View } from "./DiscoverView";
 import { ExecutionView } from "./ExecutionView";
@@ -52,6 +52,11 @@ export function App() {
   const authScope =
     auth.state.status === "in" ? `in:${auth.state.userId ?? auth.state.email}` : auth.state.status;
   const [tastes, setTastes] = useState<SessionTastes>(EMPTY_TASTES);
+  const [onlineConsent, setOnlineConsent] = useState(false);
+  const [fitScope, setFitScope] = useState<string | null>(null);
+  const [consentWorking, setConsentWorking] = useState(false);
+  const [consentFailure, setConsentFailure] = useState<string | null>(null);
+  const consentGeneration = useRef(0);
   const [previousAuth, setPreviousAuth] = useState(authScope);
   // A shared group link opens the page on the group it names.
   const [groupLink, setGroupLink] = useState<string | null>(() =>
@@ -98,6 +103,10 @@ export function App() {
   if (previousAuth !== authScope) {
     setPreviousAuth(authScope);
     setTastes(EMPTY_TASTES);
+    setOnlineConsent(false);
+    setFitScope(null);
+    setConsentWorking(false);
+    setConsentFailure(null);
     setResult(null);
     setHistory([]);
     // A failed search can be the reason for sign-out; keep its bounded error visible.
@@ -110,10 +119,19 @@ export function App() {
 
   const inflight = useRef<{ seq: number; controller: AbortController } | null>(null);
   const counter = useRef(0);
-  useEffect(
+  const latestFitScope = useRef<string | null>(null);
+  useEffect(() => {
+    latestFitScope.current = fitScope;
+  }, [fitScope]);
+  useLayoutEffect(
     () => () => {
+      consentGeneration.current += 1;
       inflight.current?.controller.abort();
       inflight.current = null;
+      const stale = latestFitScope.current;
+      latestFitScope.current = null;
+      if (stale && !authScope.startsWith("in:"))
+        void fitSession(false, stale).catch(() => undefined);
     },
     [authScope],
   );
@@ -201,6 +219,7 @@ export function App() {
       try {
         // A guest has no token and sends none. A signed-in person's is refreshed if it ran out.
         const token = await authToken();
+        if (signal.aborted || !finishIdle(seq)) return;
         const answer = await recommend(
           {
             mode: values.mode,
@@ -208,6 +227,9 @@ export function App() {
             ...(values.mode === "recommend" && { request: values.request.trim() }),
             radius_m: values.radiusM,
             ...(!token && config?.features.fit && { tastes }),
+            ...(config?.features.online_fit && {
+              online_fit: { consent: onlineConsent, session: fitScope },
+            }),
           },
           (run) => {
             if (!finishIdle(seq)) return;
@@ -257,7 +279,16 @@ export function App() {
         inflight.current = null;
       }
     },
-    [begin, authToken, endSession, config?.features.fit, tastes],
+    [
+      begin,
+      authToken,
+      endSession,
+      config?.features.fit,
+      config?.features.online_fit,
+      tastes,
+      onlineConsent,
+      fitScope,
+    ],
   );
 
   const changeTastes = (next: SessionTastes) => {
@@ -265,10 +296,43 @@ export function App() {
     previous?.controller.abort();
     if (previous) setHistory((h) => abandonRun(h, previous.seq));
     inflight.current = null;
+    // Clear/edits withdraw consent and purge the previous scope, including late writes.
+    if (config?.features.online_fit) void changeConsent(false);
     setTastes(next);
     setResult(null);
     setSelectedId(null);
     setStatus({ kind: "idle" });
+  };
+
+  const changeConsent = async (consent: boolean) => {
+    const generation = ++consentGeneration.current;
+    const previousScope = fitScope;
+    inflight.current?.controller.abort();
+    inflight.current = null;
+    setResult(null);
+    setSelectedId(null);
+    setHistory([]);
+    setStatus({ kind: "idle" });
+    setOnlineConsent(false);
+    setFitScope(null);
+    setConsentFailure(null);
+    setConsentWorking(true);
+    try {
+      const token = await authToken();
+      if (generation !== consentGeneration.current) return;
+      const session = await fitSession(consent, previousScope, token);
+      if (generation !== consentGeneration.current) return;
+      setFitScope(session);
+      setOnlineConsent(consent);
+      if (consent && !session) {
+        setConsentFailure("Online taste scoring is not configured. Places will stay Unrated.");
+      }
+    } catch (error) {
+      if (generation !== consentGeneration.current) return;
+      setConsentFailure(error instanceof Error ? error.message : "Scoring is unavailable.");
+    } finally {
+      if (generation === consentGeneration.current) setConsentWorking(false);
+    }
   };
 
   const goTo = (center: Coordinates, radiusM: number | null) => {
@@ -382,8 +446,11 @@ export function App() {
       )}
       {config?.mode === "places" && (
         <p className="banner banner-info" role="note">
-          Real places from Overture Maps, nearest first. Searches call no language model.
-          {config.features.fit
+          Real places from Overture Maps, nearest first.{" "}
+          {config.features.online_fit
+            ? "Online taste scoring calls Cloudflare only with your consent. Scores do not change the order."
+            : "Searches call no language model."}
+          {!config.features.online_fit && config.features.fit
             ? " Optional cuisine fit uses only your stated tastes and place categories."
             : " This site browses nearby places without choosing a recommendation."}
         </p>
@@ -434,9 +501,18 @@ export function App() {
             recommend={recommendOn}
             sessionTaste={
               config?.features.fit &&
-              auth.state.status !== "in" &&
+              (auth.state.status !== "in" || config.features.online_fit) &&
               auth.state.status !== "loading" ? (
-                <SessionTaste tastes={tastes} onChange={changeTastes} />
+                <SessionTaste
+                  tastes={tastes}
+                  onChange={changeTastes}
+                  online={config.features.online_fit}
+                  owner={auth.state.status === "in"}
+                  consent={onlineConsent}
+                  onConsent={(choice) => void changeConsent(choice)}
+                  working={consentWorking}
+                  failure={consentFailure}
+                />
               ) : undefined
             }
             form={form}
@@ -489,7 +565,11 @@ export function App() {
           )}
         </div>
         <div hidden={page !== "execution"}>
-          <ExecutionView history={history} onClear={() => setHistory([])} />
+          <ExecutionView
+            onlineFit={config?.features.online_fit}
+            history={history}
+            onClear={() => setHistory([])}
+          />
         </div>
         {page === "account" && <AccountView auth={auth} onGuest={() => setPage("discover")} />}
       </main>

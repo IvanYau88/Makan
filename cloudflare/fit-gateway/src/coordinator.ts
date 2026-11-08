@@ -11,6 +11,7 @@ import {
 export interface Reply {
   v: 1;
   reasons_version: number;
+  cached: boolean;
   status: "ok" | "error" | "pending" | "unknown";
   reason: Reason | null;
   attempt_id: string | null;
@@ -42,6 +43,7 @@ type Breaker = {
 export const unavailable = (reason: Reason, retry_after?: number): Reply => ({
   v: 1,
   reasons_version: POLICY.reasonsVersion,
+  cached: false,
   status: "error",
   reason,
   attempt_id: null,
@@ -166,6 +168,7 @@ export class Coordinator {
       return {
         v: 1,
         reasons_version: POLICY.reasonsVersion,
+        cached: true,
         status: "ok",
         reason: null,
         attempt_id: row.id,
@@ -184,6 +187,7 @@ export class Coordinator {
     return {
       v: 1,
       reasons_version: POLICY.reasonsVersion,
+      cached: false,
       status: row.state === "pending" ? "pending" : "unknown",
       reason: row.reason ?? "service_unavailable",
       attempt_id: row.id,
@@ -471,6 +475,7 @@ export class Coordinator {
         return {
           v: 1,
           reasons_version: POLICY.reasonsVersion,
+          cached: false,
           status: "ok",
           reason: null,
           attempt_id: row.id,
@@ -480,6 +485,7 @@ export class Coordinator {
       return {
         v: 1,
         reasons_version: POLICY.reasonsVersion,
+        cached: false,
         status: durableState === "unknown" ? "unknown" : "error",
         reason: reason ?? "service_unavailable",
         attempt_id: row.id,

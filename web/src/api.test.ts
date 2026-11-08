@@ -142,7 +142,7 @@ describe("fetchConfig", () => {
     await expect(fetchConfig()).resolves.toEqual({
       ...config,
       auth: null,
-      features: { recommend: true, groups: true, fit: false },
+      features: { recommend: true, groups: true, fit: false, online_fit: false },
     });
   });
 

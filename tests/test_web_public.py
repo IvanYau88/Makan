@@ -172,6 +172,7 @@ def test_health_and_config_say_what_this_site_is(site: TestClient) -> None:
         "groups": False,
         "accounts": False,
         "fit": False,
+        "online_fit": False,
     }
     assert config["map"]["tile_url"]
 

@@ -21,9 +21,31 @@ export interface Place {
 export interface FitAssessment {
   score: number | null;
   status: "rated" | "no_taste" | "insufficient_evidence" | "unavailable" | "disabled";
-  basis: "cuisine_profile";
+  basis: "cuisine_profile" | "profile_model";
+  cached?: boolean;
   policy_version: string;
-  reason: string;
+  reason:
+    | "disabled"
+    | "no_taste"
+    | "unavailable"
+    | "stale_tastes"
+    | "conflicting_tastes"
+    | "unsupported_tastes"
+    | "no_exact_category_match"
+    | "exact_like"
+    | "exact_dislike"
+    | "model_estimate"
+    | "no_consent"
+    | "insufficient_evidence"
+    | "deadline"
+    | "configuration"
+    | "rate_limited"
+    | "quota_exhausted"
+    | "timeout"
+    | "service_unavailable"
+    | "malformed_response"
+    | "refused"
+    | "invalid_input";
   explanation: string;
 }
 
@@ -107,6 +129,7 @@ export interface AppFeatures {
   groups: boolean;
   /** Local cuisine fit is opt-in, including when the server predates this field. */
   fit?: boolean;
+  online_fit?: boolean;
 }
 
 export interface AppConfig {
@@ -149,6 +172,7 @@ export interface RecommendRequest extends Coordinates {
   request?: string;
   radius_m: number;
   tastes?: SessionTastes;
+  online_fit?: { consent: boolean; session: string | null };
 }
 
 export type StageName =
@@ -201,6 +225,15 @@ export interface Stage {
   calls: StageCall[];
 }
 
+export interface FitSummary {
+  strategy: "local" | "clef";
+  rated: number;
+  unrated: number;
+  cached: number;
+  duration_ms: number;
+  reasons: Partial<Record<FitAssessment["reason"], number>>;
+}
+
 /** A public, bounded record of one run of the solo recommendation graph. */
 export interface Run {
   run_id: string | null;
@@ -228,6 +261,7 @@ export interface Run {
     token_budget: number;
   };
   stages: Stage[];
+  fit?: FitSummary;
 }
 
 /** The JSON of /api/groups. A reader sees who is in and who has shared, never what they shared. */

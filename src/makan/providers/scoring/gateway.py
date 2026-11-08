@@ -1,4 +1,4 @@
-"""Pure server-side gateway envelope construction, unwired from product requests.
+"""Pure server-side gateway envelope construction for the default-off web fit strategy.
 
 Only trusted Makan servers compute these HMACs. No owner identifier, candidate identifier,
 private revision or secret leaves this boundary in plaintext. The body is the native

@@ -2845,3 +2845,31 @@ html {
   gap: var(--space-6);
   min-width: 0;
 }
+
+/* Fit provenance stays beside the existing plate, with no new badge language. */
+.fit-caption {
+  display: block;
+  max-width: 65ch;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.fit-consent {
+  margin-top: 1rem;
+}
+.fit-consent .check-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding-block: 0.5rem;
+}
+.fit-consent input[type="checkbox"] {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+.fit-summary {
+  margin-block: 1rem;
+}

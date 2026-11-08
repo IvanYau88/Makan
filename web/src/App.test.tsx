@@ -47,6 +47,10 @@ function stubApi(handler: Handler, mode: Mode = "live", features?: Partial<AppFe
           ...(features && { features: { recommend: true, groups: true, ...features } }),
         });
       }
+      if (url === "/api/fit/session") {
+        const choice = JSON.parse(String(init?.body)) as { consent: boolean };
+        return json({ session: choice.consent ? "synthetic-server-scope" : null });
+      }
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       calls.push(body);
       return handler(body);
@@ -1061,7 +1065,7 @@ describe("Session cuisine tastes", () => {
       status: "rated" as const,
       basis: "cuisine_profile" as const,
       policy_version: "exact-cuisine-v1",
-      reason: "exact_dislike",
+      reason: "exact_dislike" as const,
       explanation: "Exact cuisine match to a stated dislike. Other cuisines are not assessed.",
     };
     const rated: Recommendation = {
@@ -1082,7 +1086,9 @@ describe("Session cuisine tastes", () => {
     expect(screen.getByRole("img", { name: "Taste match 0 out of 100" })).toBeInTheDocument();
     await user.click(row(/^1\. Mid Thai/));
     expect(screen.getAllByRole("img", { name: "Taste match 0 out of 100" })).toHaveLength(2);
-    expect(screen.getByText(/Exact cuisine match to a stated dislike/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Exact cuisine match to a stated dislike/).length).toBeGreaterThan(
+      0,
+    );
     expect(screen.queryByText("0%")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Clear tastes" }));
     expect(screen.queryByRole("heading", { name: "Places nearby" })).not.toBeInTheDocument();
@@ -1295,7 +1301,7 @@ describe("Search mode", () => {
 
     const summary = screen.getByRole("region", { name: "Run summary" });
     expect(summary).toHaveTextContent("Browse nearby ran only the places search");
-    expect(summary).toHaveTextContent("The other 7 stages were skipped, and no model was called.");
+    expect(summary).toHaveTextContent("The other 7 stages were skipped. No model was called.");
     expect(within(summary).getByText("Places listed")).toBeInTheDocument();
     expect(within(summary).queryByText("Complete recommendation")).not.toBeInTheDocument();
     const stages = within(screen.getByRole("list", { name: "Stages" }));
@@ -1307,7 +1313,7 @@ describe("Search mode", () => {
 
     await user.click(stages.getByRole("button", { name: /^Classify/ }));
     expect(screen.getByRole("region", { name: "Classify" })).toHaveTextContent(
-      "this stage did not run and no model was called",
+      "this stage did not run. Any optional taste scoring is shown separately.",
     );
   });
 
@@ -1322,7 +1328,7 @@ describe("Search mode", () => {
     await user.click(screen.getByRole("button", { name: "Execution" }));
 
     expect(screen.getByRole("region", { name: "Run summary" })).toHaveTextContent(
-      "The other 8 stages were skipped, and no model was called.",
+      "The other 8 stages were skipped. No model was called.",
     );
     const stages = within(screen.getByRole("list", { name: "Stages" }));
     expect(stages.getByRole("button", { name: /^Signals\s*skipped/ })).toBeInTheDocument();
@@ -1331,7 +1337,7 @@ describe("Search mode", () => {
 
     await user.click(stages.getByRole("button", { name: /^Signals/ }));
     expect(screen.getByRole("region", { name: "Signals" })).toHaveTextContent(
-      "this stage did not run and no model was called",
+      "this stage did not run. Any optional taste scoring is shown separately.",
     );
   });
 });
@@ -1614,4 +1620,143 @@ function trackedMap(...args: Parameters<typeof L.map>): L.Map {
 beforeEach(() => {
   mapInstances.length = 0;
   vi.spyOn(L, "map").mockImplementation(trackedMap);
+});
+
+describe("Online taste fit", () => {
+  function onlineResult(
+    reason: "model_estimate" | "quota_exhausted" | "no_taste" = "model_estimate",
+  ): Recommendation {
+    const rated = reason === "model_estimate";
+    return {
+      ...BROWSE_RESULT,
+      places: [
+        place("Mid Thai", 140, {
+          fit: {
+            score: rated ? 75 : null,
+            status: rated ? "rated" : reason === "no_taste" ? "no_taste" : "unavailable",
+            basis: "profile_model",
+            policy_version: "clef-profile-fit-v1-proposed",
+            reason,
+            cached: rated,
+            explanation: rated
+              ? "Taste estimate from the preferences you shared and available place facts."
+              : reason === "no_taste"
+                ? "Add tastes to see fit."
+                : "Taste scoring's daily allowance is used up.",
+          },
+        }),
+      ],
+      candidate_count: 1,
+      run: browseRun({
+        mode: "places",
+        fit: {
+          strategy: "clef",
+          rated: rated ? 1 : 0,
+          unrated: rated ? 0 : 1,
+          cached: rated ? 1 : 0,
+          duration_ms: 20,
+          reasons: { [reason]: 1 },
+        },
+      }),
+    };
+  }
+
+  it("requires explicit consent and shows the same cached plate in list, detail and Execution", async () => {
+    const calls = stubApi(() => answer(onlineResult()), "places", {
+      recommend: false,
+      fit: true,
+      online_fit: true,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    expect(
+      await screen.findByText(/Online taste scoring calls Cloudflare only with your consent/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByText("Your tastes"));
+    expect(
+      screen.getByText(/Online scoring sends your selected cuisine likes and dislikes/),
+    ).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Thai"), "like");
+    const checkbox = screen.getByRole("checkbox", { name: "Use online taste scoring in this tab" });
+    expect(checkbox).not.toBeChecked();
+    await user.click(checkbox);
+    await waitFor(() => expect(checkbox).toBeChecked());
+    await user.click(screen.getByRole("button", { name: "Browse here" }));
+    await screen.findByRole("heading", { name: "Places nearby" });
+    expect(calls[0]?.online_fit).toEqual({ consent: true, session: "synthetic-server-scope" });
+    expect(screen.getByText("Cloudflare taste estimate · Cached")).toBeInTheDocument();
+    await user.click(row(/^1\. Mid Thai/));
+    expect(screen.getAllByRole("img", { name: "Taste match 75 out of 100" })).toHaveLength(2);
+    expect(screen.getAllByText("Cloudflare taste estimate · Cached")).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "Execution" }));
+    expect(screen.getByText("Real places, optional online fit")).toBeInTheDocument();
+    expect(
+      screen.getByText(/With consent, Cloudflare taste scoring runs after the graph/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/Cloudflare taste scoring: 1 rated, 0 Unrated, 1 cached/).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("shows no-taste and exhausted reasons with one allowance notice and no numeric plate", async () => {
+    let exhausted = false;
+    stubApi(() => answer(onlineResult(exhausted ? "quota_exhausted" : "no_taste")), "places", {
+      recommend: false,
+      fit: true,
+      online_fit: true,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText("Your tastes");
+    await user.click(screen.getByRole("button", { name: "Browse here" }));
+    await screen.findByRole("heading", { name: "Places nearby" });
+    expect(screen.getByText("Add tastes to see fit.")).toBeInTheDocument();
+    exhausted = true;
+    await user.click(screen.getByRole("button", { name: "Browse here" }));
+    await screen.findAllByText(/New scores return at/);
+    const notices = screen
+      .getAllByText(/New scores return at/)
+      .filter((node) => !node.closest("[hidden]"));
+    expect(notices).toHaveLength(1);
+    expect(screen.queryByRole("img", { name: /Taste match \d/ })).not.toBeInTheDocument();
+    await user.click(row(/^1\. Mid Thai/));
+    expect(screen.getAllByRole("img", { name: "Unrated taste match" }).length).toBeGreaterThan(0);
+  });
+
+  it("withdraws consent on clear and discards a late scored result", async () => {
+    let release!: (value: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const calls = stubApi(() => pending, "places", {
+      recommend: false,
+      fit: true,
+      online_fit: true,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByText("Your tastes"));
+    await user.selectOptions(screen.getByLabelText("Thai"), "like");
+    const checkbox = screen.getByRole("checkbox", { name: "Use online taste scoring in this tab" });
+    await user.click(checkbox);
+    await waitFor(() => expect(checkbox).toBeChecked());
+    await user.click(screen.getByRole("button", { name: "Browse here" }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await user.click(screen.getByRole("button", { name: "Clear tastes" }));
+    await waitFor(() => expect(checkbox).not.toBeChecked());
+    await act(async () => {
+      release(answer(onlineResult()));
+    });
+    expect(screen.queryByRole("heading", { name: "Places nearby" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("img", { name: "Taste match 75 out of 100" }),
+    ).not.toBeInTheDocument();
+    const withdrawal = vi
+      .mocked(fetch)
+      .mock.calls.some(
+        ([url, init]) =>
+          url === "/api/fit/session" && JSON.parse(String(init?.body)).consent === false,
+      );
+    expect(withdrawal).toBe(true);
+  });
 });

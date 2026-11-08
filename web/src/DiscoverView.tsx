@@ -1,4 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
+import { FitNotice } from "./FitCaption";
 import { Filters } from "./Filters";
 import { MapView } from "./MapView";
 import { ModeChoice } from "./ModeChoice";
@@ -209,6 +210,8 @@ export function DiscoverView(props: Props) {
           headingRef={status.kind === "failed" ? undefined : headingRef}
         />
       )}
+
+      {result && <FitNotice summary={result.run?.fit} />}
 
       {result && result.partial && (
         <p className="notice notice-warn" role="status">

@@ -38,12 +38,43 @@ def clef_selector(model: str) -> str:
 
 @dataclass(frozen=True)
 class FitConfig:
-    """Separate from request-signal scoring; selecting Clef does not wire it into the app."""
+    """Separate from request signals; online product fit requires its own explicit flag."""
 
     backend: str = "local"
     model: str = ""
     cloudflare_account_id: str = field(default="", repr=False)
     cloudflare_api_token: str = field(default="", repr=False)
+
+    online_enabled: bool = False
+    gateway_url: str = field(default="", repr=False)
+    gateway_token: str = field(default="", repr=False)
+    hmac_secret: str = field(default="", repr=False)
+    gateway_scope: str = "preview"
+
+    @property
+    def online(self) -> bool:
+        return self.online_enabled and self.backend == "clef"
+
+    @property
+    def ready(self) -> bool:
+        try:
+            url = urlsplit(self.gateway_url)
+        except ValueError:
+            return False
+        return bool(
+            url.scheme == "https"
+            and url.hostname
+            and not url.username
+            and not url.password
+            and not url.query
+            and not url.fragment
+            and url.path in ("", "/")
+            and self.gateway_token
+            and self.gateway_token.isascii()
+            and all(c.isprintable() and not c.isspace() for c in self.gateway_token)
+            and len(self.hmac_secret.encode()) >= 32
+            and self.gateway_scope in ("preview", "production")
+        )
 
     def __post_init__(self) -> None:
         if self.backend not in ("local", "clef"):
@@ -127,7 +158,7 @@ class Config:
     duckdb: DuckDbConfig = field(default_factory=DuckDbConfig)
     groups_enabled: bool = True  # False removes the group page and its endpoints
     accounts_enabled: bool = True  # False leaves everyone a guest, whatever SUPABASE_URL says
-    fit_enabled: bool = False  # opt-in local cuisine estimates; never enables a model
+    fit_enabled: bool = False  # display fit; online scoring also needs fit.online_enabled
     fit: FitConfig = field(default_factory=FitConfig)
 
     @classmethod
@@ -200,6 +231,11 @@ class Config:
             fit=FitConfig(
                 backend=env.get("MAKAN_FIT_BACKEND", "").strip().lower() or "local",
                 model=env.get("MAKAN_FIT_MODEL", "").strip(),
+                online_enabled=_flag(env, "MAKAN_FIT_ONLINE_ENABLED", False),
+                gateway_url=env.get("MAKAN_FIT_GATEWAY_URL", "").strip().rstrip("/"),
+                gateway_token=env.get("MAKAN_FIT_GATEWAY_TOKEN", "").strip(),
+                hmac_secret=env.get("MAKAN_FIT_HMAC_SECRET", "").strip(),
+                gateway_scope=env.get("MAKAN_FIT_GATEWAY_SCOPE", "").strip() or "preview",
                 cloudflare_account_id=env.get("CLOUDFLARE_ACCOUNT_ID", "").strip(),
                 cloudflare_api_token=env.get("CLOUDFLARE_API_TOKEN", "").strip(),
             ),

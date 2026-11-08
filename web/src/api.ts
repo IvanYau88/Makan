@@ -51,6 +51,7 @@ export async function fetchConfig(signal?: AbortSignal): Promise<AppConfig | nul
         recommend: features?.recommend !== false,
         groups: features?.groups !== false,
         fit: features?.fit === true,
+        online_fit: features?.online_fit === true,
       },
     };
   } catch {
@@ -166,4 +167,23 @@ export async function errorDetails(
     // fall through to the generic message
   }
   return { message: GENERIC, code: null };
+}
+
+/** Exchange explicit consent for a server-issued, identity-bound tab scope. */
+export async function fitSession(
+  consent: boolean,
+  session: string | null,
+  token?: string | null,
+): Promise<string | null> {
+  const response = await fetch("/api/fit/session", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token && { Authorization: `Bearer ${token}` }),
+    },
+    body: JSON.stringify({ consent, session }),
+  });
+  if (!response.ok) throw new Error("Online taste scoring is unavailable. You can still browse.");
+  const body = (await response.json()) as { session?: unknown };
+  return typeof body.session === "string" ? body.session : null;
 }
