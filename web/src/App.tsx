@@ -1,6 +1,6 @@
 import wordmark from "./assets/makan-wordmark.svg";
 import { Icon } from "./Icon";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { sessionEnded } from "./accountApi";
 import { AccountView } from "./AccountView";
 import { ApiError, MODEL_BUSY, fetchConfig, fitSession, recommend } from "./api";
@@ -119,11 +119,19 @@ export function App() {
 
   const inflight = useRef<{ seq: number; controller: AbortController } | null>(null);
   const counter = useRef(0);
-  useEffect(
+  const latestFitScope = useRef<string | null>(null);
+  useEffect(() => {
+    latestFitScope.current = fitScope;
+  }, [fitScope]);
+  useLayoutEffect(
     () => () => {
       consentGeneration.current += 1;
       inflight.current?.controller.abort();
       inflight.current = null;
+      const stale = latestFitScope.current;
+      latestFitScope.current = null;
+      if (stale && !authScope.startsWith("in:"))
+        void fitSession(false, stale).catch(() => undefined);
     },
     [authScope],
   );

@@ -189,7 +189,8 @@ Add `--demo` (for example `python -m makan.web --demo`) to run with sample data,
 Demo mode shows a banner and invents sample places around any location you give it.
 Latitude 90 or -90 finds nothing, which shows the no-results state.
 
-Add `--places-only` (or set `MAKAN_PLACES_ONLY=1`) to browse real places from Overture Maps with no model and no key.
+Add `--places-only` (or set `MAKAN_PLACES_ONLY=1`) to browse real places from Overture Maps with no recommendation model and, by default, no key.
+Its searches call a model only when online fit is enabled and the diner opts in, and then only Cloudflare's Clef taste scoring.
 Only Browse nearby works there, and the page says so in a banner.
 Optional display fit is off by default (`MAKAN_FIT_ENABLED=0`); its local strategy uses exact cuisine categories.
 Online fit additionally requires the separate default-off `MAKAN_FIT_ONLINE_ENABLED` flag, explicit Clef selection, server gateway settings and diner opt-in.

@@ -43,7 +43,7 @@ from makan.browse import BrowseRequest, BrowseResult, browse
 from makan.config import Config, ConfigError
 from makan.env import load_dotenv
 from makan.fit import FitReason
-from makan.fit_inputs import Cuisine, FitInputs, eligible_for_display, owner_fit_inputs
+from makan.fit_inputs import Cuisine, FitInputs, owner_fit_inputs
 from makan.places.base import MAX_RADIUS_M, MIN_RADIUS_M, PlaceQuery, PlacesProvider
 from makan.places.factory import places_provider
 from makan.profile_fit import FitStrategy
@@ -77,8 +77,8 @@ from makan.web.visits import register_visit_routes
 
 log = logging.getLogger("makan.web")
 
-# What the data and the language model are: invented stand-ins, real places with no model
-# ("places", browsing only), or everything real.
+# What the data and the language model are: invented stand-ins, real places with no
+# recommendation model ("places", browsing only), or everything real.
 Mode = Literal["demo", "live", "places"]
 DEFAULT_WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
@@ -95,13 +95,6 @@ class OnlineFit(BaseModel):
 
     consent: bool = Field(default=False, strict=True)
     session: str | None = Field(default=None, max_length=256)
-
-
-class HardRequirements(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    max_distance_m: float | None = Field(default=None, gt=0, le=MAX_RADIUS_M)
-    step_free_required: bool = Field(default=False, strict=True)
 
 
 class RecommendBody(BaseModel):
@@ -124,7 +117,6 @@ class RecommendBody(BaseModel):
     radius_m: Annotated[int, Field(ge=MIN_RADIUS_M, le=MAX_RADIUS_M)] = 1000
     tastes: GuestTastes | None = None
     online_fit: OnlineFit = Field(default_factory=OnlineFit)
-    requirements: HardRequirements = Field(default_factory=HardRequirements)
 
     @field_validator("request")
     @classmethod
@@ -334,34 +326,10 @@ def create_app(
             inputs = FitInputs(tuple(body.tastes.likes), tuple(body.tastes.dislikes))
 
         initial_inputs = inputs
-        requirements = body.requirements
-        ceiling = min(body.radius_m, requirements.max_distance_m or body.radius_m)
-        hard_warnings = list(inputs.warnings)
-        if requirements.max_distance_m is not None:
-            hard_warnings.append(
-                "Distance limits use straight-line distance from the approximate search center; "
-                "walking time and route distance are unverified."
-            )
-        if requirements.step_free_required:
-            hard_warnings.append(
-                "Required step-free access is unknown for these places. "
-                "No place can be shown as satisfying this requirement. Check with the venue."
-            )
-        inputs = replace(inputs, warnings=tuple(hard_warnings))
 
         def assess(ranked: tuple[RankedCandidate, ...], source: str) -> tuple[RankedCandidate, ...]:
             nonlocal inputs
-            eligible = tuple(
-                r
-                for r in ranked
-                if eligible_for_display(
-                    name=r.place.name,
-                    distance_m=r.place.distance_m,
-                    inputs=inputs,
-                    radius_m=ceiling,
-                    step_free_required=requirements.step_free_required,
-                )
-            )
+            eligible = tuple(r for r in ranked if not inputs.excludes(r.place.name))
             assessed, summary = asyncio.run(
                 fit_strategy.assess(
                     eligible,
@@ -385,14 +353,7 @@ def create_app(
                         ),
                     )
                 if latest != initial_inputs:
-                    inputs = replace(
-                        latest,
-                        warnings=tuple(
-                            dict.fromkeys(
-                                (*latest.warnings, *hard_warnings[len(initial_inputs.warnings) :])
-                            )
-                        ),
-                    )
+                    inputs = latest
                     if fit_strategy.online:
                         inputs = replace(
                             inputs,
@@ -403,17 +364,7 @@ def create_app(
                                 else FitReason.NO_TASTE
                             ),
                         )
-                    eligible = tuple(
-                        r
-                        for r in ranked
-                        if eligible_for_display(
-                            name=r.place.name,
-                            distance_m=r.place.distance_m,
-                            inputs=inputs,
-                            radius_m=ceiling,
-                            step_free_required=requirements.step_free_required,
-                        )
-                    )
+                    eligible = tuple(r for r in ranked if not inputs.excludes(r.place.name))
                     assessed, summary = asyncio.run(
                         fit_strategy.assess(
                             eligible,
@@ -442,11 +393,7 @@ def create_app(
                     places=assessed,
                     warnings=found.warnings
                     + inputs.warnings
-                    + (
-                        ("Left out places that do not meet your hard requirements.",)
-                        if excluded
-                        else ()
-                    ),
+                    + (("Left out places you said you will not go to.",) if excluded else ()),
                 )
             recorder.finish(_browse_outcome(found))
             if found.places is None:
@@ -491,10 +438,7 @@ def create_app(
                     if ranked
                     else "No places found within this search radius."
                 ),
-                warnings=(
-                    *rec.warnings,
-                    "Left out places that do not meet your hard requirements.",
-                ),
+                warnings=(*rec.warnings, "Left out places you said you will not go to."),
             )
         recorder.finish(_outcome(replace(result, recommendation=rec)))
         payload = _recommendation_json(

@@ -43,7 +43,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--places-only",
         action="store_true",
-        help="real places, Browse nearby only, no model or key (same as MAKAN_PLACES_ONLY=1)",
+        help=(
+            "real places, Browse nearby only, no recommendation model or key; online fit, "
+            "if enabled, still needs consent (same as MAKAN_PLACES_ONLY=1)"
+        ),
     )
     parser.add_argument(
         "--reload", action="store_true", help="restart when the Python code changes (development)"

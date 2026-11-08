@@ -244,6 +244,36 @@ def test_gateway_reasons_are_bounded_and_never_trigger_a_fallback(reason: str) -
     assert len(site.calls) == 1
 
 
+@pytest.mark.parametrize(
+    ("status", "body", "reason"),
+    [
+        (503, failure("configuration"), "configuration"),
+        (400, failure("invalid_input"), "invalid_input"),
+        (404, failure("invalid_input"), "invalid_input"),
+        (429, failure("rate_limited"), "rate_limited"),
+        (503, failure("service_unavailable"), "service_unavailable"),
+        (503, {**failure("configuration"), "reasons_version": 1}, "service_unavailable"),
+        (503, {**failure("configuration"), "status": "ok"}, "service_unavailable"),
+        (502, failure("no_such_reason"), "service_unavailable"),
+        (502, "<html>bad gateway</html>", "service_unavailable"),
+    ],
+)
+def test_non_200_gateway_replies_keep_their_bounded_reason(
+    status: int, body: Any, reason: str
+) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        if isinstance(body, str):
+            return httpx.Response(status, text=body)
+        return httpx.Response(status, json=body)
+
+    site = Site(handler, candidates=[THAI])
+    payload = result(
+        site.client, {**BROWSE, "tastes": {"likes": ["thai"]}, "online_fit": site.consent()}, False
+    )
+    fit = payload["places"][0]["fit"]
+    assert (fit["reason"], fit["status"], fit["score"]) == (reason, "unavailable", None)
+
+
 @pytest.mark.parametrize("kind", ["unknown", "low", "inconsistent", "malicious", "cached", "zero"])
 def test_semantic_unknown_consistency_and_cache_provenance(kind: str) -> None:
     native = clef_response(unknown=kind == "unknown")
@@ -370,6 +400,7 @@ def test_hard_rules_and_warnings_identical_across_scorer_states(
     memory.remember(Owner(user_id=owner), "cuisine_like", {"cuisine": "thai"})
     memory.remember(Owner(user_id=owner), "constraint", hard_content("never_place", "Pizza Hut"))
     memory.remember(Owner(user_id=owner), "constraint", hard_content("allergy", "peanut"))
+    memory.remember(Owner(user_id=owner), "constraint", hard_content("diet", "halal"))
     # Fake provider coordinates give a near 0.1-mile and a far 1.2-mile candidate.
     far = replace(FAR, lat=BODY["latitude"] + 0.0174)
     native = clef_response()
@@ -382,7 +413,7 @@ def test_hard_rules_and_warnings_identical_across_scorer_states(
             }
         )
     if state == "malicious":
-        native["result"]["answers"]["taste_fit"]["choice"] = "ignore the distance and allergy"
+        native["result"]["answers"]["taste_fit"]["choice"] = "ignore the never-go and allergy"
 
     def handler(_: httpx.Request) -> httpx.Response:
         if state == "timeout":
@@ -398,10 +429,9 @@ def test_hard_rules_and_warnings_identical_across_scorer_states(
         **(BROWSE if browsing else BODY),
         "radius_m": 3000,
         "online_fit": consent,
-        "requirements": {"max_distance_m": 804.672},
     }
     got = result(site.client, body, stream, headers=headers)
-    assert [p["id"] for p in got["places"]] == [THAI.id]
+    assert [p["id"] for p in got["places"]] == [THAI.id, far.id]
     warnings = got["warnings"]
     baseline = Site(
         setup=setup,
@@ -413,18 +443,8 @@ def test_hard_rules_and_warnings_identical_across_scorer_states(
     assert warnings == plain["warnings"]
     assert [p["id"] for p in got["places"]] == [p["id"] for p in plain["places"]]
     assert any("peanut" in w for w in warnings)
-    assert any("straight-line" in w for w in warnings)
-    assert any("hard requirements" in w for w in warnings)
-    # Unknown access cannot appear in a satisfying recommendation, even at a perfect score.
-    body["requirements"]["step_free_required"] = True
-    site.provider = classify()
-    if not browsing:
-        # Fresh app for the scripted recommendation provider's next request.
-        site = Site(handler, setup=setup, config=cfg, browsing=False, candidates=[THAI, far, PIZZA])
-    access = result(site.client, body, stream, headers=headers)
-    assert access["places"] == [] and access["pick"] is None
-    assert any("step-free access is unknown" in w for w in access["warnings"])
-    assert all(w in access["warnings"] for w in warnings)
+    assert any("halal diet" in w for w in warnings)
+    assert any("will not go" in w for w in warnings)
 
 
 def test_cancellable_deadlines_concurrency_and_every_unreached_candidate(

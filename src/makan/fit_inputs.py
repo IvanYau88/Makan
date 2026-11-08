@@ -81,19 +81,3 @@ def owner_fit_inputs(memory: Memory, user_id: UUID) -> FitInputs:
         tuple(warnings),
         hashlib.sha256("\n".join(sorted(revisions)).encode()).hexdigest(),
     )
-
-
-def eligible_for_display(
-    *,
-    name: str,
-    distance_m: int,
-    inputs: FitInputs,
-    radius_m: float,
-    step_free_required: bool = False,
-) -> bool:
-    """Plain hard eligibility before every fit strategy, independent of scorer behavior.
-
-    Current source facts never verify step-free access, so a required venue cannot be
-    presented as satisfying that requirement. The web channel explains that omission.
-    """
-    return not inputs.excludes(name) and 0 <= distance_m <= radius_m and not step_free_required

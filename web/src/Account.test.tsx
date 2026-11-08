@@ -63,7 +63,14 @@ function problem(code: string, message: string, status: number): Response {
 }
 
 function stubApi(
-  options: { auth?: typeof AUTH | null; me?: Partial<Me>; greeting?: string; fit?: boolean } = {},
+  options: {
+    auth?: typeof AUTH | null;
+    me?: Partial<Me>;
+    greeting?: string;
+    fit?: boolean;
+    onlineFit?: boolean;
+    fitSession?: (body: { consent: boolean; session: string | null }) => Promise<Response>;
+  } = {},
 ): Api {
   const api: Api = {
     me: {
@@ -91,13 +98,21 @@ function stubApi(
             attribution_url: null,
           },
           auth: options.auth === undefined ? AUTH : options.auth,
-          features: { recommend: true, groups: true, fit: options.fit === true },
+          features: {
+            recommend: true,
+            groups: true,
+            fit: options.fit === true,
+            online_fit: options.onlineFit === true,
+          },
         });
       }
       api.calls.push({ method, url, headers, body });
       const key = `${method} ${url}`;
       const forced = api.fail.get(key);
       if (forced) return forced.clone();
+      if (url === "/api/fit/session" && options.fitSession) {
+        return options.fitSession(body as { consent: boolean; session: string | null });
+      }
       if (url === "/api/recommendations/stream") {
         api.searched.push(body as Record<string, unknown>);
         const recommendation: Recommendation = {
@@ -195,6 +210,65 @@ it("clears guest tastes and results at sign-in and sign-out instead of carrying 
   act(() => supabase.emit("SIGNED_OUT", null));
   expect(screen.queryByRole("heading", { name: "Nearby options" })).not.toBeInTheDocument();
   expect(screen.getByLabelText("Thai")).toHaveValue("");
+});
+
+it("drops a guest consent reply that lands after sign-in", async () => {
+  let release!: (value: Response) => void;
+  const api = stubApi({
+    fit: true,
+    onlineFit: true,
+    fitSession: ({ consent }) =>
+      consent
+        ? new Promise<Response>((resolve) => {
+            release = resolve;
+          })
+        : Promise.resolve(json({ session: null })),
+  });
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByText("Your tastes"));
+  await user.selectOptions(screen.getByLabelText("Thai"), "like");
+  await user.click(screen.getByRole("checkbox", { name: "Use online taste scoring in this tab" }));
+  await waitFor(() => expect(release).toBeDefined());
+  act(() => supabase.emit("SIGNED_IN", SESSION));
+  await act(async () => {
+    release(json({ session: "guest-scope" }));
+  });
+  await user.type(screen.getByLabelText("What are you in the mood for?"), "thai");
+  await user.click(screen.getByRole("button", { name: "Find food here" }));
+  await screen.findByRole("heading", { name: "Nearby options" });
+  expect(api.searched[0]?.online_fit).toEqual({ consent: false, session: null });
+  for (const box of screen.queryAllByRole("checkbox", { name: /online taste scoring/ })) {
+    expect(box).not.toBeChecked();
+  }
+});
+
+it("purges a guest's online scope when the guest signs in", async () => {
+  const api = stubApi({
+    fit: true,
+    onlineFit: true,
+    fitSession: ({ consent }) => Promise.resolve(json({ session: consent ? "guest-scope" : null })),
+  });
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByText("Your tastes"));
+  await user.selectOptions(screen.getByLabelText("Thai"), "like");
+  const checkbox = screen.getByRole("checkbox", { name: "Use online taste scoring in this tab" });
+  await user.click(checkbox);
+  await waitFor(() => expect(checkbox).toBeChecked());
+  act(() => supabase.emit("SIGNED_IN", SESSION));
+  await waitFor(() =>
+    expect(api.calls).toContainEqual(
+      expect.objectContaining({
+        url: "/api/fit/session",
+        body: { consent: false, session: "guest-scope" },
+      }),
+    ),
+  );
+  const purge = api.calls.find(
+    (c) => c.url === "/api/fit/session" && (c.body as { consent: boolean }).consent === false,
+  );
+  expect(purge?.headers).not.toHaveProperty("Authorization");
 });
 
 describe("signing in", () => {

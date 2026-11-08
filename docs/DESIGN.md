@@ -1222,6 +1222,8 @@ Source-specific freshness and actual deployment latency remain slice 5 qualifica
 Its public allowlist includes `cached`, supplied by an explicit gateway protocol field rather than inferred from latency or attempt ids.
 Successful stored gateway replies say cached=true, fresh results and infrastructure states say false, and validated semantic unknowns may still be marked cached.
 A gateway lacking the new success provenance field fails closed as malformed_response until its separately authorized deployment includes it.
+A non-200 gateway reply keeps the bounded reason from its versioned error body, such as configuration for a disabled gateway, and only an invalid body becomes service_unavailable.
+An identity change bumps the consent generation in a layout cleanup, so a guest's late consent reply is dropped, and a guest's scope is purged at sign-in.
 Sanitized slice-2/3 reasons, no_consent, insufficient_evidence and deadline are carried through to the TypeScript assessment vocabulary and fixed user copy.
 The existing light plate design is reused, with provenance and unrated reasons beside list/detail plates and a local-time UTC-reset notice for exhausted allowance.
 Map pins keep their separate rank badges.
@@ -1229,14 +1231,11 @@ The places banner and Execution descriptions distinguish the places graph from o
 Fit is not a graph stage, so `stages.ts` registers no new stage; `RunRecorder` adds only `FitSummary.trace_summary()` counts, fixed reasons and duration to bounded run output.
 No profile, prompt, probability distribution, cache key, scope, attempt id or provider error reaches that summary or the browser.
 
-Hard eligibility runs in plain code before either strategy through `eligible_for_display` and is independent of both fit switches and every scorer response.
-The optional structured API `requirements.max_distance_m` is rechecked against each returned candidate in addition to the search radius, so a venue 1.2 miles away cannot meet a 0.5-mile ceiling.
-Distances remain straight-line from the rounded center; route length and walking time are explicitly unverified.
-`requirements.step_free_required` excludes currently unknown access from satisfying results and emits a specific warning because the source has no verified access facts.
-Existing owner never-go exclusions and allergy/diet warnings remain effective with online fit off, wrong, malformed, timed out or exhausted.
+Hard eligibility runs in plain code before either strategy and is independent of both fit switches and every scorer response.
+Slice 4 adds no new hard requirement or request field: the existing owner never-go exclusions and allergy/diet warnings are applied the same way with online fit off, wrong, malicious, timed out or exhausted.
 Free-text requirements remain unverified warnings in the existing graph; this slice does not claim to parse or verify them with a fit model.
 
-Offline product tests in `tests/test_web_online_fit.py` use synthetic native envelopes and `httpx.MockTransport` for both transports and search modes, every candidate/view, consent and key gates, cache provenance, ownership/guest isolation, stale and cleared in-flight tastes, bounded dispatch/cancellation, and the distance/access hard-rule cases.
+Offline product tests in `tests/test_web_online_fit.py` use synthetic native envelopes and `httpx.MockTransport` for both transports and search modes, every candidate/view, consent and key gates, cache provenance, ownership/guest isolation, stale and cleared in-flight tastes, bounded dispatch/cancellation, and the never-go, allergy and diet hard-rule cases.
 Browser inspection used the real app on ports 8100/5273 with a synthetic mocked gateway at 1440 by 1000 and 390 by 844, covering rated/cached lists and details, no-taste and exhausted screens.
 The scoring summary and quota notice were moved ahead of the list so they remain visible without scrolling through candidates; provenance, null plates and reason copy fit both widths without horizontal page overflow.
 The native and gateway contract archives remain unchanged and no live scoring, account verification, deployment or spend is part of this slice.

@@ -275,21 +275,17 @@ class FitStrategy:
                 ) as response:
                     if response.status_code in (401, 403) or 300 <= response.status_code < 400:
                         return model_assessment(FitReason.CONFIGURATION)
-                    if response.status_code != 200:
-                        return model_assessment(FitReason.SERVICE_UNAVAILABLE)
                     raw = bytearray()
                     async for chunk in response.aiter_bytes():
                         raw.extend(chunk)
                         if len(raw) > MAX_REPLY_BYTES:
-                            return model_assessment(FitReason.MALFORMED_RESPONSE)
+                            break
+                    if response.status_code != 200:
+                        return model_assessment(_gateway_failure(raw))
+                    if len(raw) > MAX_REPLY_BYTES:
+                        return model_assessment(FitReason.MALFORMED_RESPONSE)
             data = _strict_json(raw.decode())
-            if (
-                not isinstance(data, dict)
-                or data.get("v") != 1
-                or type(data.get("v")) is not int
-                or type(data.get("reasons_version")) is not int
-                or data["reasons_version"] != GATEWAY_REASONS_VERSION
-            ):
+            if not _gateway_header(data):
                 return model_assessment(FitReason.MALFORMED_RESPONSE)
             if data.get("status") in ("error", "pending", "unknown"):
                 reason = ClefReason(data["reason"])
@@ -310,3 +306,25 @@ class FitStrategy:
             return model_assessment(FitReason.SERVICE_UNAVAILABLE)
         except (ValueError, KeyError, TypeError, UnicodeError, RecursionError):
             return model_assessment(FitReason.MALFORMED_RESPONSE)
+
+
+def _gateway_header(data: object) -> bool:
+    return (
+        isinstance(data, dict)
+        and type(data.get("v")) is int
+        and data["v"] == 1
+        and type(data.get("reasons_version")) is int
+        and data["reasons_version"] == GATEWAY_REASONS_VERSION
+    )
+
+
+def _gateway_failure(raw: bytes | bytearray) -> FitReason:
+    """The gateway's bounded reason for a non-200 reply, or plain unavailability."""
+    if len(raw) <= MAX_REPLY_BYTES:
+        try:
+            data = _strict_json(raw.decode())
+            if _gateway_header(data) and data["status"] == "error":
+                return FitReason(ClefReason(data["reason"]).value)
+        except (ValueError, KeyError, TypeError, UnicodeError, RecursionError):
+            pass
+    return FitReason.SERVICE_UNAVAILABLE

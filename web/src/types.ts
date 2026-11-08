@@ -173,7 +173,6 @@ export interface RecommendRequest extends Coordinates {
   radius_m: number;
   tastes?: SessionTastes;
   online_fit?: { consent: boolean; session: string | null };
-  requirements?: { max_distance_m?: number; step_free_required?: boolean };
 }
 
 export type StageName =
