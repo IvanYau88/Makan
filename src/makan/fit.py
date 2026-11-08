@@ -12,6 +12,8 @@ from typing import Any
 
 POLICY_VERSION = "exact-cuisine-v1"
 MODEL_POLICY_VERSION = "clef-profile-fit-v1-proposed"
+# The same questions and acceptance over state version 2, with the owner's own history evidence.
+MODEL_HISTORY_POLICY_VERSION = "clef-profile-fit-v2-proposed"
 
 
 class FitReason(StrEnum):
@@ -72,6 +74,7 @@ class FitAssessment:
 
     basis: str = "cuisine_profile"
     cached: bool = False
+    model_policy: str = MODEL_POLICY_VERSION  # only meaningful for basis=profile_model
 
     def __post_init__(self) -> None:
         if not isinstance(self.reason, FitReason):
@@ -86,6 +89,10 @@ class FitAssessment:
             raise ValueError("model assessment cannot claim deterministic cuisine evidence")
         if self.cached and self.basis != "profile_model":
             raise ValueError("only gateway assessments may be cached")
+        if self.model_policy not in (MODEL_POLICY_VERSION, MODEL_HISTORY_POLICY_VERSION) or (
+            self.basis != "profile_model" and self.model_policy != MODEL_POLICY_VERSION
+        ):
+            raise ValueError("invalid fit policy version")
         if (self.score is not None) != (
             self.reason in (FitReason.LIKE, FitReason.DISLIKE, FitReason.MODEL)
         ):
@@ -118,7 +125,7 @@ class FitAssessment:
             "status": self.status,
             "basis": self.basis,
             "policy_version": (
-                MODEL_POLICY_VERSION if self.basis == "profile_model" else POLICY_VERSION
+                self.model_policy if self.basis == "profile_model" else POLICY_VERSION
             ),
             "cached": self.cached,
             "reason": self.reason.value,

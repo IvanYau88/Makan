@@ -1,6 +1,99 @@
 import contract from "../../../src/makan/evals/sets/clef/contract.json";
-import schema from "../../../src/makan/evals/sets/clef/state.schema.json";
+import schemaV1 from "../../../src/makan/evals/sets/clef/state.schema.json";
+import schemaV2 from "../../../src/makan/evals/sets/clef/v2/state.schema.json";
 import { Failure, POLICY } from "./config";
+
+// The small JSON Schema subset the frozen state contracts use, applied strictly and exactly as
+// makan.providers.scoring.clef_contract.check does.
+interface Schema {
+  const?: string;
+  type?: "object" | "array" | "string";
+  properties?: Record<string, Schema>;
+  required?: string[];
+  items?: Schema;
+  maxItems?: number;
+  uniqueItems?: boolean;
+  "x-unique-by"?: string[];
+  enum?: string[];
+  pattern?: string;
+  minLength?: number;
+  maxLength?: number;
+}
+const schemas: Record<string, Schema> = {
+  [POLICY.manifests[0]]: schemaV1 as Schema,
+  [POLICY.manifests[1]]: schemaV2 as Schema,
+};
+function check(schema: Schema, value: unknown): void {
+  if (schema.const !== undefined) {
+    if (value !== schema.const) throw new Error();
+    return;
+  }
+  if (schema.type === "object") {
+    const required = schema.required ?? [];
+    const properties = schema.properties ?? {};
+    const obj = object(value, required);
+    if (
+      Object.keys(properties).length !== required.length ||
+      required.some((key) => !Object.hasOwn(properties, key))
+    )
+      throw new Error();
+    for (const key of required) check(properties[key], obj[key]);
+  } else if (schema.type === "array") {
+    if (
+      !Array.isArray(value) ||
+      value.length > (schema.maxItems ?? value.length) ||
+      !schema.items
+    )
+      throw new Error();
+    for (const item of value) check(schema.items, item);
+    if (
+      schema.uniqueItems &&
+      new Set(value.map(canonical)).size !== value.length
+    )
+      throw new Error();
+    const by = schema["x-unique-by"];
+    if (
+      by &&
+      new Set(
+        value.map((item) =>
+          canonical(by.map((key) => (item as ObjectValue)[key])),
+        ),
+      ).size !== value.length
+    )
+      throw new Error();
+  } else if (schema.type === "string") {
+    if (typeof value !== "string") throw new Error();
+    if (schema.enum && !schema.enum.includes(value)) throw new Error();
+    if (
+      schema.pattern !== undefined &&
+      new RegExp(schema.pattern).exec(value)?.[0] !== value
+    )
+      throw new Error();
+    const length = [...value].length;
+    if (
+      length < (schema.minLength ?? 0) ||
+      length > (schema.maxLength ?? length)
+    )
+      throw new Error();
+  } else throw new Error();
+}
+// Some soft evidence to judge: a stated taste or, in version 2, a history summary.
+function hasTaste(state: ObjectValue): boolean {
+  const profile = state.profile as ObjectValue;
+  if (
+    (profile.likes as unknown[]).length ||
+    (profile.dislikes as unknown[]).length
+  )
+    return true;
+  const history = state.history as ObjectValue | undefined;
+  if (!history) return false;
+  return (
+    (history.cuisines as unknown[]).length > 0 ||
+    (history.dishes as unknown[]).length > 0 ||
+    (history.tags as unknown[]).length > 0 ||
+    (history.this_place as ObjectValue).visits !== "none"
+  );
+}
 
 export const qualifiedModel = contract.model;
 
@@ -157,7 +250,7 @@ export function validateRequest(
       req.namespace !== namespace ||
       !isHmac(req.scope) ||
       !isHmac(req.key) ||
-      req.manifest !== POLICY.manifest
+      !(POLICY.manifests as readonly unknown[]).includes(req.manifest)
     )
       throw new Error();
     if (
@@ -179,44 +272,10 @@ export function validateRequest(
       contract.input_policy.request_max_bytes
     )
       throw new Error();
-    const state = object(strictJson(body.state), ["profile", "candidate"]);
-    for (const key of ["profile", "candidate"] as const) {
-      const spec = schema.properties[key];
-      const item = object(state[key], spec.required);
-      for (const [name, rule] of Object.entries(spec.properties)) {
-        const value = item[name];
-        if ("const" in rule) {
-          if (value !== rule.const) throw new Error();
-        } else if ("items" in rule) {
-          if (
-            !Array.isArray(value) ||
-            value.some((v) => typeof v !== "string") ||
-            new Set(value).size !== value.length
-          )
-            throw new Error();
-          const items = rule.items;
-          if (
-            value.some((v) =>
-              "enum" in items
-                ? !(items.enum as string[]).includes(v)
-                : new RegExp(items.pattern).exec(v)?.[0] !== v,
-            )
-          )
-            throw new Error();
-        } else if (
-          typeof value !== "string" ||
-          [...value].length < rule.minLength ||
-          [...value].length > rule.maxLength
-        )
-          throw new Error();
-      }
-    }
-    const profile = object(state.profile);
-    if (
-      !(profile.likes as unknown[]).length &&
-      !(profile.dislikes as unknown[]).length
-    )
-      throw new Error();
+    // The manifest selects exactly one frozen schema; a state of another version fails it.
+    const state = strictJson(body.state);
+    check(schemas[req.manifest as string], state);
+    if (!hasTaste(state as ObjectValue)) throw new Error();
     // Always forward a fresh bounded projection, never arbitrary envelope fields.
     return {
       ...req,

@@ -46,6 +46,8 @@ class FitConfig:
     cloudflare_api_token: str = field(default="", repr=False)
 
     online_enabled: bool = False
+    # Owner history evidence in online fit: needs accounts and each diner's own explicit opt-in.
+    history_enabled: bool = False
     gateway_url: str = field(default="", repr=False)
     gateway_token: str = field(default="", repr=False)
     hmac_secret: str = field(default="", repr=False)
@@ -232,6 +234,7 @@ class Config:
                 backend=env.get("MAKAN_FIT_BACKEND", "").strip().lower() or "local",
                 model=env.get("MAKAN_FIT_MODEL", "").strip(),
                 online_enabled=_flag(env, "MAKAN_FIT_ONLINE_ENABLED", False),
+                history_enabled=_flag(env, "MAKAN_FIT_HISTORY_ENABLED", False),
                 gateway_url=env.get("MAKAN_FIT_GATEWAY_URL", "").strip().rstrip("/"),
                 gateway_token=env.get("MAKAN_FIT_GATEWAY_TOKEN", "").strip(),
                 hmac_secret=env.get("MAKAN_FIT_HMAC_SECRET", "").strip(),

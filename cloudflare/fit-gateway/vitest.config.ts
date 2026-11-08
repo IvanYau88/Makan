@@ -1,6 +1,6 @@
 import { defineConfig } from "vitest/config";
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
-import fixture from "./test/fixtures/protocol.json";
+import fixture from "./test/fixtures/protocol.json" with { type: "json" };
 
 // The only upstream reachable from tests: the pinned Clef endpoint for the
 // synthetic account, answering with the frozen protocol response. Anything else fails.

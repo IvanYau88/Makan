@@ -22,6 +22,7 @@ from dataclasses import dataclass, replace
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
+from uuid import UUID
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
@@ -95,6 +96,8 @@ class OnlineFit(BaseModel):
 
     consent: bool = Field(default=False, strict=True)
     session: str | None = Field(default=None, max_length=256)
+    # A separate opt-in to also send summaries of the signed-in diner's own visits and dishes.
+    history: bool = Field(default=False, strict=True)
 
 
 class RecommendBody(BaseModel):
@@ -258,12 +261,20 @@ def create_app(
     @app.middleware("http")
     async def invalidate_owner_fit(request: Request, call_next: Any) -> Any:
         response = await call_next(request)
+        path = request.url.path
         if (
             fit_strategy.online
             and config.fit.ready
             and response.status_code < 400
-            and request.method in ("PUT", "DELETE")
-            and request.url.path in ("/api/me", "/api/me/taste")
+            and (
+                (request.method in ("PUT", "DELETE") and path in ("/api/me", "/api/me/taste"))
+                # A history edit makes older history-based results stale, so drop them too.
+                or (
+                    config.fit.history_enabled
+                    and request.method in ("POST", "PATCH", "PUT", "DELETE")
+                    and path.startswith(("/api/me/visits", "/api/me/tag-requests/"))
+                )
+            )
         ):
             try:
                 identity = await run_in_threadpool(
@@ -312,16 +323,37 @@ def create_app(
             on_update=on_update,
         )
         inputs = FitInputs()
-        # Disabling soft scores must never disable known hard exclusions or their warnings.
-        if identity is not None and accounts is not None:
+        # Only an opted-in, signed-in diner on a deployment with accounts and history enabled.
+        wants_history = (
+            fit_strategy.online
+            and config.fit.history_enabled
+            and body.online_fit.consent
+            and body.online_fit.history
+        )
+
+        def owner_inputs(user_id: UUID) -> FitInputs:
+            """Memory tastes and exclusions, then the owner's own history when asked for."""
+            assert accounts is not None
             try:
-                inputs = owner_fit_inputs(accounts.accounts.memory, identity.user_id)
+                found = owner_fit_inputs(accounts.accounts.memory, user_id)
             except Exception:
                 log.exception("could not read local fit inputs")
-                inputs = FitInputs(
+                return FitInputs(
                     problem=FitReason.UNAVAILABLE,
                     warnings=("Saved tastes and exclusions are unavailable. Check before going.",),
                 )
+            if not wants_history:
+                return found
+            try:
+                return replace(found, history=accounts.visits.taste_history(user_id))
+            except Exception:
+                # Never score without history the diner asked to include; exclusions still apply.
+                log.exception("could not read visit history for fit")
+                return replace(found, problem=found.problem or FitReason.UNAVAILABLE)
+
+        # Disabling soft scores must never disable known hard exclusions or their warnings.
+        if identity is not None and accounts is not None:
+            inputs = owner_inputs(identity.user_id)
         elif config.fit_enabled and body.tastes is not None:
             inputs = FitInputs(tuple(body.tastes.likes), tuple(body.tastes.dislikes))
 
@@ -343,15 +375,7 @@ def create_app(
             )
             if identity is not None and accounts is not None:
                 # A memory edit/deletion during I/O cannot revive withdrawn tastes or exclusions.
-                try:
-                    latest = owner_fit_inputs(accounts.accounts.memory, identity.user_id)
-                except Exception:
-                    latest = FitInputs(
-                        problem=FitReason.UNAVAILABLE,
-                        warnings=(
-                            "Saved tastes and exclusions are unavailable. Check before going.",
-                        ),
-                    )
+                latest = owner_inputs(identity.user_id)
                 if latest != initial_inputs:
                     inputs = latest
                     if fit_strategy.online:
@@ -360,7 +384,9 @@ def create_app(
                             problem=inputs.problem
                             or (
                                 FitReason.STALE
-                                if inputs.likes or inputs.dislikes
+                                if inputs.likes
+                                or inputs.dislikes
+                                or (inputs.history is not None and inputs.history.usable)
                                 else FitReason.NO_TASTE
                             ),
                         )

@@ -539,7 +539,7 @@ export class Coordinator {
   metrics(): {
     model: string;
     policy: string;
-    manifest: string;
+    manifests: readonly string[];
     pricing: string;
     rows: Record<string, SqlStorageValue>[];
     charged: number;
@@ -549,7 +549,7 @@ export class Coordinator {
     return {
       model: qualifiedModel,
       policy: POLICY.version,
-      manifest: POLICY.manifest,
+      manifests: POLICY.manifests,
       pricing: POLICY.pricingVersion,
       rows: this.sql
         .exec("SELECT * FROM metrics ORDER BY day,category")

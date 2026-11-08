@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import math
-import re
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
@@ -29,6 +28,7 @@ from makan.providers.scoring.base import (
     ScoreResult,
     Status,
 )
+from makan.providers.scoring.clef_contract import validated
 from makan.providers.scoring.transport import (
     ClefError,
     ClefReason,
@@ -93,9 +93,6 @@ class ClefScorer(BaseScorer):
         self._transport = transport
         root = resources.files("makan").joinpath("evals", "sets", "clef")
         self._contract = _object(_strict_json(root.joinpath("contract.json").read_text("utf-8")))
-        self._state_schema = _object(
-            _strict_json(root.joinpath("state.schema.json").read_text("utf-8"))
-        )
 
     def close(self) -> None:
         if self._transport is not None:
@@ -130,7 +127,7 @@ class ClefScorer(BaseScorer):
         """Validate one soft case and return both answers from exactly one request.
 
         Invalid or oversize inputs fail closed, without sending partially filtered data.
-        The owner-aware state builder and eligibility policy are a later integration slice.
+        Either frozen state contract is accepted; its keys select which one validates it.
         """
         started = time.perf_counter()
         try:
@@ -173,37 +170,9 @@ class ClefScorer(BaseScorer):
         )
 
     def _canonical_state(self, state: Mapping[str, Any]) -> str:
-        # Read allowlists from the frozen schema instead of inventing a second input contract.
-        data = _object(dict(state), ("profile", "candidate"))
-        properties = self._state_schema["properties"]
-        for key in ("profile", "candidate"):
-            schema = properties[key]
-            item = _object(data[key], tuple(schema["required"]))
-            for name, spec in schema["properties"].items():
-                value = item[name]
-                if "const" in spec:
-                    if value != spec["const"]:
-                        raise ValueError("invalid source")
-                elif spec["type"] == "array":
-                    if not isinstance(value, list) or any(not isinstance(v, str) for v in value):
-                        raise ValueError("invalid array")
-                    if len(value) != len(set(value)):
-                        raise ValueError("duplicate item")
-                    allowed = spec["items"].get("enum")
-                    pattern = spec["items"].get("pattern")
-                    if any(
-                        (allowed is not None and v not in allowed)
-                        or (pattern is not None and re.fullmatch(pattern, v) is None)
-                        for v in value
-                    ):
-                        raise ValueError("invalid item")
-                elif not isinstance(value, str) or not (
-                    spec["minLength"] <= len(value) <= spec["maxLength"]
-                ):
-                    raise ValueError("invalid source release")
-        if not data["profile"]["likes"] and not data["profile"]["dislikes"]:
-            raise ValueError("no taste profile")
-        return json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+        # The frozen schemas are the only input contracts; the state's keys select one of them.
+        validated(state)
+        return json.dumps(dict(state), sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
     def _request(
         self,

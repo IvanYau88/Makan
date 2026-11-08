@@ -442,3 +442,84 @@ def test_recorded_ledgers_hold_no_credentials_or_provider_text() -> None:
         for row in map(json.loads, text.splitlines()):
             assert set(row["response"]) == {"errors", "messages", "result", "success"}
             assert row["response"]["errors"] == 0 and row["response"]["messages"] == 0
+
+
+# State version 2 requalification lane, offline only
+
+
+def history_jobs() -> list[clef_live.Job]:
+    return clef_live.history_jobs(ClefScorer(None, CLEF_FIT_MODEL))
+
+
+def test_history_lane_is_fixed_production_built_and_fits_the_existing_caps() -> None:
+    jobs = history_jobs()
+    assert [j.id for j in jobs] == [j.id for j in history_jobs()]
+    assert [clef_live.encode(j.body) for j in jobs] == [
+        clef_live.encode(j.body) for j in history_jobs()
+    ]
+    lanes = {j.lane for j in jobs}
+    assert lanes == {"history", "history_plain", "history_repeat", "history_reversed"}
+    v1 = json.loads((ROOT / "src/makan/evals/sets/clef/state.schema.json").read_text())
+    for job in jobs:
+        state = json.loads(job.body["state"])
+        keys = (
+            {"profile", "history", "candidate"}
+            if job.lane != "history_plain"
+            else set(v1["required"])
+        )
+        assert set(state) == keys
+        assert len(clef_live.encode(job.body)) < 8192
+    by_job = {j.id: j for j in jobs}
+    for case in clef_live.HISTORY_REPEAT_CASES:
+        assert by_job[f"history_repeat:{case}"].body == by_job[f"history:{case}"].body
+        reversed_body = by_job[f"history_reversed:{case}"].body
+        assert list(reversed_body["questions"]) == ["fit_score", "taste_fit"]
+        assert reversed_body["state"] == by_job[f"history:{case}"].body["state"]
+    reserved = math.fsum(clef_live.reservation(len(clef_live.encode(j.body))) for j in jobs)
+    assert reserved <= clef_live.QUALIFY_MAX_NEURONS
+    # Only made-up data: no typed dish text, place names, ids or dates in any state.
+    text = " ".join(j.body["state"] for j in jobs)
+    assert "Synthetic" not in text and "syn-" not in text and "2026-1" not in text
+
+
+def test_history_lane_runs_offline_and_summarizes_against_version_1(tmp_path: Path) -> None:
+    jobs = history_jobs()
+    reason, rows, _ = run(tmp_path, Wire(), jobs, clef_live.Budget(len(jobs), 600, 85), smoke=False)
+    assert reason == "completed" and len(rows) == len(jobs)
+    summary = clef_live.summarize(rows)["history"]
+    assert summary["directional_cases"] == 18
+    # The synthetic wire always answers strong, so every expected-low case contradicts.
+    assert len(summary["direction_contradictions"]) == 9
+    assert set(summary["versus_version_1"]) == {
+        r["case"] for r in rows if r["lane"] == "history_plain"
+    }
+    assert summary["gates"].startswith("not pre-registered")
+    full = clef_live.summarize(rows)
+    assert full["history_repeat"]["max_fit_score_shift"] == 0
+    assert full["history_reversed"]["cases"] == len(clef_live.HISTORY_REPEAT_CASES)
+    assert "gates" not in full
+
+
+CAPPED = ["qualify-history", "--live", "--max-requests", "9", "--max-neurons", "9"]
+
+
+def test_qualify_history_needs_the_same_explicit_live_flag_and_caps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def no_network(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("no client may be created")
+
+    monkeypatch.setattr(httpx, "Client", no_network)
+    environ = {"CLOUDFLARE_ACCOUNT_ID": ACCOUNT, "CLOUDFLARE_API_TOKEN": TOKEN}
+    for argv, message in (
+        (["qualify-history", "--ledger", "x"], "--live"),
+        (["qualify-history", "--live", "--ledger", "x"], "required"),
+        (
+            [*CAPPED[:4], "--max-neurons", "601", "--ledger", "x"],
+            "may not exceed",
+        ),
+    ):
+        with pytest.raises(clef_live.Refused, match=message):
+            clef_live.main(argv, environ)
+    with pytest.raises(clef_live.Refused, match="CI"):
+        clef_live.main([*CAPPED, "--ledger", "x"], {**environ, "CI": "true"})

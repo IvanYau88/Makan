@@ -128,11 +128,11 @@ No arbitrary endpoint, model, prompt, state schema, question set, or response bo
   "namespace": "preview",
   "scope": "<64 lowercase hex HMAC>",
   "key": "<64 lowercase hex HMAC>",
-  "manifest": "<frozen manifest content_sha256>",
+  "manifest": "<one pinned frozen manifest content_sha256>",
   "expires_at": 1798027201000,
   "body": {
     "model": "clef-flash",
-    "state": "<canonical JSON of exactly one allowlisted profile and candidate>",
+    "state": "<canonical JSON of exactly one allowlisted profile and candidate, plus owner history in version 2>",
     "questions": {
       "taste_fit": "<exact frozen question>",
       "fit_score": "<exact frozen question>"
@@ -145,6 +145,11 @@ The question placeholders above stand for objects with precisely the frozen `typ
 The complete native body is limited to 8 KiB; the metadata envelope is limited to 12 KiB.
 The response body is read with a 16 KiB bound and validated before projection.
 Duplicate JSON keys, extra request fields, unknown hard/identity fields, unsupported models, and mismatched manifests fail before admission.
+`POLICY.manifests` pins two state contracts and nothing else: version 1 (`src/makan/evals/sets/clef/manifest.json`, guest cuisines and categories) and version 2 (`src/makan/evals/sets/clef/v2/manifest.json`, which adds the owner's own bounded history summaries).
+Each manifest selects only its own schema, so a history state under the version 1 manifest, or a plain state under version 2's, is `invalid_input`.
+Both use the same frozen questions, and the manifest is part of the case key, so the two versions never share a cache entry.
+Every version 2 history value is a closed vocabulary id, so typed dish text, notes, companions, dates and identities cannot be expressed, and bounded arrays reject anything longer instead of truncating it.
+`npm run lint` checks every pinned manifest's file and content hashes against `src/config.ts`.
 The gateway validates both questions, probability distributions, ordinal legend, expectation, native confidence, and usage using the same rules as slice 2.
 Native extra response fields are discarded.
 Accepted semantic unknowns remain successful evidence and may be cached; this infrastructure does not apply display/acceptance policy or fabricate numbers.

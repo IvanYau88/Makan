@@ -1,0 +1,433 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Version 2 hypothesis awaiting qualification: version 1's profile and candidate, plus the owner's own bounded history summaries from makan.visits.evidence (owner-history-v1). Every value is a closed vocabulary id; no typed text, name, date, address, companion, note or identity. x-unique-by names fields that may not repeat across items. At least one taste or history entry is required in evidence policy.",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "object",
+      "properties": {
+        "likes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "chinese",
+              "indian",
+              "italian",
+              "japanese",
+              "korean",
+              "mexican",
+              "thai",
+              "vietnamese"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "dislikes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "chinese",
+              "indian",
+              "italian",
+              "japanese",
+              "korean",
+              "mexican",
+              "thai",
+              "vietnamese"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "source": {
+          "const": "user_stated"
+        }
+      },
+      "required": [
+        "likes",
+        "dislikes",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "history": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "const": "owner_rated_visits"
+        },
+        "policy": {
+          "const": "owner-history-v1"
+        },
+        "rated_visits": {
+          "type": "string",
+          "enum": [
+            "none",
+            "one",
+            "few",
+            "many"
+          ]
+        },
+        "rated_dishes": {
+          "type": "string",
+          "enum": [
+            "none",
+            "one",
+            "few",
+            "many"
+          ]
+        },
+        "this_place": {
+          "type": "object",
+          "properties": {
+            "visits": {
+              "type": "string",
+              "enum": [
+                "none",
+                "one",
+                "few",
+                "many"
+              ]
+            },
+            "lean": {
+              "type": "string",
+              "enum": [
+                "well_below",
+                "below",
+                "near",
+                "above",
+                "well_above",
+                "mixed",
+                "unrated"
+              ]
+            }
+          },
+          "required": [
+            "visits",
+            "lean"
+          ],
+          "additionalProperties": false
+        },
+        "cuisines": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "x-unique-by": [
+            "cuisine",
+            "from"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "cuisine": {
+                "type": "string",
+                "enum": [
+                  "chinese",
+                  "indian",
+                  "italian",
+                  "japanese",
+                  "korean",
+                  "mexican",
+                  "thai",
+                  "vietnamese"
+                ]
+              },
+              "from": {
+                "type": "string",
+                "enum": [
+                  "visits",
+                  "dishes"
+                ]
+              },
+              "lean": {
+                "type": "string",
+                "enum": [
+                  "well_below",
+                  "below",
+                  "near",
+                  "above",
+                  "well_above",
+                  "mixed"
+                ]
+              },
+              "strength": {
+                "type": "string",
+                "enum": [
+                  "faint",
+                  "some",
+                  "strong"
+                ]
+              }
+            },
+            "required": [
+              "cuisine",
+              "from",
+              "lean",
+              "strength"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "dishes": {
+          "type": "array",
+          "maxItems": 10,
+          "uniqueItems": true,
+          "x-unique-by": [
+            "dish"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "dish": {
+                "type": "string",
+                "enum": [
+                  "banh_mi",
+                  "bibimbap",
+                  "biryani",
+                  "bolognese",
+                  "bulgogi",
+                  "bun_bo_hue",
+                  "bun_cha",
+                  "burrito",
+                  "butter_chicken",
+                  "carbonara",
+                  "char_siu",
+                  "chow_mein",
+                  "com_tam",
+                  "dal",
+                  "dim_sum",
+                  "donburi",
+                  "dosa",
+                  "enchiladas",
+                  "galbi",
+                  "gnocchi",
+                  "goi_cuon",
+                  "green_curry",
+                  "guacamole",
+                  "gyoza",
+                  "hot_pot",
+                  "japchae",
+                  "katsu",
+                  "khao_soi",
+                  "kimchi",
+                  "kimchi_jjigae",
+                  "korean_fried_chicken",
+                  "kung_pao_chicken",
+                  "lasagna",
+                  "mango_sticky_rice",
+                  "mapo_tofu",
+                  "massaman_curry",
+                  "naan",
+                  "nachos",
+                  "pad_kra_pao",
+                  "pad_see_ew",
+                  "pad_thai",
+                  "palak_paneer",
+                  "pasta",
+                  "peking_duck",
+                  "pho",
+                  "pizza",
+                  "pozole",
+                  "quesadilla",
+                  "ramen",
+                  "red_curry",
+                  "risotto",
+                  "samosa",
+                  "sashimi",
+                  "som_tam",
+                  "sushi",
+                  "tacos",
+                  "tamales",
+                  "tempura",
+                  "tikka_masala",
+                  "tiramisu",
+                  "tom_yum",
+                  "tteokbokki",
+                  "udon",
+                  "vindaloo",
+                  "wonton_noodles",
+                  "xiaolongbao",
+                  "yakitori"
+                ]
+              },
+              "lean": {
+                "type": "string",
+                "enum": [
+                  "well_below",
+                  "below",
+                  "near",
+                  "above",
+                  "well_above",
+                  "mixed"
+                ]
+              },
+              "strength": {
+                "type": "string",
+                "enum": [
+                  "faint",
+                  "some",
+                  "strong"
+                ]
+              }
+            },
+            "required": [
+              "dish",
+              "lean",
+              "strength"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "tags": {
+          "type": "array",
+          "maxItems": 24,
+          "uniqueItems": true,
+          "x-unique-by": [
+            "tag"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "tag": {
+                "type": "string",
+                "enum": [
+                  "bitter",
+                  "bland",
+                  "chewy",
+                  "creamy",
+                  "crispy",
+                  "fresh",
+                  "fried",
+                  "garlicky",
+                  "grilled",
+                  "light",
+                  "mild",
+                  "noodles",
+                  "not_bitter",
+                  "not_bland",
+                  "not_chewy",
+                  "not_creamy",
+                  "not_crispy",
+                  "not_fresh",
+                  "not_fried",
+                  "not_garlicky",
+                  "not_grilled",
+                  "not_light",
+                  "not_mild",
+                  "not_noodles",
+                  "not_oily",
+                  "not_rice",
+                  "not_rich",
+                  "not_salty",
+                  "not_savoury",
+                  "not_smoky",
+                  "not_soup",
+                  "not_sour",
+                  "not_spicy",
+                  "not_sweet",
+                  "not_tangy",
+                  "not_tender",
+                  "not_umami",
+                  "oily",
+                  "rice",
+                  "rich",
+                  "salty",
+                  "savoury",
+                  "smoky",
+                  "soup",
+                  "sour",
+                  "spicy",
+                  "sweet",
+                  "tangy",
+                  "tender",
+                  "umami"
+                ]
+              },
+              "lean": {
+                "type": "string",
+                "enum": [
+                  "well_below",
+                  "below",
+                  "near",
+                  "above",
+                  "well_above",
+                  "mixed"
+                ]
+              },
+              "strength": {
+                "type": "string",
+                "enum": [
+                  "faint",
+                  "some",
+                  "strong"
+                ]
+              }
+            },
+            "required": [
+              "tag",
+              "lean",
+              "strength"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "source",
+        "policy",
+        "rated_visits",
+        "rated_dishes",
+        "this_place",
+        "cuisines",
+        "dishes",
+        "tags"
+      ],
+      "additionalProperties": false
+    },
+    "candidate": {
+      "type": "object",
+      "properties": {
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,127}$"
+          },
+          "uniqueItems": true
+        },
+        "source": {
+          "const": "overture_category"
+        },
+        "source_release": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "missing_facts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "categories"
+            ]
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "categories",
+        "source",
+        "source_release",
+        "missing_facts"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "profile",
+    "history",
+    "candidate"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,635 @@
+{
+  "version": "owner-history-v1",
+  "status": "hypothesis_awaiting_qualification",
+  "owner_only": "Only the owner's own rows: their restaurant ratings (origin fresh or confirmed) and their own dish rows. A visit made from an accepted tag counts as rated only once its owner rated it. The tagger's visit, dishes, tags and notes are never read, and no other person's rows are queried.",
+  "excluded": [
+    "companions",
+    "notes",
+    "descriptions",
+    "dish comments",
+    "dates",
+    "addresses",
+    "place names",
+    "place ids",
+    "user ids",
+    "free text"
+  ],
+  "read_limit_visits": 1000,
+  "too_long": "An owner with more than read_limit_visits visits gets no history evidence and an Unrated assessment: unread older visits could hold a dislike, so the history is never truncated.",
+  "averages": "Unweighted means of every eligible restaurant rating and every eligible dish rating, each read against its own kind.",
+  "fading": {
+    "half_life_days": 365,
+    "rule": "weight = 0.5 ** (age_days / half_life_days), age from the visit day to today in UTC, never below zero days. Weights never reach zero, so an old or weakened taste still counts a little."
+  },
+  "dish_context": {
+    "margin": 0.5,
+    "stands_apart": 1.5,
+    "follows_restaurant": 0.5,
+    "neutral": 1.0,
+    "rule": "A dish's weight is multiplied by stands_apart when the dish and its restaurant both differ from their own averages by at least margin in opposite directions (a low dish at a liked restaurant counts more against that dish), by follows_restaurant when they differ in the same direction, and by neutral otherwise, including when the owner has not rated the restaurant."
+  },
+  "lean": {
+    "well_above": 1.5,
+    "above": 0.5,
+    "below": -0.5,
+    "well_below": -1.5,
+    "rule": "The weighted mean of (rating - own average): at least well_above is well_above, at least above is above, at most well_below is well_below, at most below is below, and anything between is near."
+  },
+  "mixed": {
+    "margin": 1.0,
+    "dominance": 2.0,
+    "rule": "When evidence at least margin above and at least margin below the average both exist and neither side's weight is dominance times the other's, the lean is mixed instead of an average that hides the conflict."
+  },
+  "strength": {
+    "some": 1.0,
+    "strong": 3.0,
+    "rule": "Total weight below some is faint, below strong is some, otherwise strong."
+  },
+  "count_buckets": {
+    "one": 1,
+    "few": 2,
+    "many": 5,
+    "rule": "0 is none, 1 is one, 2 to 4 is few, 5 or more is many."
+  },
+  "normalization": "Dish names and tags are matched after NFKD with combining marks removed, case folding, and every run of characters that are not letters or digits replaced by one space. Only the canonical id of a match ever leaves the server; the typed text never does.",
+  "dish_matching": "A dish matches the aliases contained in its name as whole words, ignoring an alias that lies inside a longer matched alias. Matches of two different dishes match nothing, so a combined name is never guessed. A dish's cuisine comes from its dish id or from an exact cuisine tag, and a conflict between them gives no cuisine.",
+  "tag_matching": "A tag matches when its whole normalized text equals an alias. 'not ' followed by an alias of X is the separate id not_X, so negation is literal. Occasion tags such as lunch, and every unknown tag, are no taste evidence.",
+  "visit_cuisine": "A visit's restaurant rating counts for a cuisine only when every recognized dish on that visit has that one cuisine.",
+  "max_tags": 24,
+  "selection": "Every cuisine summary, only the dish summaries of the candidate's cuisine, and the owner's own visits at the candidate itself. A dish of another cuisine is still counted in its cuisine summary. At most max_tags tag summaries are kept: first those leaning below, well_below or mixed, then the rest, each by total weight and then id. When a summary leaning below, well_below or mixed would be left out, that is a material omission and the whole history is unusable (Unrated), so a dislike is never dropped silently.",
+  "cuisines": [
+    "chinese",
+    "indian",
+    "italian",
+    "japanese",
+    "korean",
+    "mexican",
+    "thai",
+    "vietnamese"
+  ],
+  "cuisine_tags": {
+    "chinese": [
+      "chinese"
+    ],
+    "indian": [
+      "indian"
+    ],
+    "italian": [
+      "italian"
+    ],
+    "japanese": [
+      "japanese"
+    ],
+    "korean": [
+      "korean"
+    ],
+    "mexican": [
+      "mexican"
+    ],
+    "thai": [
+      "thai"
+    ],
+    "vietnamese": [
+      "vietnamese"
+    ]
+  },
+  "dishes": {
+    "char_siu": {
+      "cuisine": "chinese",
+      "names": [
+        "char siu",
+        "cha siu"
+      ]
+    },
+    "chow_mein": {
+      "cuisine": "chinese",
+      "names": [
+        "chow mein"
+      ]
+    },
+    "dim_sum": {
+      "cuisine": "chinese",
+      "names": [
+        "dim sum",
+        "dimsum"
+      ]
+    },
+    "hot_pot": {
+      "cuisine": "chinese",
+      "names": [
+        "hot pot",
+        "hotpot"
+      ]
+    },
+    "kung_pao_chicken": {
+      "cuisine": "chinese",
+      "names": [
+        "kung pao chicken",
+        "kung pao"
+      ]
+    },
+    "mapo_tofu": {
+      "cuisine": "chinese",
+      "names": [
+        "mapo tofu"
+      ]
+    },
+    "peking_duck": {
+      "cuisine": "chinese",
+      "names": [
+        "peking duck"
+      ]
+    },
+    "wonton_noodles": {
+      "cuisine": "chinese",
+      "names": [
+        "wonton noodles",
+        "wonton mee",
+        "wantan mee"
+      ]
+    },
+    "xiaolongbao": {
+      "cuisine": "chinese",
+      "names": [
+        "xiaolongbao",
+        "xiao long bao",
+        "soup dumplings"
+      ]
+    },
+    "biryani": {
+      "cuisine": "indian",
+      "names": [
+        "biryani",
+        "briyani"
+      ]
+    },
+    "butter_chicken": {
+      "cuisine": "indian",
+      "names": [
+        "butter chicken",
+        "murgh makhani"
+      ]
+    },
+    "dal": {
+      "cuisine": "indian",
+      "names": [
+        "dal",
+        "dhal",
+        "daal"
+      ]
+    },
+    "dosa": {
+      "cuisine": "indian",
+      "names": [
+        "dosa",
+        "thosai"
+      ]
+    },
+    "naan": {
+      "cuisine": "indian",
+      "names": [
+        "naan"
+      ]
+    },
+    "palak_paneer": {
+      "cuisine": "indian",
+      "names": [
+        "palak paneer",
+        "saag paneer"
+      ]
+    },
+    "samosa": {
+      "cuisine": "indian",
+      "names": [
+        "samosa",
+        "samosas"
+      ]
+    },
+    "tikka_masala": {
+      "cuisine": "indian",
+      "names": [
+        "tikka masala",
+        "chicken tikka masala"
+      ]
+    },
+    "vindaloo": {
+      "cuisine": "indian",
+      "names": [
+        "vindaloo"
+      ]
+    },
+    "bolognese": {
+      "cuisine": "italian",
+      "names": [
+        "bolognese",
+        "spaghetti bolognese"
+      ]
+    },
+    "carbonara": {
+      "cuisine": "italian",
+      "names": [
+        "carbonara",
+        "spaghetti carbonara"
+      ]
+    },
+    "gnocchi": {
+      "cuisine": "italian",
+      "names": [
+        "gnocchi"
+      ]
+    },
+    "lasagna": {
+      "cuisine": "italian",
+      "names": [
+        "lasagna",
+        "lasagne"
+      ]
+    },
+    "pasta": {
+      "cuisine": "italian",
+      "names": [
+        "pasta",
+        "spaghetti",
+        "penne",
+        "linguine",
+        "fettuccine"
+      ]
+    },
+    "pizza": {
+      "cuisine": "italian",
+      "names": [
+        "pizza"
+      ]
+    },
+    "risotto": {
+      "cuisine": "italian",
+      "names": [
+        "risotto"
+      ]
+    },
+    "tiramisu": {
+      "cuisine": "italian",
+      "names": [
+        "tiramisu"
+      ]
+    },
+    "donburi": {
+      "cuisine": "japanese",
+      "names": [
+        "donburi",
+        "gyudon",
+        "katsudon",
+        "oyakodon"
+      ]
+    },
+    "gyoza": {
+      "cuisine": "japanese",
+      "names": [
+        "gyoza"
+      ]
+    },
+    "katsu": {
+      "cuisine": "japanese",
+      "names": [
+        "katsu",
+        "tonkatsu"
+      ]
+    },
+    "ramen": {
+      "cuisine": "japanese",
+      "names": [
+        "ramen"
+      ]
+    },
+    "sashimi": {
+      "cuisine": "japanese",
+      "names": [
+        "sashimi"
+      ]
+    },
+    "sushi": {
+      "cuisine": "japanese",
+      "names": [
+        "sushi",
+        "nigiri",
+        "maki"
+      ]
+    },
+    "tempura": {
+      "cuisine": "japanese",
+      "names": [
+        "tempura"
+      ]
+    },
+    "udon": {
+      "cuisine": "japanese",
+      "names": [
+        "udon"
+      ]
+    },
+    "yakitori": {
+      "cuisine": "japanese",
+      "names": [
+        "yakitori"
+      ]
+    },
+    "bibimbap": {
+      "cuisine": "korean",
+      "names": [
+        "bibimbap"
+      ]
+    },
+    "bulgogi": {
+      "cuisine": "korean",
+      "names": [
+        "bulgogi"
+      ]
+    },
+    "galbi": {
+      "cuisine": "korean",
+      "names": [
+        "galbi",
+        "kalbi"
+      ]
+    },
+    "japchae": {
+      "cuisine": "korean",
+      "names": [
+        "japchae"
+      ]
+    },
+    "kimchi": {
+      "cuisine": "korean",
+      "names": [
+        "kimchi"
+      ]
+    },
+    "kimchi_jjigae": {
+      "cuisine": "korean",
+      "names": [
+        "kimchi jjigae",
+        "kimchi stew"
+      ]
+    },
+    "korean_fried_chicken": {
+      "cuisine": "korean",
+      "names": [
+        "korean fried chicken"
+      ]
+    },
+    "tteokbokki": {
+      "cuisine": "korean",
+      "names": [
+        "tteokbokki",
+        "topokki",
+        "ddeokbokki"
+      ]
+    },
+    "burrito": {
+      "cuisine": "mexican",
+      "names": [
+        "burrito",
+        "burritos"
+      ]
+    },
+    "enchiladas": {
+      "cuisine": "mexican",
+      "names": [
+        "enchilada",
+        "enchiladas"
+      ]
+    },
+    "guacamole": {
+      "cuisine": "mexican",
+      "names": [
+        "guacamole"
+      ]
+    },
+    "nachos": {
+      "cuisine": "mexican",
+      "names": [
+        "nachos"
+      ]
+    },
+    "pozole": {
+      "cuisine": "mexican",
+      "names": [
+        "pozole"
+      ]
+    },
+    "quesadilla": {
+      "cuisine": "mexican",
+      "names": [
+        "quesadilla",
+        "quesadillas"
+      ]
+    },
+    "tacos": {
+      "cuisine": "mexican",
+      "names": [
+        "taco",
+        "tacos"
+      ]
+    },
+    "tamales": {
+      "cuisine": "mexican",
+      "names": [
+        "tamal",
+        "tamale",
+        "tamales"
+      ]
+    },
+    "green_curry": {
+      "cuisine": "thai",
+      "names": [
+        "green curry",
+        "thai green curry"
+      ]
+    },
+    "khao_soi": {
+      "cuisine": "thai",
+      "names": [
+        "khao soi"
+      ]
+    },
+    "mango_sticky_rice": {
+      "cuisine": "thai",
+      "names": [
+        "mango sticky rice"
+      ]
+    },
+    "massaman_curry": {
+      "cuisine": "thai",
+      "names": [
+        "massaman curry",
+        "massaman"
+      ]
+    },
+    "pad_kra_pao": {
+      "cuisine": "thai",
+      "names": [
+        "pad kra pao",
+        "pad krapow"
+      ]
+    },
+    "pad_see_ew": {
+      "cuisine": "thai",
+      "names": [
+        "pad see ew"
+      ]
+    },
+    "pad_thai": {
+      "cuisine": "thai",
+      "names": [
+        "pad thai",
+        "phad thai"
+      ]
+    },
+    "red_curry": {
+      "cuisine": "thai",
+      "names": [
+        "red curry",
+        "thai red curry"
+      ]
+    },
+    "som_tam": {
+      "cuisine": "thai",
+      "names": [
+        "som tam",
+        "papaya salad"
+      ]
+    },
+    "tom_yum": {
+      "cuisine": "thai",
+      "names": [
+        "tom yum",
+        "tom yam"
+      ]
+    },
+    "banh_mi": {
+      "cuisine": "vietnamese",
+      "names": [
+        "banh mi"
+      ]
+    },
+    "bun_bo_hue": {
+      "cuisine": "vietnamese",
+      "names": [
+        "bun bo hue"
+      ]
+    },
+    "bun_cha": {
+      "cuisine": "vietnamese",
+      "names": [
+        "bun cha"
+      ]
+    },
+    "com_tam": {
+      "cuisine": "vietnamese",
+      "names": [
+        "com tam",
+        "broken rice"
+      ]
+    },
+    "goi_cuon": {
+      "cuisine": "vietnamese",
+      "names": [
+        "goi cuon",
+        "summer rolls"
+      ]
+    },
+    "pho": {
+      "cuisine": "vietnamese",
+      "names": [
+        "pho"
+      ]
+    }
+  },
+  "tags": {
+    "bitter": [
+      "bitter"
+    ],
+    "bland": [
+      "bland"
+    ],
+    "chewy": [
+      "chewy"
+    ],
+    "creamy": [
+      "creamy"
+    ],
+    "crispy": [
+      "crispy",
+      "crunchy"
+    ],
+    "fresh": [
+      "fresh"
+    ],
+    "fried": [
+      "fried",
+      "deep fried"
+    ],
+    "garlicky": [
+      "garlicky"
+    ],
+    "grilled": [
+      "grilled",
+      "chargrilled"
+    ],
+    "light": [
+      "light"
+    ],
+    "mild": [
+      "mild"
+    ],
+    "noodles": [
+      "noodles",
+      "noodle"
+    ],
+    "oily": [
+      "oily",
+      "greasy"
+    ],
+    "rice": [
+      "rice"
+    ],
+    "rich": [
+      "rich"
+    ],
+    "salty": [
+      "salty"
+    ],
+    "savoury": [
+      "savoury",
+      "savory"
+    ],
+    "smoky": [
+      "smoky",
+      "smokey"
+    ],
+    "soup": [
+      "soup",
+      "soupy"
+    ],
+    "sour": [
+      "sour"
+    ],
+    "spicy": [
+      "spicy",
+      "fiery"
+    ],
+    "sweet": [
+      "sweet"
+    ],
+    "tangy": [
+      "tangy"
+    ],
+    "tender": [
+      "tender"
+    ],
+    "umami": [
+      "umami"
+    ]
+  },
+  "negation_prefix": "not "
+}

@@ -160,3 +160,39 @@ def test_projected_gateway_response_is_accepted_by_native_adapter() -> None:
     assert len(requests) == 1
     assert json.loads(requests[0].content) == fixture["request"]["body"]
     assert scorer._failure(ClefReason.QUOTA_EXHAUSTED).error is ErrorKind.BUDGET
+
+
+def test_history_state_fixture_is_the_builders_output_under_its_own_manifest() -> None:
+    # The same fixture runs through the gateway's version 2 validator in the Workers tests.
+    from tests.test_visit_evidence import synthetic_history_state
+
+    path = ROOT / "cloudflare/fit-gateway/test/fixtures/protocol-history.json"
+    fixture = json.loads(path.read_text())
+    body = ClefScorer(None, "@cf/cloudflare/clef-flash").profile_body(synthetic_history_state())
+    keys = GatewayKeys(b"synthetic-offline-hmac-secret-value", "preview")
+    expected = keys.envelope(
+        body,
+        opaque_owner_or_tab_nonce="synthetic-owner",
+        profile_revision="1",
+        evidence_revision="1",
+        candidate_identity="overture:synthetic-place",
+        fact_expires_at_ms=1798027201000,
+        now_ms=1798027200000,
+    )
+    assert expected == fixture["request"]
+    v2 = json.loads((CLEF / "v2/manifest.json").read_text())["content_sha256"]
+    v1 = json.loads((CLEF / "manifest.json").read_text())["content_sha256"]
+    assert fixture["request"]["manifest"] == v2 != v1
+    # The same profile without history is version 1, so its key is in another namespace.
+    plain = json.loads(body["state"])
+    plain.pop("history")
+    without = keys.envelope(
+        {**body, "state": json.dumps(plain)},
+        opaque_owner_or_tab_nonce="synthetic-owner",
+        profile_revision="1",
+        evidence_revision="1",
+        candidate_identity="overture:synthetic-place",
+        fact_expires_at_ms=1798027201000,
+        now_ms=1798027200000,
+    )
+    assert without["manifest"] == v1 and without["key"] != expected["key"]

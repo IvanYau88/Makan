@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "status": "unqualified_proposal",
+  "extends": "dce0bdf6b62813c26d8447dcd0c31eac0e5633a094aebc126b0fa3c6bf1f0641",
+  "policy_version": "clef-profile-fit-v2-proposed",
+  "state_keys": [
+    "profile",
+    "history",
+    "candidate"
+  ],
+  "contract": "src/makan/evals/sets/clef/contract.json",
+  "state_schema": "src/makan/evals/sets/clef/v2/state.schema.json",
+  "history_policy": "src/makan/visits/history_policy.json",
+  "hash_algorithm": "sha256",
+  "content_hash_rule": "SHA-256 of UTF-8 canonical JSON of this manifest with content_sha256 omitted (sort_keys=True, ensure_ascii=False, separators=(comma,colon)). File hashes cover exact bytes.",
+  "provenance": {
+    "source_revision": "1944f383f62e717948fcd3f06698a2c12daaf529",
+    "annotation": "No qualification; version 1 questions and policies reused unchanged."
+  },
+  "files": {
+    "src/makan/evals/sets/clef/contract.json": "b01dd3dd02100238ac8bff7db5978526c7c37a0f218b135041b086d9c5ded433",
+    "src/makan/evals/sets/clef/v2/state.schema.json": "6fca2a22cba9349178c82b7dcdea6db12a69bd1cd7afafcd6810b89409bb0562",
+    "src/makan/visits/history_policy.json": "5169e4da51e9946c3440f93f2ad7a2c871c269461242c54450909c34ab347649",
+    "src/makan/evals/sets/clef/v2/README.md": "f2e9e908b7a5df0c95184b855cd3bd4f6850b2b4d001ba000d992a07f925e177"
+  },
+  "content_sha256": "d1d589b75c1b38f30b9b3cab97db8dfdb4dfb1f025d29799aba038fef155409a"
+}

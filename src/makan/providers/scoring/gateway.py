@@ -11,8 +11,9 @@ import hashlib
 import hmac
 import json
 from dataclasses import dataclass, field
-from importlib import resources
 from typing import Any, Literal
+
+from makan.providers.scoring.clef_contract import contract_for
 
 GATEWAY_VERSION = "fit-gateway-v1"
 GATEWAY_REASONS_VERSION = 2
@@ -85,11 +86,9 @@ class GatewayKeys:
         native["state"] = _canonical(json.loads(body["state"])).decode("utf-8")
         if len(_canonical(native)) > 8192:
             raise ValueError("gateway body exceeds 8 KiB")
-        manifest = json.loads(
-            resources.files("makan")
-            .joinpath("evals", "sets", "clef", "manifest.json")
-            .read_text("utf-8")
-        )["content_sha256"]
+        # The state's own frozen contract names the manifest, so each version has its own cache
+        # namespace and the gateway validates it against that version's schema.
+        manifest = contract_for(json.loads(body["state"])).manifest
         scope = self.owner_scope(opaque_owner_or_tab_nonce)
         key = self._digest(
             "case",

@@ -1,5 +1,7 @@
 """Explicitly invoked live Clef checks: account probe, capped smoke and capped qualification.
 
+`qualify-history` is the separate capped requalification of state version 2 (owner history).
+
 Nothing imports this module from product code, CI, or build and deploy hooks, and importing it
 opens no client. Every network subcommand needs `--live`, the server-side environment variables
 `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`, and refuses to run under CI or Vercel.
@@ -33,6 +35,7 @@ from typing import Any
 import httpx
 
 from makan.config import CLEF_FIT_MODEL
+from makan.evals.clef_history import build, history_cases, history_summary
 from makan.evals.contract_cases import load_taste_cases, render_taste_state
 from makan.evals.fit import LEVEL_IDS, TASTE_IDS, parse_json, probabilities
 from makan.fit import CATEGORY_CUISINES, cuisine_fit
@@ -274,6 +277,67 @@ def qualification_jobs(scorer: ClefScorer) -> list[Job]:
                 "dual_reversed",
                 case_id,
                 dual_body(_historical_state(case), contract, reverse=True),
+                "dual",
+                meta,
+            )
+        )
+    return jobs
+
+
+HISTORY_REPEAT_CASES = ("H-thai-loved", "H-korean-hated", "H-this-place-hated", "H-mixed-ratings")
+
+
+def history_jobs(scorer: ClefScorer) -> list[Job]:
+    """State version 2 requalification: owner histories, version 1 counterparts, repeats, order.
+
+    Every state comes from the production evidence and state builders over synthetic visits.
+    Policy for assessments is version 1's, unchanged; only the state differs.
+    """
+    jobs: list[Job] = []
+    built = {case.id: (case, build(case)) for case in history_cases()}
+    for case, item in built.values():
+        meta = {
+            "pattern": case.pattern,
+            "expected": case.expected,
+            "local_score": item["local_score"],
+            "local_reason": item["local_reason"],
+        }
+        jobs.append(
+            Job(
+                f"history:{case.id}",
+                "history",
+                case.id,
+                scorer.profile_body(item["state"]),
+                "dual",
+                meta,
+            )
+        )
+    for case, item in built.values():
+        if item["plain"] is not None:
+            meta = {"pattern": case.pattern, "expected": case.expected}
+            jobs.append(
+                Job(
+                    f"history_plain:{case.id}",
+                    "history_plain",
+                    case.id,
+                    scorer.profile_body(item["plain"]),
+                    "dual",
+                    meta,
+                )
+            )
+    contract = _resource("contract.json")
+    for case_id in HISTORY_REPEAT_CASES:
+        case, item = built[case_id]
+        meta = {"pattern": case.pattern, "expected": case.expected}
+        body = scorer.profile_body(item["state"])
+        jobs.append(Job(f"history_repeat:{case_id}", "history_repeat", case_id, body, "dual", meta))
+        reversed_body = dual_body(body["state"], contract, reverse=True)
+        jobs.append(
+            Job(
+                f"history_reversed:{case_id}",
+                "history_reversed",
+                case_id,
+                reversed_body,
                 "dual",
                 meta,
             )
@@ -977,6 +1041,8 @@ def summarize(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         ("control_repeat", "control"),
         ("dual_repeat", "dual"),
         ("dual_reversed", "dual"),
+        ("history_repeat", "history"),
+        ("history_reversed", "history"),
     ):
         items = [
             r for r in lanes.get(lane, []) if r["outcome"] == "ok" and (base, r["case"]) in first
@@ -997,7 +1063,7 @@ def summarize(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
                 for r in items
             ),
         }
-        if base == "dual":
+        if base in ("dual", "history"):
             entry["max_taste_fit_shift"] = round(
                 max(
                     _max_shift(
@@ -1038,6 +1104,11 @@ def summarize(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         summary["contract"]["taste"] = _taste_summary(
             [r for r in lanes["contract"] if r["outcome"] == "ok"]
         )
+    if "history" in lanes:
+        summary["history"] = {
+            **_taste_summary([r for r in lanes["history"] if r["outcome"] == "ok"]),
+            **history_summary([r for r in rows if r["outcome"] == "ok"]),
+        }
     smoke = [r for r in rows if r["lane"].startswith("smoke")]
     if smoke:
         by_case: dict[str, list[Mapping[str, Any]]] = {}
@@ -1169,7 +1240,7 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = 
     sub = parser.add_subparsers(dest="command", required=True)
     account = sub.add_parser("account", help="read-only account and token probes")
     account.add_argument("--live", action="store_true")
-    for name in ("smoke", "qualify"):
+    for name in ("smoke", "qualify", "qualify-history"):
         item = sub.add_parser(name)
         item.add_argument("--live", action="store_true")
         item.add_argument("--max-requests", type=int)
@@ -1199,7 +1270,13 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = 
     smoke = args.command == "smoke"
     budget = _caps(args, smoke=smoke)
     scorer = ClefScorer(None, CLEF_FIT_MODEL)
-    jobs = smoke_jobs(scorer) if smoke else qualification_jobs(scorer)
+    jobs = (
+        smoke_jobs(scorer)
+        if smoke
+        else history_jobs(scorer)
+        if args.command == "qualify-history"
+        else qualification_jobs(scorer)
+    )
 
     def factory(client: httpx.Client) -> CloudflareTransport:
         return CloudflareTransport(account_id, token, CLEF_FIT_MODEL, client=client)

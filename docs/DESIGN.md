@@ -920,7 +920,8 @@ Makan has no way to know a meal happened except what the person does in the app,
   `tests/test_visit_schema.py` checks the migration on Postgres: exact ratings and their range, row-level security, the tag moves, and the cascades.
   `tests/test_web_visits.py` covers the HTTP behavior, including guests, isolation, and export and deletion, and `tests/test_visit_content.py` covers rating parsing and rounding and text cleaning.
   All run offline.
-- **Not done:** the screens, the notification that carries the reminder, finding another person to tag, and any use of visits in taste, scoring, or ranking.
+- **Not done:** the screens, the notification that carries the reminder, finding another person to tag, and any use of visits in scoring or ranking.
+  The one taste use is the default-off owner history evidence in "Owner history evidence for Clef state version 2".
 
 ## Channels
 
@@ -1185,6 +1186,7 @@ The URL is a fixed HTTPS origin, redirects and retries are disabled, and `Gatewa
 Neither browser keys nor browser owner ids are accepted.
 The native `ClefScorer` now exposes pure frozen request construction and response parsing so the gateway route shares its strict validation without creating a direct inference transport.
 Only supported current cuisine likes/dislikes and a material primary cuisine category from an Overture release enter state; names, identities, coordinates, raw request text, history and hard requirements stay out.
+Slice 6 later adds the owner's own bounded history summaries as a separate, default-off state version, described in "Owner history evidence for Clef state version 2".
 Missing material category facts, unsupported, conflicting or stale tastes abstain before dispatch.
 The frozen proposed 0.70 unique-top acceptance, ordinal consistency groups and once-rounded expectation index are applied to validated native evidence.
 Semantic unknown and insufficient acceptance remain Unrated/insufficient_evidence, distinct from infrastructure failures.
@@ -1203,7 +1205,7 @@ After scoring, owner inputs are read again: a changed profile suppresses old evi
 The page aborts/discards in-flight results on taste, consent or identity changes, including a token refresh that completes after clearing.
 
 Withdrawal sends an authenticated scope purge to the gateway and immediately discards local scores even if purging is unavailable.
-Successful owner taste edits and account deletion also purge the owner scope; no visit or dish evidence is loaded or persisted.
+Successful owner taste edits and account deletion also purge the owner scope; in this slice no visit or dish evidence is loaded or persisted.
 Purges are bounded best-effort requests because an unavailable gateway must not prevent withdrawal or local account changes.
 The gateway suppresses late writes when a purge reaches it; if unreachable, old payloads are bounded by their existing expiry and new profile/consent revisions cannot reuse them.
 Consent remains explicit per request rather than a new stored account setting, so no database migration is needed.
@@ -1291,6 +1293,57 @@ Q3, Q6, Q7 and Q8 failed and Q9 is open, so the gateway is not deployed, the gue
 The deploy configuration and runbook remain prepared but unused.
 Enablement is revisited only when all of these hold: richer soft inputs exist, such as slice 6's owner-only visit and dish evidence; the captain has provided independently reviewed human diner labels; a new canary has been frozen; and a fresh pre-registered qualification passes.
 Free plan and no-card status must still be confirmed before any deploy.
+
+### Owner history evidence for Clef state version 2
+
+Slice 6 gives the scorer richer soft evidence for signed-in diners: short summaries of their own visits and dishes, built only from ratings they entered or confirmed.
+It changes no ranking and no default, makes no live call, and online fit stays off with `MAKAN_FIT_ONLINE_ENABLED=0`.
+Turning it on for diners waits for a fresh pre-registered requalification of the new state.
+
+- **Owner-only reads:** `Visits.taste_history` in `makan.visits.service` reads only the owner's own visits (`list_visits`) and dish rows (`dishes_by_owner`, a new owner-scoped store query on `visit_dishes.user_id`).
+  It never follows a tag to the tagger's visit, so no new query reads another person's rows and no row-level security policy changes.
+  A visit made from an accepted tag has no rating until its owner gives one, so the tagger's restaurant rating never counts, and only dishes the owner confirmed or rated are theirs.
+  The pure arithmetic in `makan.visits.evidence` also ignores any row of another owner passed to it.
+  Summaries are derived on each request from the existing tables, so there is no migration, no new stored profile and nothing to purge on deletion beyond what already cascades.
+- **Frozen policy:** `src/makan/visits/history_policy.json` (`owner-history-v1`) holds every rule and vocabulary, and the version 2 manifest hashes it, so any change needs a new version and qualification.
+  Restaurant and dish ratings are read against the owner's own unweighted average for their kind, so a harsh and a generous rater with the same relative pattern produce identical states.
+  A dish's weight is 1.5 times when it and its restaurant differ from their averages in opposite directions (a low dish at a liked restaurant counts more against that dish), half when they differ the same way, and unchanged otherwise.
+  Evidence fades with a 365-day half-life and never reaches zero, so an old or weakened taste still counts a little.
+  A weighted mean becomes a lean band (`well_below`, `below`, `near`, `above`, `well_above`), with `mixed` when strong evidence on both sides is within a factor of two, so a conflict is not averaged away.
+  Total weight becomes a strength (`faint`, `some`, `strong`), and counts become `none`, `one`, `few` or `many`.
+  Raw ratings, dates and counts never leave the server.
+- **Allowlisted attributes:** dish names map to 67 canonical dishes of the eight supported cuisines, and tags to 25 taste attributes, each with a literal `not_` form, after NFKD, mark removal, case folding and punctuation collapsing.
+  A name naming two different dishes matches nothing, and an exact cuisine tag can give a dish its cuisine.
+  Occasion tags such as lunch and every unknown tag are no taste evidence, and the vocabulary holds no allergen, diet or other hard-constraint word.
+  Only canonical ids leave the server, so typed dish text, prompt injection in it, notes, descriptions, comments, companions, dates, addresses, place names, place ids and identities cannot reach the state.
+- **Selection:** the state holds every cuisine summary (from dishes and from visits whose recognized dishes share one cuisine), the dish summaries of the candidate's cuisine only, and at most 24 tag summaries.
+  A dish of another cuisine still counts in its cuisine summary, so selection drops nothing.
+  Tags leaning below, well_below or mixed are kept first; if one of them would still be left out, the history is a material omission and every assessment is Unrated, never silently missing a dislike.
+  The owner's own visits at the candidate are matched server-side by provider family and id and sent only as a count band and lean.
+- **Long histories:** the service reads at most 1,001 visits; more than 1,000 makes the history unusable (Unrated, `insufficient_evidence`), because unread older visits could hold a dislike, and it is never truncated.
+- **State version 2:** `src/makan/evals/sets/clef/v2/` holds the schema, README and manifest, which extends the unchanged version 1 manifest by its content hash.
+  The schema keeps version 1's `profile` and `candidate` byte for byte and adds one `history` object of closed enums with bounded, unique arrays.
+  A state's top-level keys select its contract in `makan.providers.scoring.clef_contract`, whose one strict validator replaces the version 1 checks inside `ClefScorer` with the same behavior.
+  The questions, acceptance threshold, consistency grouping and rounding are version 1's, unchanged, and assessments on this state report `clef-profile-fit-v2-proposed`.
+  The manifest hash is part of the gateway case key and the history summary enters the profile revision, so the two versions never share a cache entry and a history edit gives a new key.
+  The largest version 2 request the policy allows is 6,592 bytes, under the 8 KiB bound; a state that fails its schema or the 8 KiB bound is `invalid_input` before dispatch, never truncated.
+  History alone is a taste profile, so a diner with history but no stated cuisines can be scored, while a state with neither is still no taste and no request.
+- **Gateway:** `POLICY.manifests` pins both manifests, and each selects only its own schema through the same recursive validator, so a history state under version 1, or a plain one under version 2, is `invalid_input`.
+  `npm run lint` checks every pinned manifest's file and content hashes, and `test/fixtures/protocol-history.json` is built by the Python builders and accepted by the Worker validator.
+- **Who gets it:** `MAKAN_FIT_HISTORY_ENABLED=0` by default, and it needs online fit, an accounts deployment, a signed-in diner and the diner's own `online_fit.history=true` alongside `online_fit.consent=true` on each search.
+  The existing consent text covers only cuisines and categories, so history needs this separate opt-in, and the screens do not offer it until requalification.
+  Guests, diners without their own rated visits or dishes, and diners who do not opt in send the exact version 1 bytes with the same cache key as before.
+  The public Vercel site is guest-only, so it never builds this evidence.
+- **Failure and staleness:** an unreadable history makes the search's fit Unrated (`unavailable`) rather than scoring without it, and the diner's never-go exclusions and warnings apply as before.
+  After scoring the history is read again with the tastes, so a visit logged during scoring suppresses the older result as `stale_tastes`.
+  With history enabled, visit and tag-request changes also purge the owner's gateway scope, as taste edits already do.
+- **Requalification:** `python -m makan.evals.clef_live qualify-history` is a separate capped live lane of 38 calls (417 reserved Neurons, under the existing 600 cap).
+  It sends 25 pre-registered synthetic histories built through `makan.evals.clef_history`, the production evidence builder and `profile_state`, their 5 version 1 counterparts, and 4 repeats and 4 reversed-order probes.
+  `summarize` reports direction contradictions, coverage, uncertain cases rated strongly, version 1 comparisons, repeats and order shifts.
+  Its gates are deliberately not pre-registered yet: they are committed under `tests/fixtures/clef/live/` before that run, together with the captain's human diner labels.
+  No live call was made in this slice.
+- **Tests:** `tests/test_visit_evidence.py` covers owner isolation, unconfirmed tags, rating habits, dish context, negation, conflicts, fading, injection, long histories, tag selection, the schema and both manifests on every store, including Postgres.
+  `tests/test_web_history_fit.py` covers the product gates, two owners, guests, no-visit diners, failures, purges and in-flight staleness, and the clef_live and gateway tests cover the new lane and manifest.
 
 ## Web stack
 

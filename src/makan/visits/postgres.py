@@ -214,13 +214,17 @@ class PostgresVisitStore:
         row = self._one(f"select {_VISIT} from visits where id = %s", (visit_id,))
         return None if row is None else _visit(row)
 
-    def list_visits(self, user_id: UUID) -> list[Visit]:
+    def list_visits(self, user_id: UUID, limit: int | None = None) -> list[Visit]:
         rows = self._all(
             f"select {_VISIT} from visits where user_id = %s "
-            "order by visited_on desc, created_at desc, id desc",
-            (user_id,),
+            "order by visited_on desc, created_at desc, id desc limit %s",
+            (user_id, limit),
         )
         return [_visit(r) for r in rows]
+
+    def dishes_by_owner(self, user_id: UUID) -> list[VisitDish]:
+        rows = self._all(f"select {_DISH} from visit_dishes where user_id = %s", (user_id,))
+        return [_dish(r) for r in rows]
 
     def dishes_of(self, visit_id: UUID) -> list[VisitDish]:
         rows = self._all(

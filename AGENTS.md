@@ -39,6 +39,7 @@ Run the app in two terminals: `python -m makan.web --demo` (`--reload` while dev
 When you change a scorer decision point or its eval sets, run `python -m makan.evals`, which is offline.
 For the taste-fit and router contract (`CONTRACT_DECISIONS` and the sets in `evals/sets/contract/`), also run `python -m makan.evals.contract --permutations`.
 When you change the frozen Clef archive in `evals/sets/clef/`, run `python -m makan.evals.fit`, which is offline.
+The state version 2 manifest (`evals/sets/clef/v2/manifest.json`) hashes `src/makan/visits/history_policy.json`, so a change to either needs a new version, a regenerated manifest and its pin in `cloudflare/fit-gateway/src/config.ts`, which the gateway's `npm run lint` checks.
 Tests must never make real network calls, so use `FakeProvider` or an `httpx` mock transport.
 `python -m makan.evals.clef_live` is the only live Clef path and spends the real free allowance, so run it only when a task asks, with `--live` and explicit caps; its ledgers and pre-registered gates are in `tests/fixtures/clef/live/`.
 

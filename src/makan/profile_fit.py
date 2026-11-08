@@ -18,13 +18,23 @@ from typing import Any, Literal, cast
 import httpx
 
 from makan.config import Config
-from makan.fit import CATEGORY_CUISINES, FitAssessment, FitReason, cuisine_fit
+from makan.fit import (
+    CATEGORY_CUISINES,
+    MODEL_HISTORY_POLICY_VERSION,
+    MODEL_POLICY_VERSION,
+    FitAssessment,
+    FitReason,
+    cuisine_fit,
+)
 from makan.fit_inputs import FitInputs
 from makan.providers.scoring.base import Evidence, Status
 from makan.providers.scoring.clef import ClefScorer, ProfileCaseResult
+from makan.providers.scoring.clef_contract import contract_for, has_taste
 from makan.providers.scoring.gateway import GATEWAY_REASONS_VERSION, GatewayKeys
 from makan.providers.scoring.transport import ClefReason, _strict_json
 from makan.solo import RankedCandidate
+from makan.visits.evidence import TasteHistory
+from makan.visits.evidence import policy as history_policy
 
 FIT_MIN_PROBABILITY = 0.70
 FIT_BUDGET_S = 8.0
@@ -34,20 +44,30 @@ MAX_REPLY_BYTES = 65_536
 
 
 def model_assessment(
-    reason: FitReason, score: int | None = None, *, cached: bool = False
+    reason: FitReason,
+    score: int | None = None,
+    *,
+    cached: bool = False,
+    policy: str = MODEL_POLICY_VERSION,
 ) -> FitAssessment:
-    return FitAssessment(score, reason, basis="profile_model", cached=cached)
+    return FitAssessment(score, reason, basis="profile_model", cached=cached, model_policy=policy)
 
 
-def accepted_assessment(result: ProfileCaseResult, *, cached: bool) -> FitAssessment:
-    """Apply the frozen proposed policy, never treating confidence as a plate score."""
+def accepted_assessment(
+    result: ProfileCaseResult, *, cached: bool, policy: str = MODEL_POLICY_VERSION
+) -> FitAssessment:
+    """Apply the frozen proposed policy, never treating confidence as a plate score.
+
+    The acceptance rules are the same for both state versions; `policy` only reports which
+    state the evidence was judged on.
+    """
     choice, ordinal = result.choice, result.ordinal
     if choice.status != Status.OK:
         try:
             reason = FitReason(ClefReason(choice.detail).value)
         except ValueError:
             reason = FitReason.MALFORMED_RESPONSE
-        return model_assessment(reason)
+        return model_assessment(reason, policy=policy)
     distribution = choice.distribution
     if (
         choice.evidence != Evidence.CLEF_PROBABILITIES
@@ -58,23 +78,32 @@ def accepted_assessment(result: ProfileCaseResult, *, cached: bool) -> FitAssess
         or dict(distribution.probabilities)[distribution.top] + 1e-9 < FIT_MIN_PROBABILITY
         or choice.choice == "unknown"
     ):
-        return model_assessment(FitReason.INSUFFICIENT, cached=cached)
+        return model_assessment(FitReason.INSUFFICIENT, cached=cached, policy=policy)
     expectation = ordinal.expectation
     level = min(5, math.floor(1 + expectation + 0.5))
     group = "poor" if level <= 2 else "partial" if level == 3 else "strong"
     if choice.choice != group:
-        return model_assessment(FitReason.INSUFFICIENT, cached=cached)
-    return model_assessment(FitReason.MODEL, math.floor(25 * expectation + 0.5), cached=cached)
+        return model_assessment(FitReason.INSUFFICIENT, cached=cached, policy=policy)
+    return model_assessment(
+        FitReason.MODEL, math.floor(25 * expectation + 0.5), cached=cached, policy=policy
+    )
 
 
-def profile_state(inputs: FitInputs, category: str, source: str) -> dict[str, Any] | None:
-    """Only explicit bounded cuisines and actual source categories; no names or hard facts."""
+def profile_state(
+    inputs: FitInputs, category: str, source: str, place_id: str = ""
+) -> dict[str, Any] | None:
+    """Only explicit bounded cuisines, actual source categories and, for an opted-in owner,
+    their own history summaries; no names, identities, typed text or hard facts.
+
+    Without usable owner history the state is exactly version 1. History that cannot be
+    read whole gives no state at all, so its dislikes are never silently dropped.
+    """
     if not source.startswith("overture:") or category not in CATEGORY_CUISINES:
         return None
     release = source.removeprefix("overture:")
     if not 1 <= len(release) <= 128:
         return None
-    return {
+    state: dict[str, Any] = {
         "profile": {
             "likes": sorted(set(inputs.likes)),
             "dislikes": sorted(set(inputs.dislikes)),
@@ -87,6 +116,48 @@ def profile_state(inputs: FitInputs, category: str, source: str) -> dict[str, An
             "missing_facts": [],
         },
     }
+    history = inputs.history
+    if history is None or history.status == "empty":
+        return state
+    if not history.usable:
+        return None
+    state["history"] = history_state(history, CATEGORY_CUISINES[category], source, place_id)
+    return state if has_taste(state) else None
+
+
+def history_state(
+    history: TasteHistory, cuisine: str, source: str, place_id: str
+) -> dict[str, Any]:
+    """State version 2's history object for one candidate, under policy owner-history-v1.
+
+    Every cuisine and tag summary goes in; dish summaries only for the candidate's cuisine,
+    since every other dish already counts in its own cuisine summary. The owner's visits at
+    this candidate are matched server-side by provider family and id, which never leave.
+    """
+    here = history.place(source, place_id) if place_id else None
+    return {
+        "source": "owner_rated_visits",
+        "policy": history_policy()["version"],
+        "rated_visits": history.rated_visits,
+        "rated_dishes": history.rated_dishes,
+        "this_place": {
+            "visits": here.visits if here else "none",
+            "lean": here.lean if here else "unrated",
+        },
+        "cuisines": [
+            {"cuisine": c, "from": origin, "lean": s.lean, "strength": s.strength}
+            for c, origin, s in history.cuisines
+        ],
+        "dishes": [
+            {"dish": d, "lean": s.lean, "strength": s.strength}
+            for d, s in history.dishes_of(cuisine)
+        ],
+        "tags": [{"tag": t, "lean": s.lean, "strength": s.strength} for t, s in history.tags],
+    }
+
+
+def _history_taste(history: TasteHistory | None) -> bool:
+    return bool(history and history.usable and (history.has_attributes() or history.places))
 
 
 @dataclass(frozen=True)
@@ -175,8 +246,28 @@ class FitStrategy:
                 for r in ranked
             ]
         else:
+            # Unrated results report the state version the diner's evidence asked for.
+            policy = (
+                MODEL_HISTORY_POLICY_VERSION
+                if inputs.history is not None and inputs.history.status != "empty"
+                else MODEL_POLICY_VERSION
+            )
+            assessments = [model_assessment(FitReason.DEADLINE, policy=policy) for _ in ranked]
             problem = inputs.problem
-            if problem is None and not inputs.likes and not inputs.dislikes:
+            if (
+                problem is None
+                and inputs.history is not None
+                and inputs.history.status in ("too_long", "material_omission")
+            ):
+                # History the diner asked to include cannot be summarized whole: never score
+                # on a version that silently leaves part of it, including a dislike, out.
+                problem = FitReason.INSUFFICIENT
+            if (
+                problem is None
+                and not inputs.likes
+                and not inputs.dislikes
+                and not _history_taste(inputs.history)
+            ):
                 problem = FitReason.NO_TASTE
             if problem is None and set(inputs.likes) & set(inputs.dislikes):
                 problem = FitReason.CONFLICT
@@ -191,7 +282,7 @@ class FitStrategy:
             if problem is None and scope is None:
                 problem = FitReason.NO_CONSENT
             if problem is not None:
-                assessments = [model_assessment(problem) for _ in ranked]
+                assessments = [model_assessment(problem, policy=policy) for _ in ranked]
             else:
                 assert scope is not None
                 async with httpx.AsyncClient(
@@ -207,16 +298,24 @@ class FitStrategy:
                                 or time.monotonic() - start > FIT_BUDGET_S - CASE_DEADLINE_S
                             ):
                                 return
-                            state = profile_state(inputs, candidate.place.category, source)
+                            state = profile_state(
+                                inputs, candidate.place.category, source, candidate.place.id
+                            )
                             if state is None:
-                                assessments[index] = model_assessment(FitReason.INSUFFICIENT)
+                                assessments[index] = model_assessment(
+                                    FitReason.INSUFFICIENT, policy=policy
+                                )
                                 continue
+                            revision = consent_revision + ":" + inputs.revision
+                            if inputs.history is not None and "history" in state:
+                                # Version 1 revisions, and so their cache keys, stay unchanged.
+                                revision += ":" + inputs.history.revision
                             assessments[index] = await self._case(
                                 client,
                                 state,
                                 scope,
                                 source + ":" + candidate.place.id,
-                                consent_revision + ":" + inputs.revision,
+                                revision,
                             )
 
                     try:
@@ -249,8 +348,18 @@ class FitStrategy:
         consent_revision: str,
     ) -> FitAssessment:
         assert self._parser is not None
+        policy = (
+            MODEL_HISTORY_POLICY_VERSION
+            if contract_for(state).version == 2
+            else MODEL_POLICY_VERSION
+        )
         try:
+            # A state that fails its frozen schema or the 8 KiB bound is rejected before any
+            # dispatch, never truncated or filtered into something smaller.
             body = self._parser.profile_body(state)
+        except (ValueError, KeyError, TypeError, UnicodeError, RecursionError):
+            return model_assessment(FitReason.INVALID_INPUT, policy=policy)
+        try:
             now = int(time.time() * 1000)
             # Conservative daily freshness boundary, stable across searches and cold instances.
             expiry = (now // 86_400_000 + 1) * 86_400_000
@@ -258,7 +367,12 @@ class FitStrategy:
                 body,
                 opaque_owner_or_tab_nonce=scope,
                 profile_revision=hashlib.sha256(
-                    json.dumps([state["profile"], consent_revision], sort_keys=True).encode()
+                    # Version 1 keys stay exactly as before; history adds itself only when sent.
+                    json.dumps(
+                        [state["profile"], consent_revision]
+                        + ([state["history"]] if "history" in state else []),
+                        sort_keys=True,
+                    ).encode()
                 ).hexdigest(),
                 evidence_revision="source-category-daily-v1",
                 candidate_identity=identity,
@@ -274,38 +388,40 @@ class FitStrategy:
                     follow_redirects=False,
                 ) as response:
                     if response.status_code in (401, 403) or 300 <= response.status_code < 400:
-                        return model_assessment(FitReason.CONFIGURATION)
+                        return model_assessment(FitReason.CONFIGURATION, policy=policy)
                     raw = bytearray()
                     async for chunk in response.aiter_bytes():
                         raw.extend(chunk)
                         if len(raw) > MAX_REPLY_BYTES:
                             break
                     if response.status_code != 200:
-                        return model_assessment(_gateway_failure(raw))
+                        return model_assessment(_gateway_failure(raw), policy=policy)
                     if len(raw) > MAX_REPLY_BYTES:
-                        return model_assessment(FitReason.MALFORMED_RESPONSE)
+                        return model_assessment(FitReason.MALFORMED_RESPONSE, policy=policy)
             data = _strict_json(raw.decode())
             if not _gateway_header(data):
-                return model_assessment(FitReason.MALFORMED_RESPONSE)
+                return model_assessment(FitReason.MALFORMED_RESPONSE, policy=policy)
             if data.get("status") in ("error", "pending", "unknown"):
                 reason = ClefReason(data["reason"])
-                return model_assessment(FitReason(reason.value))
+                return model_assessment(FitReason(reason.value), policy=policy)
             if (
                 data.get("status") != "ok"
                 or data.get("reason") is not None
                 or type(data.get("cached")) is not bool
                 or not isinstance(data.get("data"), dict)
             ):
-                return model_assessment(FitReason.MALFORMED_RESPONSE)
+                return model_assessment(FitReason.MALFORMED_RESPONSE, policy=policy)
             return accepted_assessment(
-                self._parser.parse_profile_response(data["data"]), cached=data["cached"]
+                self._parser.parse_profile_response(data["data"]),
+                cached=data["cached"],
+                policy=policy,
             )
         except (TimeoutError, httpx.TimeoutException):
-            return model_assessment(FitReason.TIMEOUT)
+            return model_assessment(FitReason.TIMEOUT, policy=policy)
         except httpx.HTTPError:
-            return model_assessment(FitReason.SERVICE_UNAVAILABLE)
+            return model_assessment(FitReason.SERVICE_UNAVAILABLE, policy=policy)
         except (ValueError, KeyError, TypeError, UnicodeError, RecursionError):
-            return model_assessment(FitReason.MALFORMED_RESPONSE)
+            return model_assessment(FitReason.MALFORMED_RESPONSE, policy=policy)
 
 
 def _gateway_header(data: object) -> bool:
