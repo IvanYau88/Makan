@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "lint": "tsc --noEmit && prettier --check . && node scripts/check-contract.mjs"
+    "lint": "tsc --noEmit && prettier --check . && node scripts/check-contract.mjs",
+    "check:deploy": "node scripts/check-deploy.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261103.1",

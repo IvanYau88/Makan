@@ -20,6 +20,7 @@ import json
 import math
 import os
 import random
+import re
 import sys
 import time
 from collections import Counter
@@ -334,12 +335,16 @@ class Observation:
     error_codes: list[int] = field(default_factory=list)
     billing_hint: bool = False
     messages: int = 0
+    api_version: str | None = None  # model identity evidence for canary comparisons
     data: Any = None
 
 
 def _scan(response: httpx.Response, seen: Observation) -> None:
     response.read()
     seen.status = response.status_code
+    version = response.headers.get("api-version", "")
+    if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}(?:\.[a-z]{1,16})?", version):
+        seen.api_version = version
     try:
         data = json.loads(response.text)
     except ValueError:
@@ -478,6 +483,7 @@ def run_jobs(
                     "charged_neurons": charged,
                     "neurons": neurons,
                     "http_status": seen.status,
+                    "api_version": seen.api_version,
                     "outcome": outcome,
                     "cf_error_codes": seen.error_codes,
                     "billing_hint": seen.billing_hint,
@@ -1049,7 +1055,59 @@ def summarize(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             ),
             "assessments": {r["job"]: r.get("assessment") for r in smoke},
         }
+    if "control" in summary and "production" in summary and "contract" in summary:
+        summary["gates"] = gates(rows, summary)
     return summary
+
+
+def gates(rows: Sequence[Mapping[str, Any]], summary: Mapping[str, Any]) -> dict[str, Any]:
+    """The pre-registered qualification gates (tests/fixtures/clef/live/README.md), unchanged."""
+    first = {(r["lane"], r["case"]): r for r in rows if r["outcome"] == "ok"}
+    usage, control = summary["usage_all"], summary["control"]
+    reversed_rows = [r for r in rows if r["lane"] == "dual_reversed" and r["outcome"] == "ok"]
+
+    def moved(row: Mapping[str, Any]) -> bool:
+        before, after = (
+            first[("dual", row["case"])]["assessment"]["score"],
+            row["assessment"]["score"],
+        )
+        if before is None or after is None:
+            return (before is None) != (after is None)
+        return bool(abs(before - after) > 10)
+
+    order_ok = not any(moved(row) for row in reversed_rows)
+    production = summary["production"]["by_pattern"]
+    contract = summary["contract"]
+    accepted_error = (
+        1 - contract["accepted_correct"] / contract["accepted"] if contract["accepted"] else None
+    )
+    delta = summary["dual_minus_control"]
+    result = {
+        "Q1_availability": usage["outcomes"] == {"ok": usage["calls"]},
+        "Q2_spend_and_plan": not summary["billing_hints"]
+        and not any(r["http_status"] in (401, 402, 403) for r in rows)
+        and all(r["charged_neurons"] <= r["reserved_neurons"] + 1e-9 for r in rows),
+        "Q3_control_canary": control["request_hashes_match_archive"] == 40
+        and control["cases_shifted_beyond_rounding"] == 0,
+        "Q4_repeatability": summary["control_repeat"]["max_fit_score_shift"] == 0
+        and summary["dual_repeat"]["max_fit_score_shift"] == 0
+        and summary["dual_repeat"]["max_taste_fit_shift"] == 0,
+        "Q5_question_interference": delta["mae_difference"] <= 0.025
+        and delta["mae_difference_95"][1] < 0.05,
+        "Q6_question_order": order_ok,
+        "Q7_production_direction": not summary["production"]["direction_contradictions_vs_local"]
+        and production["like"]["model_rated"] + production["dislike"]["model_rated"] >= 12,
+        "Q8_draft_taste_fit_labels": accepted_error is not None
+        and accepted_error <= 0.20
+        and contract["rated_on_labelled_poor_with_score_above_50"] == 0
+        and contract["rated_on_labelled_strong_with_score_below_50"] == 0,
+        "Q9_human_diner_labels": "open: no independently reviewed human labels exist",
+    }
+    result["accepted_error_q8"] = None if accepted_error is None else round(accepted_error, 4)
+    result["rated_liked_or_disliked_q7"] = (
+        production["like"]["model_rated"] + production["dislike"]["model_rated"]
+    )
+    return result
 
 
 def _fixture_path() -> Path:

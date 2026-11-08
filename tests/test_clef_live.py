@@ -98,7 +98,11 @@ class Wire:
         return httpx.Response(
             200,
             content=json.dumps(payload),
-            headers={"cf-ai-neurons": self.neurons, "cf-ai-req-id": "0123456789abcdef"},
+            headers={
+                "cf-ai-neurons": self.neurons,
+                "cf-ai-req-id": "0123456789abcdef",
+                "api-version": "2026-10-01.epoch",
+            },
         )
 
 
@@ -143,6 +147,7 @@ def test_smoke_sends_two_cases_and_one_identical_repeat(tmp_path: Path) -> None:
     assert wire.requests[0].content == wire.requests[2].content
     assert rows[0]["request_sha256"] == rows[2]["request_sha256"]
     assert all(r["outcome"] == "ok" and r["neurons"] == 1.5 for r in rows)
+    assert all(r["api_version"] == "2026-10-01.epoch" for r in rows)
     assert rows[0]["assessment"] == {"score": 90, "reason": "model_estimate"}
     summary = clef_live.summarize(rows)
     assert summary["smoke"]["repeat_identical"] is True
@@ -175,7 +180,7 @@ def test_qualification_stops_on_auth_billing_quota_and_schema_errors(
     assert expected in reason
     assert len(wire.requests) == 1 and len(rows) == 1
     assert rows[0]["http_status"] == status
-    assert "upgrade" not in json.dumps(rows[0]) and "\"x\"" not in json.dumps(rows[0])
+    assert "upgrade" not in json.dumps(rows[0]) and '"x"' not in json.dumps(rows[0])
 
 
 def test_billing_message_on_a_success_still_stops(tmp_path: Path) -> None:
@@ -191,7 +196,7 @@ def test_billing_message_on_a_success_still_stops(tmp_path: Path) -> None:
 
 def test_smoke_stops_on_a_call_above_five_neurons(tmp_path: Path) -> None:
     wire = Wire(neurons="5.01")
-    reason, rows, _ = run(tmp_path, wire, smoke_jobs(), clef_live.Budget(3, 15, 5), smoke=True)
+    reason, _, _ = run(tmp_path, wire, smoke_jobs(), clef_live.Budget(3, 15, 5), smoke=True)
     assert "above 5" in reason and len(wire.requests) == 1
 
 
@@ -363,3 +368,45 @@ def test_importing_the_runner_is_inert() -> None:
 
     module = importlib.reload(clef_live)
     assert not [name for name in vars(module) if isinstance(vars(module)[name], httpx.Client)]
+
+
+@pytest.mark.parametrize("name", ["smoke-2026-11-08", "qualification-2026-11-08"])
+def test_recorded_ledgers_reproduce_their_committed_summaries(name: str) -> None:
+    rows = clef_live._read_ledger(LIVE / f"{name}.jsonl")
+    committed = json.loads((LIVE / f"{name}.summary.json").read_text("utf-8"))
+    assert json.loads(json.dumps(clef_live.summarize(rows))) == committed
+
+
+def test_recorded_live_responses_pass_the_product_parser_unchanged() -> None:
+    """Real sanitized dual-question bodies, validated by the exact production parser."""
+    scorer = ClefScorer(None, CLEF_FIT_MODEL)
+    rows = [
+        row
+        for name in ("smoke-2026-11-08", "qualification-2026-11-08")
+        for row in clef_live._read_ledger(LIVE / f"{name}.jsonl")
+    ]
+    dual = [row for row in rows if row["kind"] == "dual"]
+    assert len(dual) == 124 and all(row["outcome"] == "ok" for row in rows)
+    for row in dual:
+        result = scorer.parse_profile_response({**row["response"], "errors": [], "messages": []})
+        assert result.choice.status.value == "ok" and result.ordinal is not None
+        assert list(result.ordinal.probabilities) == pytest.approx(row["fit_score"])
+        assert result.choice.usage.prompt_tokens == row["input_tokens"]
+    for row in rows:
+        if row["kind"] == "single":
+            data = {**row["response"], "errors": [], "messages": []}
+            parsed = clef_live.validate_single(data, clef_live._resource("baseline.json"))
+            assert parsed["fit_score"] == pytest.approx(row["fit_score"])
+
+
+def test_recorded_ledgers_hold_no_credentials_or_provider_text() -> None:
+    import re
+
+    for path in LIVE.glob("*.jsonl"):
+        text = path.read_text("utf-8")
+        assert not re.search(r"\b[0-9a-f]{32}\b", text)  # no account-id shaped value
+        assert "Bearer" not in text and "Authorization" not in text
+        assert "api.cloudflare.com" not in text and "cf-ray" not in text
+        for row in map(json.loads, text.splitlines()):
+            assert set(row["response"]) == {"errors", "messages", "result", "success"}
+            assert row["response"]["errors"] == 0 and row["response"]["messages"] == 0

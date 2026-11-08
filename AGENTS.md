@@ -40,6 +40,7 @@ When you change a scorer decision point or its eval sets, run `python -m makan.e
 For the taste-fit and router contract (`CONTRACT_DECISIONS` and the sets in `evals/sets/contract/`), also run `python -m makan.evals.contract --permutations`.
 When you change the frozen Clef archive in `evals/sets/clef/`, run `python -m makan.evals.fit`, which is offline.
 Tests must never make real network calls, so use `FakeProvider` or an `httpx` mock transport.
+`python -m makan.evals.clef_live` is the only live Clef path and spends the real free allowance, so run it only when a task asks, with `--live` and explicit caps; its ledgers and pre-registered gates are in `tests/fixtures/clef/live/`.
 
 ## Maintaining this file
 

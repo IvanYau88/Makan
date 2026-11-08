@@ -24,7 +24,9 @@ Its Vitest peer range and the package lock select compatible versions.
 
 All values below are placeholders.
 Do not put real credentials in this repository, test fixtures, shell output, reports, prompts, traces, logs, browser configuration, or `VITE_*` variables.
-The checked-in `wrangler.jsonc` deliberately disables the gateway, workers.dev, preview URLs, and automatic observability.
+The checked-in `wrangler.jsonc` top level is the disabled test configuration: gateway off, no workers.dev, no preview URLs, no automatic observability.
+Its `preview` and `production` environments are the two deploy scopes, each with `GATEWAY_ENABLED=0`, its own Worker name and coordinator, workers.dev on, preview URLs, observability and Logpush off, and no account id.
+`npm run check:deploy` bundles both scopes with `wrangler deploy --dry-run` and checks those settings, with credentials stripped from its environment, so it can never authenticate or upload; CI runs it.
 There is no deploy script or CI deploy step.
 
 | Setting                   | Location and placeholder                                                                              |
@@ -55,6 +57,56 @@ Keep a separate deployment credential outside runtime.
 Before any rollout, independently verify Workers Free without a billing upgrade, SQLite Durable Object availability/capacity, token permissions, and the account's applicable data terms.
 If those facts cannot be established, keep fit disabled.
 There is no process-local quota substitute and no Makan database migration.
+
+## Deploy runbook
+
+Nothing here is authorized yet: deploying and enabling each wait for an explicit go-ahead with the slice 5 evidence in hand.
+Run every command from `cloudflare/fit-gateway`, typing secrets only into `wrangler secret put` prompts, never into arguments, files or shell history.
+
+Preconditions, all recorded before deploying:
+
+1. The inference account is confirmed on Workers Free with no payment method, in the dashboard (Billing, Subscriptions and Payment methods) or with a separate Billing Read token; the Workers AI token cannot show this.
+2. The qualification gates in `tests/fixtures/clef/live/README.md` pass, or the captain explicitly accepts the failed ones.
+3. The account's Workers AI and Durable Objects terms have been read for the planned data transfer.
+4. One inference account means one deployed scope: deploy only `preview` or only `production` to it, never both, so two coordinators never reserve one allowance.
+5. `npm ci`, `npm run lint`, `npm test` and `npm run check:deploy` pass.
+
+Credentials the captain creates, each restricted to the one account:
+
+| Credential         | Permissions                                                                                      | Used by                                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Deploy token       | Account: Workers Scripts Edit (which covers Durable Object migrations) and Account Settings Read | `wrangler deploy` and `wrangler secret put` only, from a terminal; never stored in the Worker or Makan |
+| Runtime token      | Account: Workers AI Read and Workers AI Edit, nothing else                                       | Gateway secret `CLOUDFLARE_API_TOKEN`                                                                  |
+| Gateway credential | A random value, for example `openssl rand -hex 32`                                               | Gateway secret and Makan server secret `MAKAN_FIT_GATEWAY_TOKEN`                                       |
+| HMAC secret        | A separate random value of at least 32 bytes                                                     | Makan server secret `MAKAN_FIT_HMAC_SECRET` only                                                       |
+
+The workers.dev route needs the account's workers.dev subdomain; register it in the dashboard first if it does not exist.
+
+Deploy, disabled first (`<scope>` is `preview` or `production`):
+
+```sh
+export CLOUDFLARE_ACCOUNT_ID=<dedicated free account id>   # deploy-time only
+export CLOUDFLARE_API_TOKEN=<deploy token>                  # deploy-time only
+npx wrangler deploy --env <scope>                           # GATEWAY_ENABLED=0, applies migration v1
+npx wrangler secret put MAKAN_FIT_GATEWAY_TOKEN --env <scope>
+npx wrangler secret put CLOUDFLARE_ACCOUNT_ID --env <scope>
+npx wrangler secret put CLOUDFLARE_API_TOKEN --env <scope>  # the runtime token, not the deploy token
+unset CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
+```
+
+Check the disabled Worker: an authenticated `POST /v1/metrics` with body `{}` returns 503 `configuration`, and an unauthenticated one returns 401.
+Enabling is a separate step with its own go-ahead: `npx wrangler deploy --env <scope> --var GATEWAY_ENABLED:1`.
+Then an authenticated `/v1/metrics` returns zeroed aggregates, and the Makan server for that scope receives `MAKAN_FIT_GATEWAY_URL` (the HTTPS workers.dev origin), `MAKAN_FIT_GATEWAY_TOKEN`, `MAKAN_FIT_HMAC_SECRET` and `MAKAN_FIT_GATEWAY_SCOPE`.
+`MAKAN_FIT_ONLINE_ENABLED` stays `0` until its own go-ahead; when it is turned on, the default search path is unchanged, because each search still needs explicit guest consent.
+
+Rollback, fastest first:
+
+1. Set `MAKAN_FIT_ONLINE_ENABLED=0` on the Makan server and redeploy it: every plate returns to the local baseline, with no gateway call.
+2. Redeploy the gateway without `--var GATEWAY_ENABLED:1`: every call returns `configuration` while the coordinator keeps its reservations, counters and tombstones.
+3. `npx wrangler rollback --env <scope>` returns to the previous Worker version, with Durable Object storage untouched.
+4. Revoke the runtime token in the dashboard to stop all inference at the provider.
+
+Never delete the Worker, its Durable Object namespace or the coordinator to clear a breaker or quota state: that would erase accounting and could replay uncertain calls.
 
 ## Authenticated protocol v1
 

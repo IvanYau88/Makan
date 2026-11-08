@@ -1,0 +1,69 @@
+{
+  "billing_hints": 0,
+  "failures": [],
+  "smoke": {
+    "assessments": {
+      "smoke:S1": {
+        "reason": "model_estimate",
+        "score": 88
+      },
+      "smoke:S1:repeat": {
+        "reason": "model_estimate",
+        "score": 88
+      },
+      "smoke:S2": {
+        "reason": "model_estimate",
+        "score": 9
+      }
+    },
+    "repeat_identical": true
+  },
+  "usage_all": {
+    "calls": 3,
+    "http_status": {
+      "200": 3
+    },
+    "input_tokens": 1995,
+    "input_tokens_range": [
+      665,
+      665
+    ],
+    "latency_ms_max": 198.2,
+    "latency_ms_p50": 158.0,
+    "latency_ms_p95": 194.2,
+    "neurons_charged": 6.9,
+    "neurons_measured": 6.9,
+    "neurons_per_call_range": [
+      2.3,
+      2.3
+    ],
+    "outcomes": {
+      "ok": 3
+    }
+  },
+  "usage_by_lane": {
+    "smoke": {
+      "calls": 3,
+      "http_status": {
+        "200": 3
+      },
+      "input_tokens": 1995,
+      "input_tokens_range": [
+        665,
+        665
+      ],
+      "latency_ms_max": 198.2,
+      "latency_ms_p50": 158.0,
+      "latency_ms_p95": 194.2,
+      "neurons_charged": 6.9,
+      "neurons_measured": 6.9,
+      "neurons_per_call_range": [
+        2.3,
+        2.3
+      ],
+      "outcomes": {
+        "ok": 3
+      }
+    }
+  }
+}

@@ -94,3 +94,5 @@ jobs:
         run: npm run lint
       - name: Offline Workers and SQLite Durable Object tests
         run: npm test
+      - name: Offline deploy-config dry run, no credentials or upload
+        run: npm run check:deploy
