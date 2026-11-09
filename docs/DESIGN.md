@@ -1575,6 +1575,7 @@ There is no generated evidence table, inference transport, background enrichment
 - **Display and transport:** list and detail plates receive the optional score, preserve zero distinctly from null, and show no percent sign.
   Older servers and missing assessments still render Unrated.
   Detail copy and row accessibility text explain the bounded cuisine estimate and why a place is Unrated.
+  With fit off (reason `disabled`), the row accessibility text says only "Unrated", matching the visible plate, so a screen reader is not told on every row about a feature the page never shows.
   Map pins retain their existing unrated artwork and separate rank badges; numeric map artwork and generated-table composition remain a later slice.
   Personalized JSON and NDJSON responses are `private, no-store` and no taste choices are added to trace events.
   The places banner says searches call no language model and, when fit is on, explains that optional cuisine estimates use stated tastes and source categories.
