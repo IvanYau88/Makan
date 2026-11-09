@@ -40,6 +40,7 @@ Gateway setup and offline checks are in `cloudflare/fit-gateway/README.md`; keep
 When you change `web/`, also run `npm run lint`, `npm test`, and `npm run build` there.
 Run the app in two terminals: `python -m makan.web --demo` (`--reload` while developing), and `npm run dev` in `web/`.
 When you change a scorer decision point or its eval sets, run `python -m makan.evals`, which is offline.
+When you change `makan.taste_model` or `evals/sets/taste/`, run `python -m makan.evals.taste`, which is offline, and bump `POLICY_VERSION` for any change to its features, strength or thresholds.
 For the taste-fit and router contract (`CONTRACT_DECISIONS` and the sets in `evals/sets/contract/`), also run `python -m makan.evals.contract --permutations`.
 When you change the frozen Clef archive in `evals/sets/clef/`, run `python -m makan.evals.fit`, which is offline.
 The state version 2 manifest (`evals/sets/clef/v2/manifest.json`) hashes `src/makan/visits/history_policy.json`, so a change to either needs a new version, a regenerated manifest and its pin in `cloudflare/fit-gateway/src/config.ts`, which the gateway's `npm run lint` checks.

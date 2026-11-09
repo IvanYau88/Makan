@@ -1,6 +1,7 @@
 import { FitCaption } from "./FitCaption";
 import { Plate } from "./Plate";
 import { PlatePlaceholder } from "./PlatePlaceholder";
+import { TasteLine, tasteLabel } from "./TasteLine";
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { categoryLabel, distanceLabel } from "./format";
@@ -83,6 +84,7 @@ export function PlaceList({
                   {categoryLabel(place.category)} · {distanceLabel(place.distance_m)}
                 </span>
                 {mapped.length > 0 && <span className="row-osm">{mapped.join(" · ")}</span>}
+                <TasteLine taste={place.taste} />
                 {hasTerms && (
                   <span className={`row-fit${place.matched ? " row-fit-matched" : ""}`}>
                     {place.matched ? "Matches your request" : "Nearby alternative"}
@@ -111,6 +113,8 @@ function rowLabel(place: Place, isPick: boolean, hasTerms: boolean, mapped: stri
   ];
   if (mapped.length) parts.push(`mapped on OpenStreetMap: ${mapped.join(", ")}`);
   if (hasTerms) parts.push(place.matched ? "matches your request" : "nearby alternative");
+  const taste = tasteLabel(place.taste);
+  if (taste) parts.push(taste);
   // With fit off, the visible plate still says Unrated, and nothing else about fit is shown,
   // so the label says no more than that.
   if (place.fit?.reason === "disabled") {

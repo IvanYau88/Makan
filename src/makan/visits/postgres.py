@@ -26,7 +26,8 @@ _GOING_HERE = (
 )
 _VISIT = (
     "id, user_id, place_source, place_id, place_name, visited_on, party, created_at, updated_at, "
-    "place_address, rating, rating_origin, description, tagged_by_user_id"
+    "place_address, rating, rating_origin, description, tagged_by_user_id, place_cuisines, "
+    "place_diets, place_dishes, place_hours_known"
 )
 _DISH = (
     "id, visit_id, user_id, position, name, rating, rating_origin, tags, created_at, updated_at, "
@@ -35,6 +36,8 @@ _DISH = (
 _TAG = (
     "id, visit_id, tagger_id, tagged_user_id, status, created_at, accepted_visit_id, responded_at"
 )
+_VISIT_NAMES = tuple(c.strip() for c in _VISIT.split(","))
+_VISIT_VALUES = ", ".join(["%s"] * len(_VISIT_NAMES))
 _OPEN = "reminded_at is null and visit_id is null and cancelled_at is null"
 
 # The visits of each tag in a request carry the same columns as the stored visit.
@@ -165,8 +168,7 @@ class PostgresVisitStore:
     ) -> None:
         with self._lock, self._conn.transaction():
             self._conn.execute(
-                f"insert into visits ({_VISIT}) "
-                "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                f"insert into visits ({_VISIT}) values ({_VISIT_VALUES})",
                 _visit_args(visit),
             )
             for dish in dishes:
@@ -246,7 +248,8 @@ class PostgresVisitStore:
             updated = self._conn.execute(
                 "update visits set place_source = %s, place_id = %s, place_name = %s, "
                 "place_address = %s, visited_on = %s, party = %s, rating = %s, "
-                "rating_origin = %s, description = %s where id = %s and user_id = %s",
+                "rating_origin = %s, description = %s, place_cuisines = %s, place_diets = %s, "
+                "place_dishes = %s, place_hours_known = %s where id = %s and user_id = %s",
                 (
                     visit.place_source,
                     visit.place_id,
@@ -257,6 +260,7 @@ class PostgresVisitStore:
                     visit.rating,
                     visit.rating_origin,
                     visit.description,
+                    *_facts_args(visit),
                     visit.id,
                     visit.user_id,
                 ),
@@ -377,8 +381,7 @@ class PostgresVisitStore:
             if accept:
                 assert tagged_visit is not None and tagged_visit.user_id == tagged_user_id
                 self._conn.execute(
-                    f"insert into visits ({_VISIT}) "
-                    "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    f"insert into visits ({_VISIT}) values ({_VISIT_VALUES})",
                     _visit_args(tagged_visit),
                 )
             done = self._conn.execute(
@@ -423,6 +426,21 @@ def _visit_args(v: Visit) -> tuple[Any, ...]:
         v.rating_origin,
         v.description,
         v.tagged_by_user_id,
+        *_facts_args(v),
+    )
+
+
+def _facts_args(v: Visit) -> tuple[Any, ...]:
+    """The place facts as Postgres arrays, which a tuple is not adapted to."""
+
+    def array(value: tuple[str, ...] | None) -> list[str] | None:
+        return None if value is None else list(value)
+
+    return (
+        array(v.place_cuisines),
+        array(v.place_diets),
+        array(v.place_dishes),
+        v.place_hours_known,
     )
 
 
@@ -431,7 +449,11 @@ def _going_here(row: tuple[Any, ...]) -> GoingHere:
 
 
 def _visit(row: tuple[Any, ...]) -> Visit:
-    return Visit(*row)
+    columns: dict[str, Any] = dict(zip(_VISIT_NAMES, row, strict=True))
+    for name in ("place_cuisines", "place_diets", "place_dishes"):
+        if columns[name] is not None:
+            columns[name] = tuple(columns[name])
+    return Visit(**columns)
 
 
 def _dish(row: tuple[Any, ...]) -> VisitDish:

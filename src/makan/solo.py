@@ -10,7 +10,7 @@ import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from makan.accounts.errors import InvalidProfile
@@ -33,6 +33,9 @@ from makan.providers.scoring import Scorer
 from makan.signals import SoftSignals, read_signals
 from makan.steps import agent_step, tool_step
 from makan.trace import TraceSink
+
+if TYPE_CHECKING:
+    from makan.taste_model import TasteEstimate
 
 
 @dataclass(frozen=True)
@@ -143,6 +146,8 @@ class RankedCandidate:
     reasons: tuple[str, ...]
     memory_score: float
     fit: FitAssessment = field(default_factory=FitAssessment)
+    # A signed-in diner's own taste estimate, set by the web channel. It never changes the order.
+    taste: TasteEstimate | None = None
 
     def trace_summary(self) -> dict[str, Any]:
         return {

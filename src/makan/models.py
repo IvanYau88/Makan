@@ -115,6 +115,10 @@ class Visit:
 
     Ratings are exact decimals with one decimal place. `rating` is None only on a visit that
     came from accepting a tag and has not been rated by its owner yet.
+
+    The `place_*` facts are the place as it was listed when the visit was saved (vocabulary
+    cuisine ids, soft diet labels, listed dish names, and whether weekly hours were known). They
+    are all None together on a visit saved without them, see `makan.visits.content.PlaceFacts`.
     """
 
     id: UUID
@@ -131,6 +135,10 @@ class Visit:
     rating_origin: RatingOrigin | None = None
     description: str | None = None
     tagged_by_user_id: UUID | None = None
+    place_cuisines: tuple[str, ...] | None = None
+    place_diets: tuple[str, ...] | None = None
+    place_dishes: tuple[str, ...] | None = None
+    place_hours_known: bool | None = None
 
 
 @dataclass(frozen=True)
