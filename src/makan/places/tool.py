@@ -26,10 +26,15 @@ DESCRIPTION = (
     "and, when known, address, listed cuisines, listed diets, website and brand. "
     "Listed cuisines and diets are the data source's own category labels: "
     "they are not menus and never verify a dietary requirement. "
+    "Where OpenStreetMap has the same venue, a place also has an osm object with what its "
+    "volunteers mapped: opening hours as written in OpenStreetMap, cuisines, diet tags, "
+    "takeaway, delivery, outdoor seating, wheelchair access, a menu link and check_date, "
+    "the day a mapper last checked. They may be out of date, and diet and wheelchair tags never "
+    "verify a dietary or access need. "
     "Use cuisine for a kind of food (such as thai, ramen, or indian) and category for a kind of "
     "venue (such as cafe, bakery, bar, or fast food). "
     "If a search finds nothing, widen the radius or drop a filter. "
-    "This data has no opening hours, ratings, prices, or menus, "
+    "This data has no ratings, prices, or menus, and most places have no opening hours, "
     "and it can include places that are not good to recommend. "
     "The location is rounded to about 100 meters."
 )
@@ -111,5 +116,6 @@ def _compact(place: Place) -> dict[str, Any]:
         "diets": list(place.diets) or None,
         "website": place.website,
         "brand": place.brand,
+        "osm": place.osm.to_json() if place.osm else None,
     }
     return {k: v for k, v in fields.items() if v is not None}

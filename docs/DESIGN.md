@@ -288,7 +288,8 @@ Not done yet: the migration runner and an adapter that writes trace events to th
   They were once dropped here, which made a map impossible.
   The user's own location keeps its three decimal rounding.
   Opening hours, ratings, prices, and menus are not in Overture, and the tool description says so.
-  Those need their own tools later, so the places tool stays small.
+  Where an OpenStreetMap extract is configured, a place may also carry an `osm` object of soft mapped facts, including hours, see "OpenStreetMap venue facts".
+  Ratings, prices and menus need their own tools later, so the places tool stays small.
 - `cuisine` and `category` use the same match: every word of the filter must appear in one of a place's category labels, so "thai" finds `thai_restaurant` and "fast food" finds `fast_food_restaurant`.
   Both filters apply when both are given.
   The two names exist so the model can say what it means, and the matching does not treat them differently.
@@ -961,7 +962,9 @@ Makan has no way to know a meal happened except what the person does in the app,
   See "Places tool decisions" for how it is read.
 - Google Places has the best coverage but is costly at scale and restricts caching, so it is the paid upgrade path.
 - Foursquare is another option with a small free allowance.
-- Overture has no opening hours, ratings, or prices, so recommendations that need them depend on a later tool or provider.
+- Overture has no opening hours, ratings, or prices.
+  OpenStreetMap adds mapped hours and a few venue facts for the places it matches, from a regional extract, see "OpenStreetMap venue facts".
+  Ratings and prices still depend on a later tool or provider.
 
 ## Evals and trace viewer
 
@@ -1626,9 +1629,72 @@ Overture names over a hundred kinds of restaurant, but the fit knew eight cuisin
   `makan.fit.CLEF_CUISINES` keeps their eight cuisines, only an exact one of those primary categories enters a state, and the online path abstains as unsupported when any taste is outside them, rather than trimming a taste to fit.
   The picker says so when online scoring is on.
   No state version 3 is added in this slice: online fit is off in production and unqualified, and the next slice (OpenStreetMap tags) changes the candidate state again, so one new state version, manifest, gateway pin and requalification should carry both.
+  The OpenStreetMap slice did not add it either, see "OpenStreetMap venue facts".
 - **Privacy:** nothing new leaves the server.
   The vocabulary is public data, served only where fit is on; the public Vercel site keeps fit off, so its config is unchanged apart from a null `cuisines`.
   Tastes stay in the tab or the owner's memory, and Overture attribution is unchanged.
+
+### OpenStreetMap venue facts
+
+This is slice B of the richer place data plan: free OpenStreetMap facts for the Overture places it clearly matches.
+They are opening hours, finer cuisines, diet tags, takeout, delivery, outdoor seating, wheelchair access, a menu link, and `check_date`, the day a mapper last checked the venue.
+Every one is a soft hint shown with the OpenStreetMap credit, never a safety guarantee.
+It changes no ranking, no fit score, no hard rule and no default, and makes no live call on a request.
+
+- **A regional extract, built ahead of time:** `python -m makan.places.osm_build` asks an Overpass server for named `amenity` food places (`restaurant`, `fast_food`, `cafe`, `bar`, `pub`, `food_court`, `ice_cream`, `biergarten`, the set the data report sampled) in one box, with `out tags center` so ways and relations get a point.
+  It keeps only the names, the house number, and the listed tags (`cuisine`, `opening_hours`, `diet:*`, `takeaway`, `delivery`, `outdoor_seating`, `wheelchair`, `check_date`, `website:menu`), each at most 255 characters, and writes one Parquet file sorted by latitude, so a box read skips row groups.
+  The file's metadata holds the format (`makan-osm-food-v1`), region, box, OpenStreetMap's own data timestamp (`timestamp_osm_base`), the build date and the licence, and the reader refuses a file without them.
+  Tag values stay raw in the file and are checked and parsed when read, so a parsing fix needs no rebuild.
+  A box is cut into tiles of at most a quarter degree, queried one at a time two seconds apart with a named user agent (no email), and capped at 16 tiles, about one metro area.
+  Overpass reports a timeout with a 200 and a `remark`, so a remark fails the tile, and any failed tile fails the whole build: a partial extract would show uneven coverage with no sign of it.
+  The write goes through a temporary name, so a failure leaves no file.
+  `--input` reads saved Overpass JSON instead, and the tests use it with no network.
+  A Geofabrik `.osm.pbf` reader was not chosen: it needs DuckDB's spatial extension or osmium at build time, cannot be tested offline, and a metro box is small enough for Overpass's fair use.
+- **Reading it:** `MAKAN_OSM_EXTRACT` names the file, and blank leaves OpenStreetMap off, so nothing changes.
+  `OsmEnrichedProvider` wraps Overture between the provider and `CachedPlacesProvider`, reads the elements in the result's extent widened by the match radius from the local file through DuckDB, which needs no extension or network, and adds facts after Overture's own ranking, so order and filters are Overture's.
+  Its name becomes `overture:<release>+osm:<timestamp>`, so the cache never mixes extracts, and `data_source` carries it.
+  A missing, unreadable or foreign file is logged once and the provider passes places through unchanged, and a failed or slow read (5 second deadline) logs and does the same, so OpenStreetMap can add facts but never take a search down.
+  Opening the file waits for the first search, so building the app stays inert.
+- **The join rule:** a place takes an element's facts only when the element is within 50 meters, one of its names (`name`, `name:en`, `official_name`, `alt_name`) has the same key as the place's name, and, when both give a house number (the start of Overture's street line, and `addr:housenumber`, which the extract keeps for this alone), the numbers agree.
+  The key ignores accents, case, punctuation, spacing, "&" against "and", and a leading "The", and nothing else, so "Joe's" never matches "Joe's Pizza".
+  When two different elements match, neither does.
+  Within one result, an element that two places at different addresses both match is neither's, because one of them is another branch whose source point is off, while two records of one venue at one address both take its facts.
+  A matched element with no usable fact adds nothing, and no credit.
+  Measured on 2026-11-09 over a 0.025 by 0.02 degree box of Midtown Manhattan (Overture `2026-10-21.0`, 3,889 food places; OpenStreetMap, 1,330 elements, 919 of them with a house number): 660 Overture places (17%) matched 653 elements (49% of OpenStreetMap's), and a random 15 of the matches were all the same venue by eye, 2 to 38 meters apart with agreeing house numbers where both had one.
+  Without the house number check the same box gave 692 matches, and the extra ones included a Dunkin', a Starbucks and a Paris Baguette lending one branch's facts to Overture records of other branches at other addresses; all 7 elements that still match two records are the same venue at the same address.
+  Of the matched places, 75% gained cuisines, 59% hours, 41% takeout, 27% wheelchair access, 24% a check date, 19% delivery, 14% outdoor seating, 7% diet tags and 3% a menu link.
+  Near misses such as "Pad Thai" against "Pad Thai Asian Kitchen" stay unmatched on purpose, because a wrong match shows another venue's hours.
+  The reverse check sees only the places in one result, so two branches far enough apart to land in different results are told apart only by their house numbers.
+- **Kept apart, with provenance:** `Place.osm` is an `OsmFacts`, separate from the Overture fields, with a `FactSource` of source, version (the OpenStreetMap timestamp), licence (`ODbL-1.0`) and retrieval date.
+  Every field in it comes from that one element and that one source, so its provenance is the object's, and `check_date` is the element's own per-venue date.
+  Only allowlisted values survive: takeout and delivery `yes`, `only`, `no`; outdoor seating `yes`, `no`; wheelchair `yes`, `limited`, `no`; seven diets (vegetarian, vegan, halal, kosher, gluten-free, lactose-free, pescatarian) at `only`, `yes`, `limited`, `no`; cuisine values of lowercase letters, digits and underscores, at most eight; a valid `YYYY-MM-DD` or `YYYY-MM` check date; and a menu link that passes `web_link`.
+  The places tool hands the model the same compact `osm` object with the raw hours text, and the description says the facts may be out of date and never verify a dietary or access need.
+  `Candidate.from_tool` checks it again, and trace summaries still hold no place facts.
+- **Hours at display:** the raw tag is read when a place is serialized, by `makan.places.hours`, into minutes per weekday, Monday first.
+  It reads `24/7`, day lists and ranges (wrapping, such as `Fr-Mo`), several time ranges, `off`, ranges past midnight, and the comma that starts an additional rule, with a later `;` rule replacing what earlier ones said for its days, an additional rule adding its times to those days unless it says `off` or `closed`, which closes them (`Mo-Fr 10:00-20:00, We off`), and unmentioned days closed, as the OpenStreetMap specification says.
+  Holiday rules (`PH`, `SH`) are noted, and the page says holiday hours may differ, but not applied.
+  Anything else (months, weeks, sunrise, comments, open ends, fallbacks) is `unreadable`, and the page shows the mapped text and says Makan cannot read it, never "Closed" or a guess.
+  The page words the times on a US 12-hour clock, joins neighbouring days with the same hours, marks today by the device's clock (a diner looking nearby is in the venue's time zone), and computes no "open now".
+- **Soft only:** diet and wheelchair tags appear in the detail's not-verified note ("Volunteers mapped this and it is not verified: check with the venue before relying on it for a diet, an allergy or access").
+  They never feed fit, eligibility, exclusion, ranking or the hard-rule warnings, and a test shows a vegan-only tag leaves a vegan or allergy requirement's warning, the order and the reasons exactly as without it.
+  OpenStreetMap cuisines are shown with labels (the vocabulary's own label where a value names a term) and do not enter fit or the vocabulary, so `VOCABULARY_VERSION` is unchanged.
+- **Attribution (ODbL):** wherever an OpenStreetMap fact appears there is a "© OpenStreetMap contributors" link to the copyright and licence page.
+  The detail's "From OpenStreetMap" section ends with it, the licence and the data date, and a result whose places show any fact carries `osm_credit`, which the notes under the list show beside the Overture line.
+  The list row's short line (today's hours, takeout, delivery, outdoor seating) sits under that result credit.
+  "View on OpenStreetMap" opens the matched element, so a person can check or correct it.
+  The facts stay in their own file and object, and Makan joins them per request into what it shows, a produced work, so no combined database is published, and the extract itself is never committed or served.
+- **On Vercel Hobby:** `vercel.json`'s build command runs `scripts/build-osm-extract.sh` after the web build, which runs after Vercel installs the Python dependencies.
+  It does nothing unless `MAKAN_OSM_BUILD_BBOX` (and optionally `MAKAN_OSM_BUILD_REGION` and `MAKAN_OSM_OVERPASS_URL`) is set for the deployment, and it always exits 0, so a build without OpenStreetMap still ships.
+  The file lands at `osm/places.parquet`, which is gitignored, kept out of uploads by `.vercelignore`, and not in `excludeFiles`, so it ships inside the function and is never served (only `web/dist` is static).
+  `app.py` passes that path as the public default for `MAKAN_OSM_EXTRACT`, and a missing file is the site as before.
+  The Midtown box above was 183 KB for 2,740 places, so a full metro extract is a few megabytes, far under the function size limit, and needs no `/tmp`, no extension download and no network on a cold start; opening it is one metadata read on the first search.
+  Refreshing is redeploying: each production build that has the box set queries Overpass once per tile, which is a few queries a day at most; scope the variable to Production in the Vercel project so previews do not query Overpass.
+  No paid service, key or account is involved.
+  Merging this changes nothing on the live site until the owner sets the box, and the box is the owner's choice of region.
+- **Clef stays frozen:** no state version 3 in this slice either.
+  The facts would need closed vocabularies (`hours_known`, services, diets) and a requalification run, online fit is off and unqualified in production, and the OpenStreetMap facts reach only 17% of places in the measured sample.
+  One state version should carry the widened cuisine vocabulary and these facts together, when a pre-registered requalification is authorized.
+- **Not built here:** "open now", holiday calendars, an Overture extract, venue website fetching, and any OpenStreetMap fact in fit or ranking.
 
 ### Map and execution decisions
 
@@ -1835,6 +1901,7 @@ Most checks below ran locally, the live places lookup was verified on a real pre
   The stalled-download deadline was not driven live and is covered only by the offline regression test.
   If the download ever fails, Browse nearby fails with the places error above and the logs name the cause, and `MAKAN_DEMO=1` is the working fallback.
   The proper fix for the per-cold-start download is a regional extract: a Parquet file of open, confident food places for one supported region (the `SQL` filter in `makan.places.overture`), read through the existing `DuckDbSource(path=...)`, which needs no extension at all.
+  The OpenStreetMap extract (see "OpenStreetMap venue facts") is built and shipped this way, at build time and read locally, and an Overture extract could follow the same path.
   `places_provider` has no setting for a local path yet, and the file's size and refresh process must be measured before it is chosen.
 - **Not verified, because it needs a Vercel deployment:**
   - That `/tmp` is writable at the documented size.

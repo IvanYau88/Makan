@@ -14,4 +14,7 @@ if importlib.util.find_spec("makan") is None:  # the package is not installed: u
 
 from makan.web.public import create_public_app  # noqa: E402
 
-app = create_public_app(os.environ, web_dist=ROOT / "web" / "dist")
+# `scripts/build-osm-extract.sh` writes the extract there in a Vercel build, when asked to.
+app = create_public_app(
+    os.environ, web_dist=ROOT / "web" / "dist", osm_extract=ROOT / "osm" / "places.parquet"
+)

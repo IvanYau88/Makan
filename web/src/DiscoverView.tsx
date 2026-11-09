@@ -472,6 +472,16 @@ function ResultNotes({ result }: { result: Recommendation }) {
       <p className="source">
         {result.mode === "demo" ? "Sample places for the demo, not real venues. " : null}
         {result.attribution}
+        {result.osm_credit && (
+          <>
+            {" "}
+            Hours and venue details where mapped:{" "}
+            <a href={result.osm_credit.url} target="_blank" rel="noopener noreferrer">
+              {result.osm_credit.text}
+            </a>{" "}
+            ({result.osm_credit.licence}).
+          </>
+        )}
       </p>
     </div>
   );

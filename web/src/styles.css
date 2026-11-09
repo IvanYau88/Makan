@@ -1234,6 +1234,11 @@ input[aria-invalid="true"] {
   font-size: 0.9375rem;
 }
 
+.row-osm {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
 .row-fit {
   color: var(--muted);
   font-size: 0.875rem;
@@ -1314,6 +1319,8 @@ input[aria-invalid="true"] {
 
 .reasons {
   padding-left: 1.25rem;
+  /* Inside a list row the browser would draw a nested list's hollow circle. */
+  list-style: disc;
 }
 
 .caveat {
@@ -1330,6 +1337,59 @@ input[aria-invalid="true"] {
   background: var(--info-bg);
   color: var(--info-text);
   font-size: 0.9375rem;
+}
+
+.osm {
+  display: grid;
+  gap: 0.5rem;
+  padding-block: 0.25rem 0.5rem;
+}
+
+.osm-hours {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.osm-label {
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.osm-week {
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.osm-week th,
+.osm-week td {
+  padding: 0.125rem 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.osm-week th {
+  width: 6.5rem;
+  padding-right: 0.75rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.osm-today th,
+.osm-today td {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.osm-raw {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.source a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .detail-links {

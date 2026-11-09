@@ -1,4 +1,12 @@
-import type { CuisineVocabulary, Place, Recommendation, Run, Stage, StageName } from "./types";
+import type {
+  CuisineVocabulary,
+  OsmFacts,
+  Place,
+  Recommendation,
+  Run,
+  Stage,
+  StageName,
+} from "./types";
 
 /** A small slice of the server's vocabulary, in its shape. */
 export const VOCABULARY: CuisineVocabulary = {
@@ -126,7 +134,7 @@ export const RESULT: Recommendation = {
   explanation: "Try Mid Thai.",
   greeting: null,
   warnings: [
-    "Opening hours, menus, prices, and public reviews are unavailable; verify before going.",
+    "Opening hours, menus, prices, and public reviews are not verified; check before going.",
   ],
   stale_facts: [],
   data_source: "overture:2026-09-23.1",
@@ -205,3 +213,29 @@ export const BROWSE_RESULT: Recommendation = {
   greeting: null,
   run: browseRun(),
 };
+
+/** OpenStreetMap facts in the server's shape, for a place that matched an element. */
+export function osmFacts(extra: Partial<OsmFacts> = {}): OsmFacts {
+  return {
+    ref: "node/42",
+    url: "https://www.openstreetmap.org/node/42",
+    cuisines: [],
+    diets: [],
+    takeaway: null,
+    delivery: null,
+    outdoor_seating: null,
+    wheelchair: null,
+    hours: null,
+    menu_url: null,
+    check_date: null,
+    source: {
+      source: "openstreetmap",
+      version: "2026-11-08T09:30:00Z",
+      licence: "ODbL-1.0",
+      retrieved: "2026-11-08",
+      credit: "© OpenStreetMap contributors",
+      licence_url: "https://www.openstreetmap.org/copyright",
+    },
+    ...extra,
+  };
+}

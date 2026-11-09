@@ -148,6 +148,7 @@ class Config:
     limits: Limits = field(default_factory=Limits)
     graph_limits: GraphLimits = field(default_factory=GraphLimits)
     overture_release: str = ""  # empty means the latest release
+    osm_extract: str = ""  # a local OpenStreetMap extract file; empty leaves OpenStreetMap off
     places_cache_ttl_seconds: int = 86_400
     session_retention_hours: int = 24  # how long a group session lives after it is created
     session_purge_interval_minutes: int = 15  # how often the server deletes expired sessions
@@ -200,6 +201,7 @@ class Config:
                 ),
             ),
             overture_release=env.get("MAKAN_OVERTURE_RELEASE", "").strip(),
+            osm_extract=env.get("MAKAN_OSM_EXTRACT", "").strip(),
             places_cache_ttl_seconds=_int(
                 env, "MAKAN_PLACES_CACHE_TTL_SECONDS", cls.places_cache_ttl_seconds
             ),

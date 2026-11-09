@@ -1,6 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import { OsmDetail } from "./OsmDetail";
+import { osmLine } from "./PlaceList";
 import { PlaceDetail, webLink } from "./PlaceDetail";
-import { place } from "./test-fixtures";
+import { osmFacts, place } from "./test-fixtures";
+import type { OsmHoursListed } from "./types";
 
 const noop = () => {};
 
@@ -62,6 +65,125 @@ describe("PlaceDetail", () => {
     });
     render(<PlaceDetail place={safe} isPick={false} mode="places" onClose={noop} />);
     expect(screen.getAllByRole("link")).toHaveLength(1);
+  });
+});
+
+const HOURS: OsmHoursListed = {
+  status: "listed",
+  days: [
+    [[660, 1320]],
+    [[660, 1320]],
+    [[660, 1320]],
+    [[660, 1320]],
+    [[660, 1320]],
+    [[720, 1380]],
+    [],
+  ],
+  always_open: false,
+  holidays_differ: true,
+};
+const MAPPED = osmFacts({
+  cuisines: [
+    { id: "thai", label: "Thai" },
+    { id: "noodle", label: "Noodle" },
+  ],
+  diets: [{ id: "vegan", label: "Vegan", level: "only" }],
+  takeaway: "yes",
+  delivery: "no",
+  outdoor_seating: "yes",
+  wheelchair: "limited",
+  hours: HOURS,
+  menu_url: "https://venue.example/menu",
+  check_date: "2025-06",
+});
+const SATURDAY = new Date(2026, 10, 14, 12);
+
+describe("OpenStreetMap facts", () => {
+  it("shows the mapped week, services, cuisines and the credit", () => {
+    render(<OsmDetail osm={MAPPED} placeName="Mid Thai" now={SATURDAY} />);
+    const week = screen.getByRole("table", { name: "Opening hours for Mid Thai" });
+    const rows = within(week).getAllByRole("row");
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "Mon–Fri11 AM–10 PM",
+      "Sat (today)12 PM–11 PM",
+      "Sun" + "Closed",
+    ]);
+    expect(rows[1]).toHaveClass("osm-today");
+    expect(screen.getByText("Holiday hours may differ.")).toBeInTheDocument();
+    expect(screen.getByText("Takeout · No delivery · Outdoor seating")).toBeInTheDocument();
+    expect(screen.getByText("Cuisines: Thai, Noodle")).toBeInTheDocument();
+    expect(screen.getByText("Last checked by a mapper: June 2025.")).toBeInTheDocument();
+    const credit = screen.getByRole("link", { name: /^© OpenStreetMap contributors/ });
+    expect(credit).toHaveAttribute("href", "https://www.openstreetmap.org/copyright");
+    expect(credit.closest("p")).toHaveTextContent(
+      "© OpenStreetMap contributors, ODbL 1.0, data as of Nov 8, 2026.",
+    );
+  });
+
+  it("keeps diet and access tags soft, with the not-verified note", () => {
+    render(<OsmDetail osm={MAPPED} placeName="Mid Thai" now={SATURDAY} />);
+    const note = screen.getByText(/not verified/).closest("p");
+    expect(note).toHaveClass("diet-note");
+    expect(note).toHaveTextContent("Mapped as vegan only.");
+    expect(note).toHaveTextContent("Limited wheelchair access.");
+    expect(note).toHaveTextContent("before relying on it for a diet, an allergy or access");
+  });
+
+  it("shows unreadable hours as the mapped text, never as closed", () => {
+    const odd = osmFacts({
+      hours: { status: "unreadable", text: "sunrise-sunset" },
+      takeaway: "no",
+    });
+    render(<OsmDetail osm={odd} placeName="Odd" now={SATURDAY} />);
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.getByText("sunrise-sunset")).toBeInTheDocument();
+    expect(screen.getByText(/cannot read this format/)).toBeInTheDocument();
+    expect(screen.queryByText(/Closed/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/not verified/)).not.toBeInTheDocument(); // no diet or access tag
+  });
+
+  it("says when hours are not mapped", () => {
+    render(<OsmDetail osm={osmFacts({ takeaway: "yes" })} placeName="X" now={SATURDAY} />);
+    expect(screen.getByText("Hours are not mapped.")).toBeInTheDocument();
+  });
+
+  it("links the menu and the element, and changes the caveat for mapped hours", () => {
+    const mapped = place("Mid Thai", 140, { osm: MAPPED });
+    render(<PlaceDetail place={mapped} isPick={false} mode="places" onClose={noop} />);
+    expect(
+      screen.getByRole("link", { name: "Menu for Mid Thai, venue.example (opens a new tab)" }),
+    ).toHaveAttribute("href", "https://venue.example/menu");
+    expect(screen.getByRole("link", { name: /^View Mid Thai on OpenStreetMap/ })).toHaveAttribute(
+      "href",
+      "https://www.openstreetmap.org/node/42",
+    );
+    expect(screen.getByText(/mapped hours can be out of date/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "From OpenStreetMap" })).toBeInTheDocument();
+  });
+
+  it("shows nothing from OpenStreetMap, and no credit, for a place without a match", () => {
+    render(<PlaceDetail place={place("Plain", 140)} isPick={false} mode="places" onClose={noop} />);
+    expect(screen.queryByText(/OpenStreetMap contributors/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "From OpenStreetMap" })).not.toBeInTheDocument();
+    expect(screen.getByText(/opening hours, price, menus/)).toBeInTheDocument();
+  });
+
+  it("drops an unsafe menu link", () => {
+    const unsafe = place("Odd", 140, { osm: osmFacts({ menu_url: "javascript:alert(1)" }) });
+    render(<PlaceDetail place={unsafe} isPick={false} mode="places" onClose={noop} />);
+    expect(screen.queryByRole("link", { name: /^Menu/ })).not.toBeInTheDocument();
+  });
+
+  it("gives a list row today's hours and what the venue offers", () => {
+    expect(osmLine(place("A", 1, { osm: MAPPED }), SATURDAY)).toBe(
+      "Today 12 PM–11 PM · Takeout · Outdoor seating",
+    );
+    const sunday = new Date(2026, 10, 15, 12);
+    expect(osmLine(place("A", 1, { osm: MAPPED }), sunday)).toBe(
+      "Closed today · Takeout · Outdoor seating",
+    );
+    expect(osmLine(place("B", 1, { osm: osmFacts({ delivery: "no" }) }), SATURDAY)).toBeNull();
+    expect(osmLine(place("C", 1), SATURDAY)).toBeNull();
   });
 });
 

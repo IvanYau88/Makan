@@ -20,6 +20,8 @@ export interface Place {
   /** The venue's own http or https address, checked by the server. */
   website?: string | null;
   brand?: string | null;
+  /** What OpenStreetMap volunteers mapped for this venue, when it matched. Missing on older servers. */
+  osm?: OsmFacts | null;
   reasons: string[];
   /** Optional for compatibility with older servers. A missing assessment is Unrated. */
   fit?: FitAssessment | null;
@@ -61,6 +63,59 @@ export interface FitAssessment {
 export interface Label {
   id: string;
   label: string;
+}
+
+/** Opening times per weekday, Monday first, in minutes from midnight. An empty day is closed. */
+export interface OsmHoursListed {
+  status: "listed";
+  /** A range that ends after midnight ends past 1440. */
+  days: [number, number][][];
+  always_open: boolean;
+  /** The tag has holiday rules, which are not shown. */
+  holidays_differ: boolean;
+}
+
+/** Hours written in a form Makan does not read, shown as the raw text. */
+export interface OsmHoursUnreadable {
+  status: "unreadable";
+  text: string;
+}
+
+export interface OsmSource {
+  source: string;
+  /** OpenStreetMap's own data time for the extract, an ISO timestamp. */
+  version: string;
+  licence: string;
+  /** The day Makan built the extract. */
+  retrieved: string;
+  credit: string;
+  licence_url: string;
+}
+
+/** Soft facts from OpenStreetMap. None is verified, and diet and access tags never decide safety. */
+export interface OsmFacts {
+  ref: string;
+  /** The element on openstreetmap.org, where anyone can check or correct it. */
+  url: string;
+  cuisines: Label[];
+  diets: (Label & { level: "only" | "yes" | "limited" | "no" })[];
+  takeaway: "yes" | "only" | "no" | null;
+  delivery: "yes" | "only" | "no" | null;
+  outdoor_seating: "yes" | "no" | null;
+  wheelchair: "yes" | "limited" | "no" | null;
+  hours: OsmHoursListed | OsmHoursUnreadable | null;
+  menu_url: string | null;
+  /** When a mapper last checked the venue, "YYYY-MM-DD" or "YYYY-MM". */
+  check_date: string | null;
+  source: OsmSource;
+}
+
+/** The ODbL credit a result carries whenever any of its places shows an OpenStreetMap fact. */
+export interface OsmCredit {
+  text: string;
+  url: string;
+  licence: string;
+  as_of: string;
 }
 
 /** One term of the server's controlled cuisine vocabulary. */
@@ -118,6 +173,8 @@ export interface Recommendation {
   stale_facts: StaleFact[];
   data_source: string;
   attribution: string | null;
+  /** Missing on older servers, null when no place shows an OpenStreetMap fact. */
+  osm_credit?: OsmCredit | null;
   partial: boolean;
   mode: Mode;
   run: Run | null;

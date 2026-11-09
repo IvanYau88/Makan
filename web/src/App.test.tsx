@@ -8,6 +8,7 @@ import {
   RESULT,
   VOCABULARY,
   browseRun,
+  osmFacts,
   place,
   run,
   scoredRun,
@@ -139,6 +140,36 @@ describe("Discover", () => {
     expect(within(row(/^3\. Near Ramen/)).getByText("Nearby alternative")).toBeInTheDocument();
     expect(screen.getByText(/Overture Maps Foundation/)).toBeInTheDocument();
     expect(screen.getByText(/Opening hours, menus, prices/)).toBeInTheDocument();
+  });
+
+  it("credits OpenStreetMap beside a result whose places show its facts", async () => {
+    const mapped = {
+      ...RESULT,
+      places: RESULT.places.map((p, i) =>
+        i === 0 ? { ...p, osm: osmFacts({ takeaway: "yes" }) } : p,
+      ),
+      osm_credit: {
+        text: "© OpenStreetMap contributors",
+        url: "https://www.openstreetmap.org/copyright",
+        licence: "ODbL 1.0",
+        as_of: "2026-11-08T09:30:00Z",
+      },
+    };
+    await searched(() => answer(mapped));
+    const source = screen.getByText(/Hours and venue details where mapped/);
+    expect(source).toHaveTextContent(
+      "Places data: Overture Maps Foundation (CDLA Permissive 2.0). Hours and venue details where mapped: © OpenStreetMap contributors (ODbL 1.0).",
+    );
+    expect(
+      within(source).getByRole("link", { name: "© OpenStreetMap contributors" }),
+    ).toHaveAttribute("href", "https://www.openstreetmap.org/copyright");
+    expect(within(row(/^1\. Mid Thai/)).getByText("Takeout")).toBeInTheDocument();
+    expect(row(/^1\. Mid Thai/)).toHaveAccessibleName(/mapped on OpenStreetMap: Takeout/);
+  });
+
+  it("names no OpenStreetMap credit when no place shows its facts", async () => {
+    await searched();
+    expect(screen.queryByText(/Hours and venue details where mapped/)).not.toBeInTheDocument();
   });
 
   it("pins the same places with the same numbers, and says where the tiles come from", async () => {

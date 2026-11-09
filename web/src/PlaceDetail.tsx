@@ -1,4 +1,5 @@
 import { FitCaption } from "./FitCaption";
+import { OsmDetail } from "./OsmDetail";
 import { Plate } from "./Plate";
 import { categoryLabel, distanceLabel } from "./format";
 import { hasCoordinates } from "./places";
@@ -37,6 +38,9 @@ export function PlaceDetail({ place, isPick, mode, expanded = true, onToggle, on
   const titleId = `detail-title-${place.id}`;
   const open = expanded || !onToggle;
   const website = webLink(place.website);
+  const menu = webLink(place.osm?.menu_url);
+  const osmPage = webLink(place.osm?.url);
+  const mappedHours = !!place.osm?.hours;
   return (
     <section className="detail" aria-labelledby={titleId}>
       <div className="detail-head">
@@ -94,6 +98,7 @@ export function PlaceDetail({ place, isPick, mode, expanded = true, onToggle, on
               for a diet or allergy.
             </p>
           )}
+          {place.osm && <OsmDetail osm={place.osm} placeName={place.name} />}
           <h4 className="subtitle">Why this option</h4>
           <ul className="reasons">
             {place.reasons.map((reason) => (
@@ -101,13 +106,23 @@ export function PlaceDetail({ place, isPick, mode, expanded = true, onToggle, on
             ))}
           </ul>
           <p className="caveat">
-            <strong>Check before going:</strong> opening hours, price, menus, reviews and dietary
-            suitability are not in this data, so none of them is verified.
+            {mappedHours ? (
+              <>
+                <strong>Check before going:</strong> mapped hours can be out of date, and price,
+                menus, reviews and dietary suitability are not in this data, so none of them is
+                verified.
+              </>
+            ) : (
+              <>
+                <strong>Check before going:</strong> opening hours, price, menus, reviews and
+                dietary suitability are not in this data, so none of them is verified.
+              </>
+            )}
           </p>
           {mode === "demo" ? (
             <p className="hint">Sample venue for the demo, not a real place.</p>
           ) : (
-            (hasCoordinates(place) || website) && (
+            (hasCoordinates(place) || website || menu) && (
               <p className="detail-links">
                 {hasCoordinates(place) && (
                   <>
@@ -120,7 +135,10 @@ export function PlaceDetail({ place, isPick, mode, expanded = true, onToggle, on
                       Directions
                     </a>
                     <a
-                      href={`https://www.openstreetmap.org/?mlat=${place.lat}&mlon=${place.lon}#map=18/${place.lat}/${place.lon}`}
+                      href={
+                        osmPage?.href ??
+                        `https://www.openstreetmap.org/?mlat=${place.lat}&mlon=${place.lon}#map=18/${place.lat}/${place.lon}`
+                      }
                       target="_blank"
                       rel="noopener noreferrer"
                       aria-label={`View ${place.name} on OpenStreetMap (opens a new tab)`}
@@ -137,6 +155,16 @@ export function PlaceDetail({ place, isPick, mode, expanded = true, onToggle, on
                     aria-label={`Website for ${place.name}, ${website.host} (opens a new tab)`}
                   >
                     Website
+                  </a>
+                )}
+                {menu && (
+                  <a
+                    href={menu.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Menu for ${place.name}, ${menu.host} (opens a new tab)`}
+                  >
+                    Menu
                   </a>
                 )}
               </p>
