@@ -131,6 +131,13 @@ def test_a_comma_before_a_day_adds_a_rule() -> None:
     assert hours.days[6] == CLOSED
 
 
+def test_an_additional_off_rule_closes_the_days_it_names() -> None:
+    hours = parse_hours("Mo-Fr 10:00-20:00, We off")
+    assert hours is not None
+    assert hours.days[2] == CLOSED
+    assert hours.days[1] == ((600, 1200),) and hours.days[3] == ((600, 1200),)
+
+
 def test_ranges_past_midnight_and_wrapping_days() -> None:
     hours = parse_hours("Fr-Mo 18:00-02:00")
     assert hours is not None

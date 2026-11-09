@@ -24,7 +24,8 @@ _TIME_RANGE = r"\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}"
 _TIMES = rf"(?:off|closed|24/7|{_TIME_RANGE}(?:\s*,\s*{_TIME_RANGE})*)"
 _RULE = re.compile(rf"(?:(?P<days>{_DAYS})\s+)?(?P<times>{_TIMES})")
 # A comma after a time or `off` that starts a new day selector begins an additional rule, which
-# adds to those days instead of replacing them: `Mo-Fr 10:00-20:00, Sa 10:00-14:00`.
+# adds to those days instead of replacing them: `Mo-Fr 10:00-20:00, Sa 10:00-14:00`. An additional
+# `off` closes the days it names: `Mo-Fr 10:00-20:00, We off`.
 _ADDITIONAL = re.compile(rf"(?<=\d|f|d)\s*,\s*(?={_DAY}\b)")
 
 Ranges = tuple[tuple[int, int], ...]
@@ -71,7 +72,7 @@ def parse_hours(text: str | None) -> WeeklyHours | None:
             days, ranges, mentions_holiday = parsed
             holidays = holidays or mentions_holiday
             for day in days:
-                if position == 0:
+                if position == 0 or not ranges:
                     week[day] = list(ranges)  # a later rule replaces what an earlier one said
                 else:
                     week[day].extend(ranges)
