@@ -16,7 +16,7 @@ import json
 import logging
 import os
 import threading
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from datetime import timedelta
@@ -49,6 +49,15 @@ from makan.fit import FitReason
 from makan.fit_inputs import FitInputs, owner_fit_inputs
 from makan.places.base import MAX_RADIUS_M, MIN_RADIUS_M, PlaceQuery, PlacesProvider, web_link
 from makan.places.factory import places_provider
+from makan.places.facts import (
+    DIET_KEYS,
+    OSM_CREDIT,
+    OSM_LICENCE_URL,
+    OsmFacts,
+    cuisine_value_label,
+    osm_url,
+)
+from makan.places.hours import parse_hours
 from makan.profile_fit import FitStrategy
 from makan.providers.base import Provider
 from makan.providers.openrouter import OpenRouterProvider
@@ -763,6 +772,51 @@ def _attribution(data_source: str) -> str | None:
     return None
 
 
+def _osm_credit(places: Iterable[RankedCandidate]) -> dict[str, str] | None:
+    """The ODbL credit for a result, present whenever any of its places shows an OSM fact."""
+    sources = sorted({r.place.osm.source.version for r in places if r.place.osm is not None})
+    if not sources:
+        return None
+    return {"text": OSM_CREDIT, "url": OSM_LICENCE_URL, "licence": "ODbL 1.0", "as_of": sources[0]}
+
+
+def _osm_json(facts: OsmFacts | None) -> dict[str, Any] | None:
+    """OpenStreetMap facts for the page: soft hints with their own source, licence and credit.
+
+    Hours are read here, at display, from the raw tag: readable hours become a week, and an
+    unreadable value is sent back as text with that status, never as closed or unknown.
+    """
+    if facts is None:
+        return None
+    hours = parse_hours(facts.opening_hours)
+    hours_json: dict[str, Any] | None = None
+    if hours is not None:
+        hours_json = hours.to_json()
+    elif facts.opening_hours:
+        hours_json = {"status": "unreadable", "text": facts.opening_hours}
+    return {
+        "ref": facts.ref,
+        "url": osm_url(facts.ref),
+        "cuisines": [{"id": c, "label": cuisine_value_label(c)} for c in facts.cuisines],
+        # Soft tags: the page shows them with a not-verified note, and nothing decides on them.
+        "diets": [
+            {"id": diet, "label": DIET_KEYS[diet], "level": level} for diet, level in facts.diets
+        ],
+        "takeaway": facts.takeaway,
+        "delivery": facts.delivery,
+        "outdoor_seating": facts.outdoor_seating,
+        "wheelchair": facts.wheelchair,
+        "hours": hours_json,
+        "menu_url": web_link(facts.menu_url),
+        "check_date": facts.check_date,
+        "source": {
+            **facts.source.to_json(),
+            "credit": OSM_CREDIT,
+            "licence_url": OSM_LICENCE_URL,
+        },
+    }
+
+
 def _place_json(ranked: RankedCandidate, rank: int) -> dict[str, Any]:
     p = ranked.place
     return {
@@ -778,6 +832,7 @@ def _place_json(ranked: RankedCandidate, rank: int) -> dict[str, Any]:
         "diets": [{"id": d, "label": diet_label(d)} for d in p.diets],
         "website": web_link(p.website),
         "brand": p.brand,
+        "osm": _osm_json(p.osm),
         "rank": rank,
         "matched": p.request_fit > 0,
         "reasons": list(ranked.reasons),
@@ -818,6 +873,7 @@ def _recommendation_json(
         ],
         "data_source": rec.data_source,
         "attribution": _attribution(rec.data_source),
+        "osm_credit": _osm_credit(rec.ranked),
         "partial": not graph_ok,
         "mode": mode,
         "run": recorder.snapshot(),
@@ -847,6 +903,7 @@ def _browse_json(result: BrowseResult, mode: Mode, recorder: RunRecorder) -> dic
         "stale_facts": [],
         "data_source": result.data_source,
         "attribution": _attribution(result.data_source),
+        "osm_credit": _osm_credit(result.places),
         "partial": False,
         "mode": mode,
         "run": recorder.snapshot(),

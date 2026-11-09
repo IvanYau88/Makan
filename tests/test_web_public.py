@@ -501,3 +501,37 @@ def test_the_public_app_builds_without_the_postgres_extra_or_uvicorn_or_duckdb()
     )
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip() == "False"
+
+
+def test_the_vercel_build_writes_the_osm_extract_only_when_asked(tmp_path: Path) -> None:
+    """The build step is opt-in and can never fail the build, so a deployment without
+    OpenStreetMap still ships and runs exactly as before."""
+    config = json.loads((ROOT / "vercel.json").read_text("utf-8"))
+    assert config["buildCommand"].endswith("sh scripts/build-osm-extract.sh")
+    assert "osm/" not in config["functions"]["app.py"]["excludeFiles"]  # the extract ships
+    script = ROOT / "scripts" / "build-osm-extract.sh"
+    base = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}
+    skipped = subprocess.run(
+        ["sh", str(script)], cwd=ROOT, env=base, capture_output=True, text=True, timeout=30
+    )
+    assert skipped.returncode == 0 and "skipped" in skipped.stdout
+    # Asked, but the Overpass server refuses: still a passing build, and no file.
+    work = tmp_path / "work"
+    (work / "scripts").mkdir(parents=True)
+    (work / "scripts" / "build-osm-extract.sh").write_text(script.read_text("utf-8"), "utf-8")
+    (work / "src").symlink_to(ROOT / "src")
+    refused = subprocess.run(
+        ["sh", "scripts/build-osm-extract.sh"],
+        cwd=work,
+        env={
+            **base,
+            "PATH": f"{Path(sys.executable).parent}:/usr/bin:/bin",
+            "MAKAN_OSM_BUILD_BBOX": "101.69,3.14,101.70,3.15",
+            "MAKAN_OSM_OVERPASS_URL": "http://127.0.0.1:9/api/interpreter",
+        },
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert refused.returncode == 0, refused.stderr
+    assert "not built" in refused.stderr and not (work / "osm").exists()

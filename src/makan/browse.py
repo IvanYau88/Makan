@@ -21,7 +21,7 @@ from makan.trace import TraceSink
 
 STAGE = "nearby_places"
 UNVERIFIED = (
-    "Opening hours, menus, prices, and public reviews are unavailable; verify before going."
+    "Opening hours, menus, prices, and public reviews are not verified; check before going."
 )
 
 

@@ -12,3 +12,4 @@ web/node_modules
 .pytest_cache
 .ruff_cache
 cloudflare
+osm

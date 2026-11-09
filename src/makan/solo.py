@@ -26,6 +26,7 @@ from makan.memory.service import Memory, RecalledFact, utc_now
 from makan.memory.store import Owner
 from makan.models import Participant, Session
 from makan.places.base import MAX_LIMIT, Place, PlaceQuery, PlacesProvider, distance_label
+from makan.places.facts import OsmFacts
 from makan.places.tool import search_nearby_places
 from makan.providers.base import Provider
 from makan.providers.scoring import Scorer
@@ -78,6 +79,7 @@ class Candidate:
     diets: tuple[str, ...] = ()  # soft diet labels from the source, never verified safety
     website: str | None = None
     brand: str | None = None
+    osm: OsmFacts | None = None  # soft OpenStreetMap facts, with their own source and licence
 
     @classmethod
     def from_tool(cls, p: Mapping[str, Any]) -> Candidate:
@@ -95,6 +97,7 @@ class Candidate:
             tuple(p.get("diets") or ()),
             p.get("website"),
             p.get("brand"),
+            OsmFacts.from_json(p.get("osm")),
         )
 
     def matches(self, term: str) -> bool:
@@ -271,7 +274,7 @@ def research_steps(
     def merge(ctx: StepContext) -> Research:
         intent: Intent = ctx.inputs["intent"].unwrap()
         warnings = [
-            "Opening hours, menus, prices, and public reviews are unavailable; verify before going."
+            "Opening hours, menus, prices, and public reviews are not verified; check before going."
         ]
         warnings.extend(f"Cannot verify requirement: {r}." for r in intent.requirements)
         candidates: dict[str, Candidate] = {}
