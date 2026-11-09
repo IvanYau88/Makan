@@ -1,9 +1,10 @@
 """Offline check of the own taste model on invented places: `python -m makan.evals.taste`.
 
-It reruns the headline of the taste-learning investigation with the product's own code: the same
+It reruns the taste-learning investigation's check with the product's own code: the same
 features, ridge fit and policy as `makan.taste_model`, on the 120 invented places one rater
 labelled (`sets/taste/places.json`), held out with grouped five-fold cross-validation so twins and
-repeats never sit across a split. It reports the model against always guessing the rater's
+repeats never sit across a split. The places keep their dish names, but the model, like a search,
+does not use them. It reports the model against always guessing the rater's
 average, and a learning curve over how many ratings the model was given. No network, key or
 hosted model is involved.
 

@@ -2,10 +2,11 @@
 
 This is the own taste model of "Own taste model" in `docs/DESIGN.md`: a ridge regression, which is
 an additive model, over the facts a rated place listed when the rating was saved. The features are
-the place's vocabulary cuisines, the words of the dish names it listed when they were known, its
-soft diet labels, and whether its weekly hours were known. One owner's ratings fit one model, on
-the CPU, with an unpenalised mean, so a prediction is that owner's average plus a small nudge for
-each fact the place lists.
+the place's vocabulary cuisines, its soft diet labels, and whether its weekly hours were known,
+which are exactly the facts a search shows, so training and scoring see the same features. Each
+distinct place counts once, by the owner's newest rating of it, and one owner's rated places fit
+one model, on the CPU, with an unpenalised mean, so a prediction is that owner's average plus a
+small nudge for each fact the place lists.
 
 - Owner only: a model is fitted from the ratings `Visits.taste_ratings` reads for its owner and
   cached under that owner, so no model is shared or mixed across owners, and a guest has none.
@@ -22,9 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import math
-import re
 import threading
-import unicodedata
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -39,14 +38,14 @@ from makan.visits.content import PlaceFacts
 from makan.visits.service import RatedPlace
 
 # Names the features, the ridge strength, the thresholds and the reason rules together.
-POLICY_VERSION = "own-taste-ridge-v1"
+POLICY_VERSION = "own-taste-ridge-v2"
 
 # Fixed rather than tuned per owner: on the report's ratings it matched an inner tuning at every
 # size from 5 to 96 ratings, and a fixed value keeps one owner's fit cheap and reproducible.
 RIDGE_STRENGTH = 1.0
-# Fewer ratings than this show no personal score: the model barely beats the owner's average.
+# Fewer rated places than this show no personal score: the model barely beats the owner's average.
 MIN_RATINGS = 10
-# Below this many ratings the score is shown as an estimate.
+# Below this many rated places the score is shown as an estimate.
 SETTLED_RATINGS = 30
 # The rating scale, the same 0 to 10 a visit is rated on, and the step a score is shown in.
 MAX_SCORE = 10.0
@@ -60,22 +59,15 @@ LEAN_SHRINK = 1.0
 # Owners whose fitted model is kept in memory at once.
 CACHE_OWNERS = 256
 
-_WORD = re.compile(r"[^\W_]+")
-
-
-def dish_words(name: str) -> tuple[str, ...]:
-    """The words of a dish name, with accents removed and case folded, in order."""
-    text = unicodedata.normalize("NFKD", name)
-    text = "".join(ch for ch in text if not unicodedata.combining(ch)).casefold()
-    return tuple(_WORD.findall(text))
-
 
 def features(facts: PlaceFacts) -> frozenset[str]:
-    """The binary features of a place: what it lists, never who rated it or where it is."""
+    """The binary features of a place: what it lists, never who rated it or where it is.
+
+    Dish names are not features: a search reads no menu, so a weight learned on them would never
+    apply when a place is scored.
+    """
     found = {f"cuisine:{c}" for c in facts.cuisines if c in CUISINE_IDS}
     found |= {f"diet:{d}" for d in facts.diets if d in DIET_LABELS}
-    for name in facts.dishes:
-        found |= {f"word:{w}" for w in dish_words(name)}
     if facts.hours_known:
         found.add("hours_known")
     return frozenset(found)
@@ -232,14 +224,26 @@ def _leans(ratings: Sequence[tuple[PlaceFacts, float]], mean: float) -> Mapping[
     )
 
 
+def newest_per_place(ratings: Sequence[RatedPlace]) -> list[RatedPlace]:
+    """Each place once, by the first of its ratings, which is the newest in the newest-first
+    order `Visits.taste_ratings` reads them in, so repeat visits never count as more places."""
+    seen: set[tuple[str, str]] = set()
+    kept: list[RatedPlace] = []
+    for r in ratings:
+        if r.place not in seen:
+            seen.add(r.place)
+            kept.append(r)
+    return kept
+
+
 def _fingerprint(ratings: Sequence[RatedPlace]) -> str:
-    """Changes whenever any rating, its place facts, or the set of ratings changes."""
+    """Changes whenever any counted rating, its place's features, or the set of them changes."""
     digest = hashlib.sha256(POLICY_VERSION.encode())
     for r in ratings:
         f = r.facts
         digest.update(
             repr(
-                (str(r.visit_id), str(r.rating), f.cuisines, f.diets, f.dishes, f.hours_known)
+                (str(r.visit_id), r.place, str(r.rating), f.cuisines, f.diets, f.hours_known)
             ).encode()
         )
     return digest.hexdigest()
@@ -249,8 +253,9 @@ class TasteModels:
     """Fits each owner's model lazily and keeps a few in memory.
 
     A cached model is reused only while the owner's ratings are exactly the ones it was fitted on,
-    so a new, edited or deleted rating refits it on the next read in any process. An owner with
-    fewer than `MIN_RATINGS` usable ratings has no model, and anything cached for them is dropped.
+    so a new, edited or deleted rating refits it on the next read in any process. Each place counts
+    once, by its newest rating, and an owner with fewer than `MIN_RATINGS` distinct rated places has
+    no model, and anything cached for them is dropped.
     """
 
     def __init__(
@@ -265,7 +270,7 @@ class TasteModels:
         self._cache: OrderedDict[UUID, tuple[str, TasteModel]] = OrderedDict()
 
     def for_owner(self, user_id: UUID) -> TasteModel | None:
-        ratings = self._ratings_of(user_id)
+        ratings = newest_per_place(self._ratings_of(user_id))
         if len(ratings) < MIN_RATINGS:
             self.forget(user_id)
             return None

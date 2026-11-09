@@ -207,7 +207,7 @@ Dishes from a venue's own website are off by default.
 `MAKAN_MENU_FACTS_ENABLED=1` with a random `MAKAN_MENU_FACTS_SECRET` of at least 32 bytes turns them on: opening a place's detail then reads that one venue page, politely and at most once a day, and shows any dish names and prices it lists; see [Venue website dish facts](docs/DESIGN.md#venue-website-dish-facts).
 
 A signed-in diner's own taste model is off by default.
-`MAKAN_TASTE_MODEL_ENABLED=1`, on a server with accounts, shows each diner a personal score from a small model fitted only on their own rated visits, once they have rated 10 places; see [Own taste model](docs/DESIGN.md#own-taste-model).
+`MAKAN_TASTE_MODEL_ENABLED=1`, on a server with accounts, shows each diner a personal score from a small model fitted only on their own ratings of places, once they have rated 10 distinct places; see [Own taste model](docs/DESIGN.md#own-taste-model).
 
 For real providers, copy `.env.example` to `.env` and set `MAKAN_MODEL` and `OPENROUTER_API_KEY`.
 The backend loads `.env` from the current directory itself, or the file named by `MAKAN_ENV_FILE`.

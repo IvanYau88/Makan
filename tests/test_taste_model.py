@@ -7,13 +7,15 @@ Nothing here touches the network. Store-level tests run on the in-memory store a
 
 from __future__ import annotations
 
-import ast
+import json
 import math
+import os
+import subprocess
+import sys
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
-from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
@@ -26,7 +28,6 @@ from makan.taste_model import (
     SETTLED_RATINGS,
     TasteModel,
     TasteModels,
-    dish_words,
     features,
     fit,
     place_facts,
@@ -60,26 +61,19 @@ def ratings_of(labelled: Sequence[taste_eval.LabelledPlace]) -> list[tuple[Place
 # Features
 
 
-def test_dish_words_fold_case_and_accents_and_split_on_punctuation() -> None:
-    assert dish_words("Crème brûlée") == ("creme", "brulee")
-    assert dish_words("Coq-au-vin (half)") == ("coq", "au", "vin", "half")
-    assert dish_words("PAD_THAI 2x") == ("pad", "thai", "2x")
-    assert dish_words("  ") == ()
-
-
-def test_features_are_only_what_the_place_lists() -> None:
+def test_features_are_only_what_a_search_shows_of_the_place() -> None:
     facts = PlaceFacts(
         ("japanese", "not-a-term"), ("halal", "paleo"), ("Salmon Nigiri", "salmon roll"), True
     )
-    assert features(facts) == {
-        "cuisine:japanese",
-        "diet:halal",
-        "word:salmon",
-        "word:nigiri",
-        "word:roll",
-        "hours_known",
-    }
+    assert features(facts) == {"cuisine:japanese", "diet:halal", "hours_known"}
     assert features(PLAIN) == frozenset()
+
+
+def test_dish_names_saved_on_a_rating_do_not_shift_a_searched_place_s_score() -> None:
+    with_dishes = [(JAPANESE, 9.0)] * 6 + [(TURKISH, 3.0)] * 6
+    without = [(replace(f, dishes=()), r) for f, r in with_dishes]
+    searched = place_facts(("japanese", "sushi"), (), "Mo-Su 11:00-22:00")
+    assert fit(with_dishes).predict(searched) == fit(without).predict(searched)
 
 
 def test_a_searched_place_lists_no_dishes_and_knows_hours_only_when_readable() -> None:
@@ -254,9 +248,14 @@ class Ratings:
         self.reads += 1
         return list(self.by_owner.get(user_id, []))
 
-    def give(self, user_id: UUID, data: Sequence[tuple[PlaceFacts, float]]) -> None:
+    def give(
+        self,
+        user_id: UUID,
+        data: Sequence[tuple[PlaceFacts, float]],
+        place: Callable[[int], str] = lambda i: f"p{i}",
+    ) -> None:
         self.by_owner[user_id] = [
-            RatedPlace(uuid4(), ("overture", f"p{i}"), facts, Decimal(str(rating)))
+            RatedPlace(uuid4(), ("overture", place(i)), facts, Decimal(str(rating)))
             for i, (facts, rating) in enumerate(data)
         ]
 
@@ -270,6 +269,38 @@ def test_fewer_than_ten_ratings_has_no_model_and_ten_has_one() -> None:
     ratings.give(owner, [(JAPANESE, 9.0)] * MIN_RATINGS)
     model = models.for_owner(owner)
     assert model is not None and model.ratings == MIN_RATINGS
+
+
+def test_repeat_visits_to_one_place_count_as_one_rated_place() -> None:
+    ratings = Ratings()
+    owner = uuid4()
+    ratings.give(owner, [(JAPANESE, 9.0)] * (MIN_RATINGS + 5), place=lambda _: "ramen")
+    models = TasteModels(ratings)
+    assert models.for_owner(owner) is None
+    repeats = [(JAPANESE, 9.0)] * 5
+    others = [(TURKISH, 3.0)] * (MIN_RATINGS - 2)
+    ratings.give(owner, repeats + others, place=lambda i: "ramen" if i < 5 else f"p{i}")
+    assert models.for_owner(owner) is None
+    ratings.give(
+        owner, repeats + others + [(PLAIN, 6.0)], place=lambda i: "ramen" if i < 5 else f"p{i}"
+    )
+    model = models.for_owner(owner)
+    assert model is not None and model.ratings == MIN_RATINGS
+    assert model.estimate(TURKISH).to_json()["ratings"] == MIN_RATINGS
+
+
+def test_the_newest_rating_of_a_place_is_the_one_that_counts() -> None:
+    ratings = Ratings()
+    owner = uuid4()
+    # Newest first, as `Visits.taste_ratings` returns them: the ramen shop was 2 lately, 10 before.
+    data = [(JAPANESE, 2.0), (JAPANESE, 10.0), (JAPANESE, 10.0)] + [(TURKISH, 6.0)] * MIN_RATINGS
+    ratings.give(owner, data, place=lambda i: "ramen" if i < 3 else f"p{i}")
+    model = TasteModels(ratings).for_owner(owner)
+    expected = fit([(JAPANESE, 2.0)] + [(TURKISH, 6.0)] * MIN_RATINGS)
+    assert model is not None and model.ratings == MIN_RATINGS + 1
+    assert model.mean == pytest.approx(expected.mean)
+    assert dict(model.weights) == pytest.approx(dict(expected.weights))
+    assert model.predict(JAPANESE) < model.predict(TURKISH)
 
 
 def test_a_model_is_fitted_once_and_refitted_when_the_owner_s_ratings_change(
@@ -299,7 +330,7 @@ def test_a_model_is_fitted_once_and_refitted_when_the_owner_s_ratings_change(
     changed[1] = replace(changed[1], facts=TURKISH)
     third = models.for_owner(owner)
     assert third is not second and fits == [12, 12, 12]
-    ratings.by_owner[owner] = [*changed, changed[0]]
+    ratings.by_owner[owner] = [*changed, replace(changed[0], visit_id=uuid4(), place=("o", "new"))]
     assert models.for_owner(owner) is not third and fits == [12, 12, 12, 13]
     # Dropping below the threshold drops the cached model too.
     ratings.by_owner[owner] = changed[:5]
@@ -336,20 +367,36 @@ def test_the_cache_holds_a_bounded_number_of_owners() -> None:
 
 
 def test_the_module_is_inert_on_import() -> None:
-    """No network, key, database, model or scorer import, so the public site stays inert."""
-    source = Path(taste_model.__file__).read_text(encoding="utf-8")
-    imported = {
-        node.module or ""
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.ImportFrom)
-    } | {
-        alias.name
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    }
-    for banned in ("httpx", "psycopg", "makan.providers", "makan.profile_fit", "os", "socket"):
-        assert not any(name == banned or name.startswith(f"{banned}.") for name in imported)
+    """Imported in a fresh interpreter with no key and every connection refused, it opens no
+    connection and loads no database driver or hosted scorer, so the public site stays inert."""
+    script = """
+import json, socket, sys
+
+attempts = []
+
+def refuse(*args, **kwargs):
+    attempts.append(repr(args))
+    raise OSError("network blocked")
+
+socket.socket.connect = refuse
+socket.socket.connect_ex = refuse
+socket.create_connection = refuse
+socket.getaddrinfo = refuse
+import makan.taste_model
+banned = ("psycopg", "makan.profile_fit", "makan.providers.scoring")
+loaded = sorted(m for m in sys.modules if m.startswith(banned))
+print(json.dumps({"attempts": attempts, "loaded": loaded}))
+"""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("MAKAN_", "OPENROUTER_"))}
+    done = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+        env=env,
+    )
+    assert json.loads(done.stdout) == {"attempts": [], "loaded": []}
 
 
 # Place facts on a rated visit
@@ -457,18 +504,18 @@ def test_taste_ratings_read_a_bounded_number_of_recent_visits(
 # The offline headline
 
 
-def test_the_offline_eval_reproduces_the_investigation_headline() -> None:
+def test_the_offline_eval_beats_the_average_on_the_invented_places() -> None:
     report = taste_eval.run()
     assert report.places == 120
     assert report.policy_version == POLICY_VERSION
-    assert report.own.mae == pytest.approx(0.60, abs=0.02)
+    assert report.own.mae == pytest.approx(0.66, abs=0.02)
     assert report.average.mae == pytest.approx(0.83, abs=0.01)
     assert report.own.within_one >= 0.9
-    assert report.own.exact > report.average.exact + 0.1
+    assert report.own.exact > report.average.exact + 0.05
     # Useful from ten ratings, and better with more.
     curve = report.curve
     assert curve["10"]["own_mae"] < curve["10"]["average_mae"] - 0.03
-    assert curve["30"]["own_mae"] < curve["30"]["average_mae"] - 0.1
+    assert curve["30"]["own_mae"] < curve["30"]["average_mae"] - 0.05
     assert curve["5"]["own_mae"] > curve["10"]["own_mae"] > curve["30"]["own_mae"]
 
 
@@ -494,5 +541,5 @@ def test_held_out_folds_keep_twins_and_repeats_together() -> None:
 def test_the_eval_prints_a_report(capsys: pytest.CaptureFixture[str]) -> None:
     taste_eval.main([])
     out = capsys.readouterr().out
-    assert '"policy_version": "own-taste-ridge-v1"' in out
+    assert '"policy_version": "own-taste-ridge-v2"' in out
     assert '"own"' in out and '"average"' in out

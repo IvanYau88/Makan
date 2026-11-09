@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -42,10 +42,10 @@ def facts(p: Place) -> PlaceFacts:
 
 
 def rate(setup: Setup, user: UUID, p: Place, rating: float, times: int = 1) -> None:
-    for i in range(times):
+    for _ in range(times):
         setup.services.visits.log_visit(
             user,
-            place=parse_place(SOURCE, f"{p.id}-{i}", p.name, None, facts(p)),
+            place=parse_place(SOURCE, f"{p.id}-{uuid4().hex}", p.name, None, facts(p)),
             rating=rating,
             party="solo",
         )
@@ -129,7 +129,7 @@ def test_ten_ratings_show_an_estimate_and_thirty_a_settled_score() -> None:
     sushi = first["Sushi Bar"]
     assert sushi is not None
     assert sushi["estimate"] is True and sushi["ratings"] == MIN_RATINGS
-    assert sushi["scale"] == 10.0 and sushi["policy_version"] == "own-taste-ridge-v1"
+    assert sushi["scale"] == 10.0 and sushi["policy_version"] == "own-taste-ridge-v2"
     assert sushi["score"] * 2 == int(sushi["score"] * 2)  # half steps
     assert set(sushi) == {"score", "scale", "estimate", "ratings", "why", "policy_version"}
 

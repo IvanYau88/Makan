@@ -173,7 +173,7 @@ class RatedPlace:
     """One of the owner's own ratings of a place, with the facts that place listed then."""
 
     visit_id: UUID
-    place: tuple[str, str]  # (place_source, place_id), so repeat visits to a place are known
+    place: tuple[str, str]  # (place_source, place_id), so a place counts once however often rated
     facts: PlaceFacts
     rating: Decimal
 
@@ -362,6 +362,8 @@ class Visits:
 
     def taste_ratings(self, user_id: UUID | None) -> list[RatedPlace]:
         """The person's own rated visits that kept the place's facts, newest meal first.
+
+        Repeat visits to a place are all returned; the taste model keeps only the newest of each.
 
         Only the person's own visits are read, by owner, and a rating counts only once they gave
         or confirmed it, so a visit made from a tag counts after they answer it. At most the

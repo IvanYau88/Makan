@@ -1364,16 +1364,20 @@ A signed-in diner's own taste, learned only from their own ratings of places, fo
 On 120 invented places one rater labelled, a small model fitted only on that rater's ratings was within one level 92% of the time with an average miss of 0.60 levels, against 0.83 for always guessing their average, while Clef and the free cuisine match did not learn personal taste.
 It is off unless `MAKAN_TASTE_MODEL_ENABLED` is on, needs accounts, and changes no order.
 
-- **Model:** `makan.taste_model` fits ridge regression, an additive model, with an unpenalised mean on binary features: each vocabulary cuisine the place lists (`cuisine:`), each word of the dish names it lists when they are known (`word:`, after NFKD, mark removal and case folding), each soft diet label (`diet:`), and `hours_known`.
+- **Model:** `makan.taste_model` fits ridge regression, an additive model, with an unpenalised mean on binary features: each vocabulary cuisine the place lists (`cuisine:`), each soft diet label (`diet:`), and `hours_known`.
+  These are exactly the facts a search shows, so training and scoring use the same features.
   A prediction is the owner's average plus one weight per listed fact, clipped to the 0 to 10 rating scale and shown in half steps.
   The weights solve `(X'X + λI) w = X'(y - mean)` by conjugate gradients over the sparse rows, which is the same solution as the dual form the investigation evaluated (a test checks them against each other to 1e-9) at a cost that grows with listed facts, not with the cube of the ratings.
   It runs on the server's CPU, is deterministic, and is inert on import: no key, network, database, model, or fallback to Clef, Jev or any hosted scorer.
 - **Choices against the investigation:** the strength is a fixed `λ = 1` rather than an inner cross-validated choice, because on the investigation's data a fixed value matched or beat the inner choice at every size from 5 to 96 ratings and keeps one owner's fit cheap and reproducible.
   The cuisine-group, has-dishes and no-cuisine features are dropped: the investigation found the group made no difference, and without the two flags the mean error was the same or lower (0.59 to 0.60 over 20 splits).
   The has-dishes flag would also be misleading in the product, where a search never reads a menu, so it would mark every searched place as unlike the rated ones that kept their dishes.
-  `POLICY_VERSION` (`own-taste-ridge-v1`) names the features, the strength, the thresholds and the reason rules together, so changing any of them is a new version.
-- **Thresholds:** fewer than 10 usable ratings show no personal score at all, since below about 5 the model does not beat the average and it is useful from about 10.
-  From 10 to 29 ratings the score is labelled "Your estimate", and from 30 it is labelled "For you".
+  Dish words are left out of the fit for the same reason: a search lists no dishes, so their weights would never apply when a place is scored, and ridge would move part of a cuisine's lift onto the dish words that co-occur with it, pulling searched places toward the average.
+  The dish names stay saved on the rated visit so a later version can use them.
+  `POLICY_VERSION` (`own-taste-ridge-v2`) names the features, the strength, the thresholds and the reason rules together, so changing any of them is a new version.
+- **One row per place:** the model learns ratings of places, so each distinct place (`RatedPlace.place`, its source and id) counts once, by the owner's newest rating of it, and repeat visits neither add rows nor weight a place more.
+- **Thresholds:** fewer than 10 distinct rated places show no personal score at all, since below about 5 the model does not beat the average and it is useful from about 10.
+  From 10 to 29 rated places the score is labelled "Your estimate", and from 30 it is labelled "For you", and the N in "From your N ratings." counts rated places too.
 - **Reason line:** the plain "why" is the free cuisine match (`makan.fit.cuisine_fit`) over the owner's leans inferred from the same ratings: `n / (n + 1)` times the gap between their average for places listing a cuisine and their overall average, a lean when it is at least 1 point (half a level).
   An exact like gives "You tend to like Japanese.", an exact dislike "You tend not to like Turkish.", a place sharing nothing with a rated place gives "Your usual rating. You have not rated a place like this yet.", and anything else "From your N ratings."
   A diet label never appears in it, so a listed diet cannot read as safety advice.
@@ -1386,20 +1390,23 @@ It is off unless `MAKAN_TASTE_MODEL_ENABLED` is on, needs accounts, and changes 
   Visits saved before the migration or without facts teach nothing; editing a visit to another place without facts clears them; and accepting a tag copies the venue's facts with its name and address, but never the tagger's rating.
   The columns are covered by the existing owner policy, cascade on deletion, and appear in the export through `to_jsonb` of the row.
 - **Fit lazily, per owner:** `TasteModels` fits an owner's model on their first search and keeps up to 256 owners in memory.
-  A cached model is reused only while the owner's usable ratings hash to the same fingerprint it was fitted on, so any new, edited or deleted rating refits it on the next search in any process, with no invalidation message to lose.
-  Dropping below 10 ratings drops the cached model, and deleting the account forgets it at once.
+  A cached model is reused only while the owner's counted ratings hash to the same fingerprint it was fitted on, so any new, edited or deleted rating refits it on the next search in any process, with no invalidation message to lose.
+  Dropping below 10 rated places drops the cached model, and deleting the account forgets it at once.
 - **Product boundary:** after the hard rules and the cuisine fit, `run_search` attaches a `TasteEstimate` to each kept candidate for the signed-in diner, and every place in the JSON and NDJSON pick, runners-up and list carries the same `taste` object: `score`, `scale`, `estimate`, `ratings`, `why` and `policy_version`.
-  With the switch off, for a guest, without accounts, with fewer than 10 ratings, or when fitting fails (logged, never shown), places carry no `taste` key and the response is exactly as before.
+  With the switch off, for a guest, without accounts, with fewer than 10 rated places, or when fitting fails (logged, never shown), places carry no `taste` key and the response is exactly as before.
   Nearest-first order, ranks, the pick and pins are unchanged, and a never-go place is removed before any estimate exists, so a predicted 10 never admits it; allergy, diet and never-go warnings are untouched.
   Responses stay `private, no-store`, and the run trace and its bounded view carry no estimate, weight or rating.
 - **Screens:** `TasteLine` shows the score with "/10" and its label beside the name and distance, apart from the cuisine fit plate, with the reason under it, and adds both to the row's accessible name.
   The detail adds how many ratings it came from, that it stays an estimate until more are rated, and that it does not change the order.
   A missing or malformed estimate shows nothing.
 - **Public site:** the guest-only Vercel site has accounts off, so it never builds a model even if the switch were set.
-- **Offline check:** `python -m makan.evals.taste` reruns the investigation's headline with the product code on `src/makan/evals/sets/taste/places.json`, the 120 invented places and their labels (no notes or times), with the same grouped five-fold split: mean error 0.60 levels, 56% exact and 93% within one, against 0.83, 38% and 79% for the average, and a learning curve of 0.78 against 0.83 at 10 ratings and 0.69 against 0.82 at 30.
-- **Tests:** `tests/test_taste_model.py` covers the features, the fit against the dual form, determinism, thresholds, the reason line, the cache and its invalidation, two owners, the place facts on both stores and the eval headline.
+- **Offline check:** `python -m makan.evals.taste` reruns the investigation's check with the product code on `src/makan/evals/sets/taste/places.json`, the 120 invented places and their labels (no notes or times), with the same grouped five-fold split.
+  Without dish words it reports a mean error of 0.66 levels, 48% exact and 94% within one, against 0.83, 38% and 79% for the average, and a learning curve of 0.79 against 0.83 at 10 ratings and 0.73 against 0.82 at 30.
+  The investigation's 0.60 used dish words, which the product cannot yet supply when it scores a searched place.
+- **Tests:** `tests/test_taste_model.py` covers the features, the fit against the dual form, determinism, thresholds, repeat visits to one place, the reason line, the cache and its invalidation, two owners, the place facts on both stores and the eval headline.
   `tests/test_web_taste.py` covers the HTTP boundary: the switch, guests, too few ratings, two owners, order and pick, hard rules, refitting after an edit, the visit API, failures, the trace and account deletion.
-- **Not done:** a visit-logging screen that sends the place facts, rescoring the detail with dish words once a menu is read, any use in ranking or group scoring, and enabling it in production.
+- **Not done:** a visit-logging screen that sends the place facts, any use in ranking or group scoring, and enabling it in production.
+  Planned next: rescoring a place's detail with dish words once its menu is read, from the dish names already saved on rated visits, as a new policy version.
 
 ## Web stack
 
