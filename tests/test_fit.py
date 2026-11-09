@@ -1,15 +1,16 @@
-"""The exact-category policy and its narrow owner-scoped input boundary, entirely offline."""
+"""The listed-cuisine policy and its narrow owner-scoped input boundary, entirely offline."""
 
 from dataclasses import replace
 from datetime import timedelta
-from typing import Any, get_args
+from typing import Any
 from uuid import uuid4
 
 import pytest
 
 from makan.config import Config
-from makan.fit import CATEGORY_CUISINES, FitAssessment, FitReason, cuisine_fit
-from makan.fit_inputs import Cuisine, owner_fit_inputs
+from makan.cuisines import CUISINE_IDS
+from makan.fit import CLEF_CUISINES, FitAssessment, FitReason, cuisine_fit
+from makan.fit_inputs import owner_fit_inputs
 from makan.memory.hard import hard_content
 from tests.test_memory import make_memory
 
@@ -56,36 +57,69 @@ def test_opt_in_is_independent_of_the_fixed_answer_scorer() -> None:
     assert Config.from_env({"MAKAN_MODEL": "test"}).fit_enabled is False
     cfg = Config.from_env({"MAKAN_MODEL": "test", "MAKAN_FIT_ENABLED": "1"})
     assert cfg.fit_enabled and cfg.scorer.backend == "none"
-    assert cuisine_fit("thai_restaurant", ("thai",), ()).reason == FitReason.DISABLED
-    assert set(get_args(Cuisine)) == set(CATEGORY_CUISINES.values())
+    assert cuisine_fit(("thai",), ("thai",), ()).reason == FitReason.DISABLED
+    assert set(CLEF_CUISINES) < CUISINE_IDS
 
 
 @pytest.mark.parametrize(
-    ("category", "likes", "dislikes", "score", "reason"),
+    ("cuisines", "likes", "dislikes", "score", "reason"),
     [
-        ("thai_restaurant", (), (), None, FitReason.NO_TASTE),
-        ("thai_restaurant", ("thai",), (), 100, FitReason.LIKE),
-        ("thai_restaurant", (), ("thai",), 0, FitReason.DISLIKE),
-        ("thai_restaurant", ("thai",), ("italian",), 100, FitReason.LIKE),
-        ("italian_restaurant", ("thai",), ("italian",), 0, FitReason.DISLIKE),
-        ("thai_restaurant", ("thai",), ("thai",), None, FitReason.CONFLICT),
-        ("thai_restaurant", ("thai", "private arbitrary prose"), (), None, FitReason.UNSUPPORTED),
-        ("restaurant", ("thai",), (), None, FitReason.NO_MATCH),
-        ("thai_restaurant", ("japanese",), (), None, FitReason.NO_MATCH),
-        ("ramen_restaurant", ("japanese",), (), None, FitReason.NO_MATCH),
-        ("pizza_restaurant", ("italian",), (), None, FitReason.NO_MATCH),
+        (("thai",), (), (), None, FitReason.NO_TASTE),
+        (("thai",), ("thai",), (), 100, FitReason.LIKE),
+        (("thai",), (), ("thai",), 0, FitReason.DISLIKE),
+        (("thai",), ("thai",), ("italian",), 100, FitReason.LIKE),
+        (("italian",), ("thai",), ("italian",), 0, FitReason.DISLIKE),
+        (("thai",), ("thai",), ("thai",), None, FitReason.CONFLICT),
+        (("thai",), ("thai", "private arbitrary prose"), (), None, FitReason.UNSUPPORTED),
+        ((), ("thai",), (), None, FitReason.NO_CUISINE),
+        (("thai",), ("japanese",), (), None, FitReason.NO_MATCH),
+        (("ramen",), ("japanese",), (), None, FitReason.NO_MATCH),
+        (("greek",), ("mediterranean",), (), None, FitReason.NO_MATCH),
+        # Wider cuisines on both sides now meet.
+        (("burgers",), ("burgers",), (), 100, FitReason.LIKE),
+        (("seafood",), (), ("seafood",), 0, FitReason.DISLIKE),
+        (("mediterranean",), ("mediterranean",), (), 100, FitReason.LIKE),
+        # The source's own parent category counts: its pizza place is Italian.
+        (("pizza", "italian"), ("italian",), (), 100, FitReason.LIKE),
+        (("pizza", "italian"), (), ("pizza",), 0, FitReason.DISLIKE),
+        # A like and a skip on one place leave it Unrated, whatever the order.
+        (("pizza", "italian"), ("pizza",), ("italian",), None, FitReason.MIXED),
     ],
 )
-def test_baseline_never_infers_cross_cuisine_relationships(
-    category: str,
+def test_baseline_matches_only_cuisines_the_place_lists(
+    cuisines: tuple[str, ...],
     likes: tuple[str, ...],
     dislikes: tuple[str, ...],
     score: int | None,
     reason: FitReason,
 ) -> None:
-    result = cuisine_fit(category, likes, dislikes, enabled=True)
+    result = cuisine_fit(cuisines, likes, dislikes, enabled=True)
     assert (result.score, result.reason) == (score, reason)
-    assert cuisine_fit(category, likes[::-1], dislikes[::-1], enabled=True) == result
+    assert cuisine_fit(cuisines[::-1], likes[::-1], dislikes[::-1], enabled=True) == result
+
+
+def test_saved_free_text_tastes_keep_working_and_read_as_vocabulary_terms() -> None:
+    memory, _, _, owner = make_memory()
+    assert owner.user_id is not None
+    for text in ("thai", "Ramen", "burgers", "BBQ"):
+        memory.remember(owner, "cuisine_like", {"cuisine": text})
+    memory.remember(owner, "cuisine_dislike", {"cuisine": "Pizza"})
+    inputs = owner_fit_inputs(memory, owner.user_id)
+    assert sorted(inputs.likes) == ["barbecue", "burgers", "ramen", "thai"]
+    assert inputs.dislikes == ("pizza",) and inputs.problem is None
+    assert cuisine_fit(("barbecue",), inputs.likes, inputs.dislikes, enabled=True).score == 100
+    assert cuisine_fit(("pizza", "italian"), inputs.likes, inputs.dislikes, enabled=True).score == 0
+
+
+def test_saved_text_naming_no_cuisine_still_makes_the_whole_fit_unsupported() -> None:
+    memory, _, _, owner = make_memory()
+    assert owner.user_id is not None
+    memory.remember(owner, "cuisine_like", {"cuisine": "thai"})
+    memory.remember(owner, "cuisine_like", {"cuisine": "spicy noodles"})
+    inputs = owner_fit_inputs(memory, owner.user_id)
+    assert "spicy noodles" in inputs.likes
+    result = cuisine_fit(("thai",), inputs.likes, inputs.dislikes, enabled=True)
+    assert result.reason == FitReason.UNSUPPORTED
 
 
 def test_owner_inputs_do_not_include_other_owners_observations_or_ratings() -> None:
@@ -130,7 +164,7 @@ def test_expired_tastes_and_conflicting_legacy_rows_do_not_become_scores() -> No
     store.add(replace(current, id=uuid4(), kind="cuisine_dislike"), supersedes=[])
     inputs = owner_fit_inputs(memory, owner.user_id)
     assert (
-        cuisine_fit("thai_restaurant", inputs.likes, inputs.dislikes, enabled=True).reason
+        cuisine_fit(("thai",), inputs.likes, inputs.dislikes, enabled=True).reason
         == FitReason.CONFLICT
     )
 

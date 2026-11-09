@@ -108,6 +108,53 @@ def test_missing_taxonomy_lists_do_not_break_a_row() -> None:
         PlaceQuery.near(row["lat"], row["lon"], 500)
     )
     assert found.category == "food_and_drink"
+    assert (found.cuisines, found.diets, found.website, found.brand) == ((), (), None, None)
+
+
+def test_rows_carry_listed_cuisines_diets_website_and_brand() -> None:
+    base = overture_rows()[0]
+    pizza = dict(
+        base,
+        category="pizza_restaurant",
+        hierarchy=[
+            "food_and_drink",
+            "restaurant",
+            "european_restaurant",
+            "mediterranean_restaurant",
+            "italian_restaurant",
+            "pizza_restaurant",
+        ],
+        websites=["http://pizza.example"],
+        brand="  Pizza Chain  ",
+    )
+    vegan = dict(
+        base,
+        id="vegan",
+        category="vegan_restaurant",
+        hierarchy=["food_and_drink", "restaurant", "special_diet_restaurant", "vegan_restaurant"],
+        websites=["ftp://vegan.example", "https://user@vegan.example", "not a url"],
+        brand="",
+    )
+    found = {
+        p.id: p
+        for p in provider(FixtureSource([pizza, vegan])).search_nearby(
+            PlaceQuery.near(base["lat"], base["lon"], 500)
+        )
+    }
+    assert found[base["id"]].cuisines == ("pizza", "italian")
+    assert found[base["id"]].website == "http://pizza.example"
+    assert found[base["id"]].brand == "Pizza Chain"
+    assert found["vegan"].cuisines == ()
+    assert found["vegan"].diets == ("vegan",)
+    assert (found["vegan"].website, found["vegan"].brand) == (None, None)
+
+
+def test_a_row_with_no_taxonomy_falls_back_to_the_basic_category() -> None:
+    row = dict(overture_rows()[0], hierarchy=None, alternates=None, category=None)
+    (found,) = provider(FixtureSource([dict(row, basic_category="restaurant")])).search_nearby(
+        PlaceQuery.near(row["lat"], row["lon"], 500)
+    )
+    assert found.category == "restaurant"
 
 
 def test_the_source_is_asked_for_a_box_around_the_query_with_the_release() -> None:
@@ -182,6 +229,9 @@ def parquet(tmp_path: Path) -> str:
             id VARCHAR,
             names STRUCT("primary" VARCHAR),
             taxonomy STRUCT("primary" VARCHAR, hierarchy VARCHAR[], alternates VARCHAR[]),
+            basic_category VARCHAR,
+            websites VARCHAR[],
+            brand STRUCT(wikidata VARCHAR, names STRUCT("primary" VARCHAR)),
             bbox STRUCT(xmin DOUBLE, xmax DOUBLE, ymin DOUBLE, ymax DOUBLE),
             addresses STRUCT(freeform VARCHAR, locality VARCHAR)[],
             confidence DOUBLE,
@@ -199,19 +249,30 @@ def parquet(tmp_path: Path) -> str:
         confidence: float = 0.9,
         status: str | None = None,
         street: str | None = "1 Jalan Satu",
+        websites: list[str] | None = None,
+        brand: str | None = None,
     ) -> None:
         connection.execute(
             "INSERT INTO places VALUES (?, {'primary': ?}, {'primary': ?, 'hierarchy': ?,"
-            " 'alternates': ?}, {'xmin': ?, 'xmax': ?, 'ymin': ?, 'ymax': ?},"
+            " 'alternates': ?}, ?, ?, {'wikidata': NULL, 'names': {'primary': ?}},"
+            " {'xmin': ?, 'xmax': ?, 'ymin': ?, 'ymax': ?},"
             " [{'freeform': ?, 'locality': 'Kuala Lumpur'}], ?, ?)",
             [
                 *(id, name, hierarchy[-1], list(hierarchy), ["thai_restaurant"]),
+                *(hierarchy[-1], websites, brand),
                 *(lon, lon, lat, lat, street, confidence, status),
             ],
         )
 
     lat, lon = KLCC
-    add("good", "Good Place", lat, lon)
+    add(
+        "good",
+        "Good Place",
+        lat,
+        lon,
+        websites=["javascript:alert(1)", "https://good.example/menu"],
+        brand="Good Group",
+    )
     add("no-address", "No Address", lat, lon + 0.001, street=None)
     add("closed", "Closed Place", lat, lon, status="permanently_closed")
     add("paused", "Paused Place", lat, lon, status="temporarily_closed")
@@ -233,6 +294,9 @@ def test_the_sql_keeps_open_confident_named_food_places_in_the_box(parquet: str)
         "category": "restaurant",
         "hierarchy": ["food_and_drink", "restaurant"],
         "alternates": ["thai_restaurant"],
+        "basic_category": "restaurant",
+        "websites": ["javascript:alert(1)", "https://good.example/menu"],
+        "brand": "Good Group",
         "lat": KLCC[0],
         "lon": KLCC[1],
         "street": "1 Jalan Satu",
@@ -245,6 +309,11 @@ def test_the_provider_runs_end_to_end_over_a_local_file(parquet: str) -> None:
     found = p.search_nearby(query(cuisine="thai"))
     assert [(x.name, x.distance_m) for x in found] == [("Good Place", 0), ("No Address", 111)]
     assert found[1].address == "Kuala Lumpur"
+    # The alternate category names a cuisine; only the safe website is kept.
+    assert found[0].cuisines == ("thai",)
+    assert found[0].website == "https://good.example/menu"
+    assert found[0].brand == "Good Group"
+    assert (found[1].website, found[1].brand) == (None, None)
 
 
 def test_a_missing_file_is_a_places_error(tmp_path: Path) -> None:

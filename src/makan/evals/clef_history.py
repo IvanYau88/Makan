@@ -16,7 +16,8 @@ from typing import Any, Literal
 from uuid import NAMESPACE_URL, uuid5
 
 from makan.accounts import InMemoryAccountStore
-from makan.fit import CATEGORY_CUISINES, cuisine_fit
+from makan.cuisines import place_cuisines
+from makan.fit import CLEF_CUISINES, cuisine_fit
 from makan.fit_inputs import FitInputs
 from makan.profile_fit import profile_state
 from makan.visits import DishInput, PlaceRef, Visits
@@ -24,7 +25,7 @@ from makan.visits.evidence import policy, vocabulary
 
 NOW = datetime(2026, 11, 1, 12, 0, tzinfo=UTC)
 RELEASE = "overture:2026-09-23.1"
-CUISINES = tuple(CATEGORY_CUISINES.values())
+CUISINES = CLEF_CUISINES
 Expected = Literal["high", "low", "uncertain"]
 
 
@@ -172,7 +173,7 @@ def build(case: HistoryCase) -> dict[str, Any]:
     plain = profile_state(FitInputs(case.likes, case.dislikes), category, RELEASE)
     if state is None or "history" not in state:
         raise ValueError(f"history case {case.id} did not build a version 2 state")
-    local = cuisine_fit(category, case.likes, case.dislikes, enabled=True)
+    local = cuisine_fit(place_cuisines(category), case.likes, case.dislikes, enabled=True)
     return {
         "state": state,
         "plain": plain if (case.likes or case.dislikes) else None,

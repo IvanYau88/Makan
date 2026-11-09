@@ -35,10 +35,11 @@ from typing import Any
 import httpx
 
 from makan.config import CLEF_FIT_MODEL
+from makan.cuisines import place_cuisines
 from makan.evals.clef_history import build, history_cases, history_summary
 from makan.evals.contract_cases import load_taste_cases, render_taste_state
 from makan.evals.fit import LEVEL_IDS, TASTE_IDS, parse_json, probabilities
-from makan.fit import CATEGORY_CUISINES, cuisine_fit
+from makan.fit import CLEF_CUISINES, cuisine_fit
 from makan.profile_fit import accepted_assessment
 from makan.providers.scoring.clef import ClefScorer, ProfileCaseResult
 from makan.providers.scoring.transport import ClefError, ClefReason, CloudflareTransport
@@ -144,7 +145,7 @@ def production_state(
     }
 
 
-CUISINES = tuple(CATEGORY_CUISINES.values())
+CUISINES = CLEF_CUISINES
 
 
 def production_cases() -> list[dict[str, Any]]:
@@ -158,7 +159,9 @@ def production_cases() -> list[dict[str, Any]]:
             ("dislike", [], [cuisine]),
             ("unrelated", [other], []),
         ):
-            local = cuisine_fit(category, tuple(likes), tuple(dislikes), enabled=True)
+            local = cuisine_fit(
+                place_cuisines(category), tuple(likes), tuple(dislikes), enabled=True
+            )
             cases.append(
                 {
                     "id": f"P-{cuisine}-{pattern}",

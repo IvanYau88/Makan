@@ -506,6 +506,7 @@ export function App() {
                 <SessionTaste
                   tastes={tastes}
                   onChange={changeTastes}
+                  vocabulary={config.cuisines ?? null}
                   online={config.features.online_fit}
                   owner={auth.state.status === "in"}
                   consent={onlineConsent}

@@ -82,19 +82,7 @@ def browse(
         data = json.loads(found.unwrap())
         truncated = data["count"] >= MAX_LIMIT
         candidates = sorted(
-            (
-                Candidate(
-                    p["id"],
-                    p["name"],
-                    p["category"],
-                    p["distance_m"],
-                    p.get("address"),
-                    0,
-                    p.get("lat"),
-                    p.get("lon"),
-                )
-                for p in data["places"]
-            ),
+            (Candidate.from_tool(p) for p in data["places"]),
             key=lambda c: (c.distance_m, c.name, c.id),
         )
         ranked = tuple(

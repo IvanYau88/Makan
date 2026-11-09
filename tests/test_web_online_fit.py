@@ -592,3 +592,23 @@ def test_browser_cache_authority_is_rejected_and_gateway_metadata_is_fail_closed
         assert payload["places"][0]["fit"]["reason"] == "malformed_response"
         assert payload["places"][0]["fit"]["score"] is None
         assert "private provider exception" not in json.dumps(payload)
+
+
+def test_online_fit_keeps_the_frozen_eight_cuisines_and_never_drops_a_wider_taste() -> None:
+    pizzeria = replace(PIZZA, cuisines=("pizza", "italian"))
+    site = Site(candidates=[THAI, pizzeria])
+    consent = site.consent()
+    wider = {"likes": ["thai", "burgers"]}
+    payload = result(site.client, {**BROWSE, "tastes": wider, "online_fit": consent}, False)
+    assert {p["fit"]["reason"] for p in payload["places"]} == {"unsupported_tastes"}
+    assert not site.scores(), "a wider taste is never trimmed to fit a frozen state"
+    payload = result(
+        site.client,
+        {**BROWSE, "radius_m": 2000, "tastes": {"likes": ["italian"]}, "online_fit": consent},
+        False,
+    )
+    by_name = {p["name"]: p["fit"] for p in payload["places"]}
+    # Only an exact frozen category enters a version 1 state; a pizza place is not sent.
+    assert by_name[pizzeria.name]["reason"] == "insufficient_evidence"
+    (sent,) = site.scores()
+    assert "thai_restaurant" in json.dumps(sent) and "pizza" not in json.dumps(sent)

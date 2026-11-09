@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -33,8 +34,24 @@ def test_results_are_compact_and_nearest_first() -> None:
         "distance_m": 16,
         "lat": NEAR.lat,
         "lon": NEAR.lon,
+        "cuisines": ["ramen"],
     }
-    assert [p["name"] for p in result["places"]] == ["Near Noodles", "Mid Cafe"]
+    assert result["places"][1]["name"] == "Mid Cafe"
+    assert "cuisines" not in result["places"][1], "a cafe lists no cuisine"
+
+
+def test_listed_diets_website_and_brand_reach_the_tool_only_when_known() -> None:
+    vegan = replace(
+        place("Green Bowl", "vegan_restaurant", 3.1481, 101.6951, "food_and_drink", "restaurant"),
+        website="https://greenbowl.example/",
+        brand="Green Bowl Co",
+    )
+    (found,) = search(FakePlacesProvider([vegan]), latitude=3.148, longitude=101.695)["places"]
+    assert found["diets"] == ["vegan"]
+    assert "cuisines" not in found
+    assert found["website"] == "https://greenbowl.example/"
+    assert found["brand"] == "Green Bowl Co"
+    assert "not menus" in search_nearby_places(FakePlacesProvider()).description
 
 
 def test_filters_radius_and_limit_reach_the_provider() -> None:

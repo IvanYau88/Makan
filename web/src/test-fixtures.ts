@@ -1,4 +1,21 @@
-import type { Place, Recommendation, Run, Stage, StageName } from "./types";
+import type { CuisineVocabulary, Place, Recommendation, Run, Stage, StageName } from "./types";
+
+/** A small slice of the server's vocabulary, in its shape. */
+export const VOCABULARY: CuisineVocabulary = {
+  version: "cuisines-v1",
+  groups: ["East Asian", "Southeast Asian", "European", "Dishes and more"],
+  cuisines: [
+    { id: "chinese", label: "Chinese", group: "East Asian", aliases: [] },
+    { id: "japanese", label: "Japanese", group: "East Asian", aliases: [] },
+    { id: "ramen", label: "Ramen", group: "East Asian", aliases: [] },
+    { id: "thai", label: "Thai", group: "Southeast Asian", aliases: [] },
+    { id: "vietnamese", label: "Vietnamese", group: "Southeast Asian", aliases: [] },
+    { id: "italian", label: "Italian", group: "European", aliases: [] },
+    { id: "pizza", label: "Pizza", group: "European", aliases: ["pizzeria"] },
+    { id: "barbecue", label: "Barbecue", group: "Dishes and more", aliases: ["bbq", "barbeque"] },
+    { id: "burgers", label: "Burgers", group: "Dishes and more", aliases: ["hamburger"] },
+  ],
+};
 
 export function place(name: string, distance_m: number, extra: Partial<Place> = {}): Place {
   return {

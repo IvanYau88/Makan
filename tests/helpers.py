@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from makan.cuisines import place_cuisines, place_diets
 from makan.places import Place
 from makan.tools import Tool
 
@@ -55,6 +56,7 @@ def overture_rows() -> list[dict[str, Any]]:
 
 
 def place(name: str, category: str, lat: float, lon: float, *labels: str) -> Place:
+    """A place as a provider would build it, with the cuisines and diets its categories name."""
     return Place(
         id=name.lower().replace(" ", "-"),
         name=name,
@@ -62,6 +64,8 @@ def place(name: str, category: str, lat: float, lon: float, *labels: str) -> Pla
         categories=(*labels, category),
         lat=lat,
         lon=lon,
+        cuisines=place_cuisines(category, labels),
+        diets=place_diets(category, labels),
     )
 
 

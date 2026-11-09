@@ -19,7 +19,8 @@ import httpx
 
 from makan.config import Config
 from makan.fit import (
-    CATEGORY_CUISINES,
+    CLEF_CATEGORY_CUISINES,
+    CLEF_CUISINES,
     MODEL_HISTORY_POLICY_VERSION,
     MODEL_POLICY_VERSION,
     FitAssessment,
@@ -98,7 +99,7 @@ def profile_state(
     Without usable owner history the state is exactly version 1. History that cannot be
     read whole gives no state at all, so its dislikes are never silently dropped.
     """
-    if not source.startswith("overture:") or category not in CATEGORY_CUISINES:
+    if not source.startswith("overture:") or category not in CLEF_CATEGORY_CUISINES:
         return None
     release = source.removeprefix("overture:")
     if not 1 <= len(release) <= 128:
@@ -121,7 +122,7 @@ def profile_state(
         return state
     if not history.usable:
         return None
-    state["history"] = history_state(history, CATEGORY_CUISINES[category], source, place_id)
+    state["history"] = history_state(history, CLEF_CATEGORY_CUISINES[category], source, place_id)
     return state if has_taste(state) else None
 
 
@@ -237,7 +238,7 @@ class FitStrategy:
         if not self.online:
             assessments = [
                 cuisine_fit(
-                    r.place.category,
+                    r.place.cuisines,
                     inputs.likes,
                     inputs.dislikes,
                     enabled=self.config.fit_enabled,
@@ -271,9 +272,9 @@ class FitStrategy:
                 problem = FitReason.NO_TASTE
             if problem is None and set(inputs.likes) & set(inputs.dislikes):
                 problem = FitReason.CONFLICT
-            if problem is None and not set((*inputs.likes, *inputs.dislikes)) <= set(
-                CATEGORY_CUISINES.values()
-            ):
+            # The frozen state versions know only their eight cuisines; a wider taste is never
+            # dropped to make a state fit, so the whole assessment abstains instead.
+            if problem is None and not set((*inputs.likes, *inputs.dislikes)) <= set(CLEF_CUISINES):
                 problem = FitReason.UNSUPPORTED
             if problem is None and not consent:
                 problem = FitReason.NO_CONSENT

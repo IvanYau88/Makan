@@ -3,7 +3,16 @@ import userEvent from "@testing-library/user-event";
 import { onTestFinished } from "vitest";
 import L from "leaflet";
 import { App } from "./App";
-import { BROWSE_RESULT, RESULT, browseRun, place, run, scoredRun, stage } from "./test-fixtures";
+import {
+  BROWSE_RESULT,
+  RESULT,
+  VOCABULARY,
+  browseRun,
+  place,
+  run,
+  scoredRun,
+  stage,
+} from "./test-fixtures";
 import type { AppFeatures, Mode, Place, Recommendation, Run } from "./types";
 
 type Handler = (body: Record<string, unknown>) => Response | Promise<Response>;
@@ -45,6 +54,7 @@ function stubApi(handler: Handler, mode: Mode = "live", features?: Partial<AppFe
             attribution_url: "https://tiles.test/copyright",
           },
           ...(features && { features: { recommend: true, groups: true, ...features } }),
+          ...(features?.fit && { cuisines: VOCABULARY }),
         });
       }
       if (url === "/api/fit/session") {
@@ -1064,31 +1074,42 @@ describe("Session cuisine tastes", () => {
       score: 0,
       status: "rated" as const,
       basis: "cuisine_profile" as const,
-      policy_version: "exact-cuisine-v1",
+      policy_version: "listed-cuisine-v2",
       reason: "exact_dislike" as const,
-      explanation: "Exact cuisine match to a stated dislike. Other cuisines are not assessed.",
+      explanation: "Listed cuisine matches a stated dislike. Other cuisines are not assessed.",
     };
     const rated: Recommendation = {
       ...BROWSE_RESULT,
-      places: [place("Mid Thai", 140, { fit })],
+      places: [place("Mid Thai", 140, { fit, cuisines: [{ id: "thai", label: "Thai" }] })],
       candidate_count: 1,
     };
     const calls = stubApi(() => answer(rated), "places", { recommend: false, fit: true });
     const user = userEvent.setup();
     render(<App />);
     await user.click(await screen.findByText("Your tastes"));
-    expect(screen.getAllByRole("combobox")).toHaveLength(9);
-    await user.selectOptions(screen.getByLabelText("Thai"), "like");
-    await user.selectOptions(screen.getByLabelText("Thai"), "skip");
+    expect(screen.getAllByRole("button", { name: /^Like / })).toHaveLength(9);
+    await user.click(screen.getByRole("button", { name: "Like Thai" }));
+    expect(screen.getByRole("button", { name: "Like Thai" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await user.click(screen.getByRole("button", { name: "Skip Thai" }));
+    expect(screen.getByRole("button", { name: "Like Thai" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Remove Thai from skips" })).toBeInTheDocument();
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Browse here" }));
     await screen.findByRole("heading", { name: "Places nearby" });
     expect(calls[0]?.tastes).toEqual({ likes: [], dislikes: ["thai"] });
     expect(screen.getByRole("img", { name: "Taste match 0 out of 100" })).toBeInTheDocument();
     await user.click(row(/^1\. Mid Thai/));
     expect(screen.getAllByRole("img", { name: "Taste match 0 out of 100" })).toHaveLength(2);
-    expect(screen.getAllByText(/Exact cuisine match to a stated dislike/).length).toBeGreaterThan(
+    expect(screen.getAllByText(/Listed cuisine matches a stated dislike/).length).toBeGreaterThan(
       0,
     );
+    expect(screen.getByText("Listed cuisine: Thai")).toBeInTheDocument();
     expect(screen.queryByText("0%")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Clear tastes" }));
     expect(screen.queryByRole("heading", { name: "Places nearby" })).not.toBeInTheDocument();
@@ -1096,6 +1117,36 @@ describe("Session cuisine tastes", () => {
     await user.click(screen.getByRole("button", { name: "Browse here" }));
     await screen.findByRole("heading", { name: "Places nearby" });
     expect(calls[1]?.tastes).toEqual({ likes: [], dislikes: [] });
+  });
+
+  it("finds wider cuisines by search and alias, grouped, and sends their vocabulary ids", async () => {
+    const calls = stubApi(() => answer(BROWSE_RESULT), "places", { recommend: false, fit: true });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByText("Your tastes"));
+    const list = screen.getByRole("group", { name: "Cuisines" });
+    expect(
+      within(list)
+        .getAllByRole("heading")
+        .map((h) => h.textContent),
+    ).toEqual(["East Asian", "Southeast Asian", "European", "Dishes and more"]);
+    const search = screen.getByRole("searchbox", { name: "Find a cuisine" });
+    await user.type(search, "bbq");
+    expect(within(list).getAllByRole("button", { name: /^Like / })).toHaveLength(1);
+    expect(screen.getByText("1 cuisine found")).toHaveAttribute("role", "status");
+    await user.click(screen.getByRole("button", { name: "Like Barbecue" }));
+    await user.clear(search);
+    await user.type(search, "piz");
+    await user.click(screen.getByRole("button", { name: "Skip Pizza" }));
+    await user.clear(search);
+    await user.type(search, "noodles");
+    expect(within(list).queryAllByRole("button", { name: /^Like / })).toHaveLength(0);
+    expect(screen.getByText(/No cuisine matches “noodles”/)).toBeInTheDocument();
+    // Choices stay visible and removable while the list is filtered.
+    await user.click(screen.getByRole("button", { name: "Remove Pizza from skips" }));
+    await user.click(screen.getByRole("button", { name: "Browse here" }));
+    await screen.findByRole("heading", { name: "Places nearby" });
+    expect(calls[0]?.tastes).toEqual({ likes: ["barbecue"], dislikes: [] });
   });
 
   it("works with browser storage blocked and a fresh tab starts blank", async () => {
@@ -1109,12 +1160,18 @@ describe("Session cuisine tastes", () => {
     const user = userEvent.setup();
     const mounted = render(<App />);
     await user.click(await screen.findByText("Your tastes"));
-    await user.selectOptions(screen.getByLabelText("Thai"), "like");
-    expect(screen.getByLabelText("Thai")).toHaveValue("like");
+    await user.click(screen.getByRole("button", { name: "Like Thai" }));
+    expect(screen.getByRole("button", { name: "Like Thai" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     mounted.unmount();
     render(<App />);
     await user.click(await screen.findByText("Your tastes"));
-    expect(screen.getByLabelText("Thai")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Like Thai" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 
   it("does not offer taste controls when fit is disabled or unknown", async () => {
@@ -1750,7 +1807,7 @@ describe("Online taste fit", () => {
     expect(
       screen.getByText(/Online scoring sends your selected cuisine likes and dislikes/),
     ).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText("Thai"), "like");
+    await user.click(screen.getByRole("button", { name: "Like Thai" }));
     const checkbox = screen.getByRole("checkbox", { name: "Use online taste scoring in this tab" });
     expect(checkbox).not.toBeChecked();
     await user.click(checkbox);
@@ -1810,7 +1867,7 @@ describe("Online taste fit", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(await screen.findByText("Your tastes"));
-    await user.selectOptions(screen.getByLabelText("Thai"), "like");
+    await user.click(screen.getByRole("button", { name: "Like Thai" }));
     const checkbox = screen.getByRole("checkbox", { name: "Use online taste scoring in this tab" });
     await user.click(checkbox);
     await waitFor(() => expect(checkbox).toBeChecked());

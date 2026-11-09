@@ -11,6 +11,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import Protocol
+from urllib.parse import urlsplit
 
 EARTH_RADIUS_M = 6_371_000
 METERS_PER_MILE = 1609.344
@@ -35,6 +36,12 @@ class Place:
     lon: float
     address: str | None = None
     distance_m: int | None = None  # from the query point, set by `rank_nearby`
+    # Vocabulary terms (`makan.cuisines`) the source's own categories name, most specific first.
+    cuisines: tuple[str, ...] = ()
+    # Soft diet labels from the source's categories, such as "vegan". Never verified safety.
+    diets: tuple[str, ...] = ()
+    website: str | None = None  # the venue's own http or https address, for a link out
+    brand: str | None = None  # the chain the source says the venue belongs to
 
     def matches(self, term: str) -> bool:
         """True if every word of `term` appears in one category label.
@@ -102,6 +109,39 @@ class PlacesProvider(Protocol):
         Every place carries `distance_m`. Raise PlacesError on failure.
         """
         ...
+
+
+MAX_URL_CHARS = 2048
+
+
+def web_link(text: object) -> str | None:
+    """`text` as an absolute http or https address that is safe to link to, else None.
+
+    Source data is not trusted: no other scheme, no credentials, spaces, or control characters,
+    so a link out can never run script or hide where it goes. A bare domain such as
+    `www.venue.example`, which sources often give, is read as https.
+    """
+    if not isinstance(text, str):
+        return None
+    url = text.strip()
+    if url and "://" not in url and not url.startswith("//") and ":" not in url.split("/")[0]:
+        url = "https://" + url
+    if (
+        not url
+        or len(url) > MAX_URL_CHARS
+        or any(ch.isspace() or not ch.isprintable() for ch in url)
+    ):
+        return None
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+    except ValueError:
+        return None
+    if parts.scheme.lower() not in ("http", "https") or not host or "." not in host:
+        return None
+    if "@" in parts.netloc:
+        return None
+    return url
 
 
 def distance_label(meters: int) -> str:
