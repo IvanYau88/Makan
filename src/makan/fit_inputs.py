@@ -4,19 +4,15 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from typing import Literal
 from uuid import UUID
 
+from makan.cuisines import resolve
 from makan.fit import FitReason
 from makan.memory.content import claim
 from makan.memory.hard import names_place, parse_hard
 from makan.memory.service import Memory
 from makan.memory.store import Owner
 from makan.visits.evidence import TasteHistory
-
-Cuisine = Literal[
-    "chinese", "indian", "italian", "japanese", "korean", "mexican", "thai", "vietnamese"
-]
 
 
 @dataclass(frozen=True)
@@ -37,6 +33,8 @@ class FitInputs:
 def owner_fit_inputs(memory: Memory, user_id: UUID) -> FitInputs:
     """Read this owner's explicit tastes and hard rules, with no visits or free prose.
 
+    A saved cuisine is free text, read as the vocabulary term it names ("Thai food" is `thai`).
+    Text that names no term stays as typed, so the fit reports it as unsupported.
     A stale or unreadable cuisine prevents a partial profile from looking complete.
     Hard constraints are processed separately, in plain code, regardless of soft evidence.
     """
@@ -71,11 +69,11 @@ def owner_fit_inputs(memory: Memory, user_id: UUID) -> FitInputs:
             problem = FitReason.STALE
             continue
         try:
-            cuisine = str(claim(fact.kind, fact.content).content["cuisine"])
+            text = str(claim(fact.kind, fact.content).content["cuisine"])
         except ValueError:
             problem = FitReason.UNSUPPORTED
             continue
-        (likes if fact.kind == "cuisine_like" else dislikes).append(cuisine)
+        (likes if fact.kind == "cuisine_like" else dislikes).append(resolve(text) or text)
     return FitInputs(
         tuple(likes),
         tuple(dislikes),

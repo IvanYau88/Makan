@@ -11,6 +11,7 @@ import json
 import math
 import re
 
+from makan.cuisines import place_cuisines, place_diets
 from makan.places.base import Place, PlaceQuery, rank_nearby
 from makan.providers.base import Completion, Message, ToolCall, ToolSpec, Usage
 
@@ -94,6 +95,8 @@ class DemoPlaces:
                     lat=lat + north,
                     lon=lon + east,
                     address=f"{10 + i} Sample Street",
+                    cuisines=place_cuisines(category),
+                    diets=place_diets(category),
                 )
             )
         return places

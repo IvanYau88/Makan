@@ -1,6 +1,7 @@
 import pytest
 
 from makan.places import COORD_DECIMALS, PlaceQuery, distance_label, distance_m, rank_nearby
+from makan.places.base import web_link
 from tests.helpers import place
 
 # Three places on a line due east of the origin, about 111 m apart per 0.001 degree at the equator.
@@ -118,3 +119,33 @@ def test_near_rounds_the_location_to_about_a_hundred_meters() -> None:
 def test_out_of_range_queries_are_rejected(overrides: dict[str, object]) -> None:
     with pytest.raises(ValueError):
         query(**overrides)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("https://venue.example/", "https://venue.example/"),
+        ("  http://venue.example/menu?x=1  ", "http://venue.example/menu?x=1"),
+        ("HTTPS://Venue.example", "HTTPS://Venue.example"),
+        ("javascript:alert(1)", None),
+        ("data:text/html,hi", None),
+        ("ftp://venue.example", None),
+        ("www.venue.example", "https://www.venue.example"),
+        ("venue.example/menu", "https://venue.example/menu"),
+        ("http://localhost:8000", None),
+        ("mailto:owner@venue.example", None),
+        ("//venue.example", None),
+        ("https://user:pass@venue.example", None),
+        ("https://venue.example/a b", None),
+        ("https://venue.example/\x00", None),
+        ("https://[bad", None),
+        ("https://venue.example/" + "a" * 2048, None),
+        ("", None),
+        (None, None),
+        (42, None),
+    ],
+)
+def test_only_plain_http_links_from_source_data_are_kept(
+    text: object, expected: str | None
+) -> None:
+    assert web_link(text) == expected

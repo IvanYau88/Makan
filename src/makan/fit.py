@@ -1,7 +1,8 @@
 """Local cuisine fit, separate from request ranking and model confidence.
 
-Version 1 knows only exact primary source categories. No model, name inference, or
-cross-cuisine relationship supplies missing evidence. Hard constraints live elsewhere.
+It compares stated tastes with the cuisines a place's own source categories name, in the
+controlled vocabulary of `makan.cuisines`. No model, name inference, or related cuisine
+supplies missing evidence. Hard constraints live elsewhere.
 """
 
 from __future__ import annotations
@@ -10,7 +11,10 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-POLICY_VERSION = "exact-cuisine-v1"
+from makan.cuisines import CUISINE_IDS
+
+# Version 2 reads the wider listed-cuisine vocabulary; version 1 knew eight exact categories.
+POLICY_VERSION = "listed-cuisine-v2"
 MODEL_POLICY_VERSION = "clef-profile-fit-v1-proposed"
 # The same questions and acceptance over state version 2, with the owner's own history evidence.
 MODEL_HISTORY_POLICY_VERSION = "clef-profile-fit-v2-proposed"
@@ -36,6 +40,8 @@ class FitReason(StrEnum):
     CONFLICT = "conflicting_tastes"
     UNSUPPORTED = "unsupported_tastes"
     NO_MATCH = "no_exact_category_match"
+    NO_CUISINE = "no_listed_cuisine"
+    MIXED = "mixed_cuisine_match"
     LIKE = "exact_like"
     DISLIKE = "exact_dislike"
 
@@ -61,9 +67,11 @@ _EXPLANATIONS = {
     FitReason.STALE: "Confirm your saved tastes to see fit.",
     FitReason.CONFLICT: "A cuisine is both liked and skipped. Check your tastes.",
     FitReason.UNSUPPORTED: "Some tastes are outside the supported cuisines, so fit is Unrated.",
-    FitReason.NO_MATCH: "No exact cuisine match is available from the place category.",
-    FitReason.LIKE: "Exact cuisine match to a stated like. Other cuisines are not assessed.",
-    FitReason.DISLIKE: "Exact cuisine match to a stated dislike. Other cuisines are not assessed.",
+    FitReason.NO_MATCH: "The cuisine this place lists matches none of your tastes.",
+    FitReason.NO_CUISINE: "The place category names no cuisine, so fit is Unrated.",
+    FitReason.MIXED: "This place lists a cuisine you like and one you skip, so fit is Unrated.",
+    FitReason.LIKE: "Listed cuisine matches a stated like. Other cuisines are not assessed.",
+    FitReason.DISLIKE: "Listed cuisine matches a stated dislike. Other cuisines are not assessed.",
 }
 
 
@@ -133,31 +141,35 @@ class FitAssessment:
         }
 
 
-# Deliberately exact: ramen/sushi/pizza and generic restaurant labels imply no cuisine here.
-CATEGORY_CUISINES = {
-    f"{cuisine}_restaurant": cuisine
-    for cuisine in (
-        "chinese",
-        "indian",
-        "italian",
-        "japanese",
-        "korean",
-        "mexican",
-        "thai",
-        "vietnamese",
-    )
-}
+# The frozen Clef state versions 1 and 2 know only these eight exact primary categories, and
+# their schemas, manifests and gateway pin are hashed, so the wider vocabulary never enters them.
+CLEF_CUISINES = (
+    "chinese",
+    "indian",
+    "italian",
+    "japanese",
+    "korean",
+    "mexican",
+    "thai",
+    "vietnamese",
+)
+CLEF_CATEGORY_CUISINES = {f"{cuisine}_restaurant": cuisine for cuisine in CLEF_CUISINES}
 
 
 def cuisine_fit(
-    category: str,
+    cuisines: tuple[str, ...],
     likes: tuple[str, ...],
     dislikes: tuple[str, ...],
     *,
     enabled: bool = False,
     problem: FitReason | None = None,
 ) -> FitAssessment:
-    """An exact-category baseline, never a probability of enjoyment or a safety decision."""
+    """A listed-cuisine baseline, never a probability of enjoyment or a safety decision.
+
+    `cuisines` are the vocabulary terms the place's own categories name, see
+    `makan.cuisines.place_cuisines`. A place that names both a like and a dislike is Unrated,
+    so the order of tastes or categories never decides.
+    """
     if not enabled:
         return FitAssessment()
     if problem is not None:
@@ -166,11 +178,16 @@ def cuisine_fit(
         return FitAssessment(reason=FitReason.NO_TASTE)
     if set(likes) & set(dislikes):
         return FitAssessment(reason=FitReason.CONFLICT)
-    if not (set(likes) | set(dislikes)) <= set(CATEGORY_CUISINES.values()):
+    if not (set(likes) | set(dislikes)) <= CUISINE_IDS:
         return FitAssessment(reason=FitReason.UNSUPPORTED)
-    cuisine = CATEGORY_CUISINES.get(category)
-    if cuisine in likes:
+    if not cuisines:
+        return FitAssessment(reason=FitReason.NO_CUISINE)
+    liked = set(cuisines) & set(likes)
+    disliked = set(cuisines) & set(dislikes)
+    if liked and disliked:
+        return FitAssessment(reason=FitReason.MIXED)
+    if liked:
         return FitAssessment(100, FitReason.LIKE)
-    if cuisine in dislikes:
+    if disliked:
         return FitAssessment(0, FitReason.DISLIKE)
     return FitAssessment(reason=FitReason.NO_MATCH)

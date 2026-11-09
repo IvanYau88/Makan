@@ -192,7 +192,7 @@ Latitude 90 or -90 finds nothing, which shows the no-results state.
 Add `--places-only` (or set `MAKAN_PLACES_ONLY=1`) to browse real places from Overture Maps with no recommendation model and, by default, no key.
 Its searches call a model only when online fit is enabled and the diner opts in, and then only Cloudflare's Clef taste scoring.
 Only Browse nearby works there, and the page says so in a banner.
-Optional display fit is off by default (`MAKAN_FIT_ENABLED=0`); its local strategy uses exact cuisine categories.
+Optional display fit is off by default (`MAKAN_FIT_ENABLED=0`); its local strategy matches the cuisines a place's source categories name (see [the listed cuisine vocabulary](docs/DESIGN.md#listed-cuisine-vocabulary)).
 Online fit additionally requires the separate default-off `MAKAN_FIT_ONLINE_ENABLED` flag, explicit Clef selection, server gateway settings and diner opt-in.
 Keep online fit disabled until the qualification and rollout described in [the design](docs/DESIGN.md#selected-web-fit-strategy-and-explicit-consent).
 With online fit selected, unavailable scoring leaves places Unrated with a reason and never falls back to another model or local numbers.

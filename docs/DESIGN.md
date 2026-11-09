@@ -283,7 +283,7 @@ Not done yet: the migration runner and an adapter that writes trace events to th
   It takes `latitude`, `longitude`, and optional `radius_m` (100 to 5,000, default 1,000), `cuisine`, `category`, and `limit` (1 to 20, default 10).
   Bad arguments are `ValueError`s that the loop returns to the model as tool errors.
   A provider failure is a `PlacesError`, which the loop also returns as a tool error.
-- Results are one line of compact JSON: the search as it ran, a count, and per place an id, name, category, distance in meters, coordinates, and address when known.
+- Results are one line of compact JSON: the search as it ran, a count, and per place an id, name, category, distance in meters, coordinates, and, when known, address, listed cuisines, listed diets, website and brand.
   The coordinates are a venue's own public point, rounded to five decimals (about a meter), so a map can pin it.
   They were once dropped here, which made a map impossible.
   The user's own location keeps its three decimal rounding.
@@ -301,6 +301,15 @@ Not done yet: the migration runner and an adapter that writes trace events to th
   - Places with a confidence under 0.5, with no name, or that are not open (permanently or temporarily closed) are dropped in the query.
   - A place is a point, so its bounding box is its location and the spatial extension is not needed.
   - The query uses the `taxonomy` columns that replaced `categories`, so a pinned release must be recent enough to have them.
+  - The query also selects `basic_category`, `websites` and `brand.names.primary`.
+    `basic_category` is only the last fallback for a row with no taxonomy at all.
+    The first `websites` entry that passes `web_link` becomes `Place.website`, and the brand name becomes `Place.brand`.
+    `phones`, `socials`, `emails` and `sources` stay unselected until a feature needs them.
+  - `Place` gains `cuisines`, `diets`, `website` and `brand`, all with empty defaults, so existing fixture rows, tests and guest sessions keep working unchanged.
+    The provider fills `cuisines` and `diets` from its own categories through `makan.cuisines`, see "Listed cuisine vocabulary" below.
+  - `web_link` keeps only an absolute http or https address with a dotted host, no credentials, no whitespace or control characters, and at most 2,048 characters.
+    A bare domain such as `www.venue.example`, which Overture often gives, is read as https.
+    The web channel checks again when it serializes a place, and the page checks a third time before it renders a link, so source data can never become a `javascript:` or other unsafe link.
   - With no pinned release, the latest one is read from the STAC catalog on first use, because old releases are removed from S3 after a couple of months.
     `MAKAN_OVERTURE_RELEASE` pins one.
   - The box does not wrap at the antimeridian.
@@ -1176,7 +1185,7 @@ Slice 4 connects the earlier native parser and shared gateway to the existing we
 It decorates all eligible browse and recommendation candidates once, after their graph finishes, and reuses each immutable `FitAssessment` in JSON, NDJSON, pick, runners-up, list and detail.
 Fit changes no ranking, nearest-first browse ordering, request-match evidence or rank pins.
 `MAKAN_FIT_ENABLED=0` still disables display fit, and the new `MAKAN_FIT_ONLINE_ENABLED=0` separately keeps online scoring off by default.
-With online fit off, the selected strategy remains the existing deterministic exact-cuisine baseline.
+With online fit off, the selected strategy remains the existing deterministic local cuisine baseline, now over the listed-cuisine vocabulary.
 Online selection requires both fit switches and `MAKAN_FIT_BACKEND=clef` with the explicit frozen model id.
 A selected online strategy with absent or invalid gateway credentials returns Unrated/configuration without constructing an HTTP client or falling back to local numbers, native Clef, Jev or OpenRouter.
 The public Vercel import remains inert, guest-only and independent of a key, network or database.
@@ -1534,27 +1543,30 @@ Before this, a blank request was silently turned into "something good to eat" an
 
 ### Local cuisine fit decisions
 
-`makan.fit` implements the optional fit value and an exact-category baseline, independently of the fixed-answer scorer, the request matcher, and the ranking policy.
+`makan.fit` implements the optional fit value and a listed-cuisine baseline, independently of the fixed-answer scorer, the request matcher, and the ranking policy.
 `MAKAN_FIT_ENABLED` defaults to false in every deployment, including public Vercel, and enabling it alone never enables a model or accounts; online fit has its separate default-off switch above.
 There is no generated evidence table, inference transport, background enrichment, daily discovery list, new dependency, or schema change in this slice.
 
-- **One bounded value:** every serialized place has a `fit` object with integer-or-null `score`, derived `status`, fixed `reason` and explanation, `basis=cuisine_profile`, and `policy_version=exact-cuisine-v1`.
+- **One bounded value:** every serialized place has a `fit` object with integer-or-null `score`, derived `status`, fixed `reason` and explanation, `basis=cuisine_profile`, and `policy_version=listed-cuisine-v2` (it was `exact-cuisine-v1` while the vocabulary had eight cuisines).
   `FitAssessment` rejects booleans, floats, nonfinite values, out-of-range integers, and mismatched rated/null reasons.
   Null statuses distinguish disabled, no taste, insufficient evidence, and unavailable.
   The public shape is an explicit allowlist with no raw memory, confidence, scorer output, tokens, or private evidence.
   `RankedCandidate` defaults to disabled; the web channel decorates every candidate once and reuses its assessment for pick, runners-up, and list in both JSON and NDJSON.
   Existing ranking remains unchanged, apart from plain-code removal of known never-go places.
-- **Exact-category evidence only:** the supported vocabulary is Chinese, Indian, Italian, Japanese, Korean, Mexican, Thai, and Vietnamese.
-  Only the corresponding exact primary `<cuisine>_restaurant` category supplies a match.
-  An exact stated like yields 100 and an exact stated dislike yields 0; these are deterministic policy endpoints, not calibrated probabilities or venue quality ratings.
+- **Listed-cuisine evidence only:** a place's cuisines are the vocabulary terms its own source categories name, see "Listed cuisine vocabulary" below.
+  A stated like among them yields 100 and a stated dislike yields 0; these are deterministic policy endpoints, not calibrated probabilities or venue quality ratings.
   Repeated choices do not increase the score, and order never decides conflicting tastes.
-  Broad categories, unrelated cuisines, ramen, sushi, pizza, venue names, request text, distance, ranks, ratings, and tags supply no inferred relationship.
-  With multiple supported tastes, the assessment describes only the exact matching cuisine and explicitly says other cuisines were not assessed.
+  A place that lists both a liked and a skipped cuisine, such as a pizza place for someone who likes pizza and skips Italian, is Unrated with `mixed_cuisine_match`.
+  A place whose categories name no cuisine is Unrated with `no_listed_cuisine`, distinct from `no_exact_category_match` for a listed cuisine that matches none of the tastes.
+  Venue names, request text, distance, ranks, ratings, tags and related cuisines supply no inferred relationship.
+  With multiple tastes, the assessment describes only the matching cuisine and explicitly says other cuisines were not assessed.
   A material unsupported, stale, malformed, or conflicting explicit cuisine input makes the entire assessment Unrated instead of presenting an incomplete profile as complete.
-  No taste is null, never a fabricated 50, and same-category places get the same assessment.
-- **Guest choices:** an optional disclosure under the search form offers one labeled native select per supported cuisine with No preference, Like, and Prefer to skip.
-  It uses the existing light design tokens with 44 px controls, two columns on phones, and four columns on desktop to keep the expanded form compact.
-  The choices live only in React state for the current tab and are sent as a bounded, allowlisted `tastes` request field.
+  No taste is null, never a fabricated 50, and places listing the same cuisines get the same assessment.
+- **Guest choices:** an optional disclosure under the search form holds a taste picker over the whole vocabulary, served by `/api/config` as `cuisines` only where fit is enabled.
+  It has a search box that matches the start of any word of a term's label, id or aliases ("bbq" finds Barbecue), the chosen likes and skips as removable chips above it, and a bounded scrolling list grouped by region with sticky group headings, alphabetical within a group.
+  Each term has Like and Skip toggle buttons with `aria-pressed`; pressing the current choice again clears it.
+  The list shows one column on phones, two from 40rem and three from 64rem, with 44 px controls, in the existing light design tokens.
+  The choices live only in React state for the current tab and are sent as a bounded `tastes` request field of vocabulary ids; the API rejects anything else, including free text and diet words, and bounds each list by the vocabulary size.
   There is no browser storage access, persistent memory write, arbitrary free-text taste field, or automatic inference from a search request.
   Clear tastes immediately removes displayed results and cancels an in-flight search; changing a taste does the same and asks the person to search again.
   Authentication changes reset choices, results, and execution history and cancel pending requests before another identity can receive the previous result.
@@ -1562,14 +1574,16 @@ There is no generated evidence table, inference transport, background enrichment
   Opening Account discards search results so a later taste edit cannot leave an old score visible on return.
 - **Account inputs:** `makan.fit_inputs.owner_fit_inputs` recalls only the verified current owner's cuisine and constraint facts through `Memory.recall(Owner(user_id=...))`.
   Cuisine facts must be explicit (`source=stated`) and non-stale; observed cuisine guesses and place ratings are not used.
-  Saved unsupported cuisine text stays local and cannot trigger an online fallback.
+  A saved cuisine is free text, read through `makan.cuisines.resolve` as the term it names: "Thai food", "bbq" and "burger" become `thai`, `barbecue` and `burgers`, so every taste saved before the vocabulary widened stays valid.
+  Text that names no term, such as "spicy noodles", stays as typed and makes the fit unsupported, as before; it stays local and cannot trigger an online fallback.
   An authenticated request ignores the guest taste field and always uses that owner's current facts, without caching a personalized result between requests.
   Forgetting or reconfirming a taste takes effect at the next search.
   The narrow layer around browse deliberately bypasses the recommendation retrieval gate because the place search itself still reads no memory and calls no model.
 - **Hard rules first:** `FitInputs.excludes` uses the existing `names_place` rule before fitting returned candidates, including browse results.
   Reading owner constraints and applying them is independent of `MAKAN_FIT_ENABLED`, so turning scores off never turns known exclusions or safety warnings off.
   Known never-go constraints remain effective even when soft tastes are stale or unsupported.
-  Allergies, diets, and other hard requirements remain plain-code warnings because the place taxonomy cannot verify them, and an exact-category 100 never establishes safety.
+  Allergies, diets, and other hard requirements remain plain-code warnings because the place taxonomy cannot verify them, and a listed-cuisine 100 never establishes safety.
+  A place's listed diet, such as a vegan category, never relaxes a warning, never removes or admits a place, and never changes a score or the order.
   Failure to read optional owner inputs yields unavailable fit plus a bounded warning that saved exclusions could not be checked; the place search still succeeds.
   No other owner's visits, tags, memories, or profiles are queried.
 - **Display and transport:** list and detail plates receive the optional score, preserve zero distinctly from null, and show no percent sign.
@@ -1580,6 +1594,41 @@ There is no generated evidence table, inference transport, background enrichment
   Personalized JSON and NDJSON responses are `private, no-store` and no taste choices are added to trace events.
   The places banner says searches call no language model and, when fit is on, explains that optional cuisine estimates use stated tastes and source categories.
   Public guest-only defaults and inert `app.py` import remain unchanged.
+
+### Listed cuisine vocabulary
+
+This is slice A of the richer place data plan: use what Overture already gives for free, before any new source.
+Overture names over a hundred kinds of restaurant, but the fit knew eight cuisines, so most nearby places showed Unrated although their category named a cuisine.
+`makan.cuisines` is the one controlled vocabulary both sides speak, versioned as `VOCABULARY_VERSION` (`cuisines-v1`).
+
+- **Terms:** 152 terms, each with a stable id, a label, a picker group, the Overture categories that name it, and aliases people type.
+  They cover national and regional cuisines, dishes and styles (pizza, sushi, ramen, burgers, barbecue, seafood, tacos), and bakeries and sweets.
+  A source category names exactly one term, and a change to the terms or their categories is a new vocabulary version.
+- **Mapping rule:** a place carries the term its own primary category names, plus every term its parent categories name, because Overture's own hierarchy files pizza under Italian and sushi under Japanese.
+  Nine broad regions (Asian, African, Caribbean, European, Eastern European, Latin American, Mediterranean, Middle Eastern, Scandinavian) count only when the place's primary category is that region, never as a parent.
+  Overture's grouping of countries into regions is too loose to stand for a diner's taste: it files Italian under Mediterranean and Georgian under Middle Eastern, so a skip of Mediterranean must not zero every pizza place.
+  Alternate categories count like parents.
+  Ramen is not filed under Japanese by the source, so it is not Japanese here.
+- **Explicitly unmatched:** `GENERIC_CATEGORIES` lists the restaurant categories that name no cuisine (`restaurant`, `bar_and_grill_restaurant`, `buffet_restaurant`, meal formats, and taxonomy groupings like `east_asian_restaurant`).
+  Drink venues, cafes, food courts, food trucks and gastropubs name no cuisine either, and any category the source adds later is unmatched until the vocabulary maps it.
+  `tests/fixtures/overture_food_categories.json` records every food category seen in five US city centers in release `2026-10-21.0`, and a test fails if a restaurant category there is neither mapped, a diet, nor listed as generic, so every new term is a conscious decision.
+  On that sample the vocabulary lets 75% of restaurant places be matched, up from 28% with eight cuisines, and 60% of all food places, up from 17%; most of the rest are generic `restaurant`, coffee shops, cafes and bars.
+- **Diets are soft facts:** `vegan_restaurant`, `vegetarian_restaurant`, `halal_restaurant`, `kosher_restaurant` and `gluten_free_restaurant` become `Place.diets`, never cuisines.
+  The place detail shows them as "Listed as vegan by the data source" with a note that the label is not verified, next to the existing check-before-going caveat.
+  They never feed fit, eligibility, exclusion, ranking or the hard-rule warnings, which stay in plain code.
+  The places tool tells the model the same: listed cuisines and diets are the source's labels, not menus, and never verify a dietary requirement.
+- **Website and brand:** the place detail links out to the venue's website as a plain link that opens a new tab with `noopener noreferrer`, after Directions and View on OpenStreetMap, and never for demo venues.
+  The brand is carried in the API for later use and not shown, since it usually repeats the name.
+  No website is fetched; on-demand menu facts are a later slice.
+- **API shape:** each serialized place carries `cuisines` and `diets` as `{id, label}` lists, `website` and `brand`, so a client needs no vocabulary to display them.
+  Older clients ignore the fields and older servers' places still render.
+- **Clef stays frozen:** the Clef state versions 1 and 2, their schemas, manifests, fixtures and gateway pin are unchanged.
+  `makan.fit.CLEF_CUISINES` keeps their eight cuisines, only an exact one of those primary categories enters a state, and the online path abstains as unsupported when any taste is outside them, rather than trimming a taste to fit.
+  The picker says so when online scoring is on.
+  No state version 3 is added in this slice: online fit is off in production and unqualified, and the next slice (OpenStreetMap tags) changes the candidate state again, so one new state version, manifest, gateway pin and requalification should carry both.
+- **Privacy:** nothing new leaves the server.
+  The vocabulary is public data, served only where fit is on; the public Vercel site keeps fit off, so its config is unchanged apart from a null `cuisines`.
+  Tastes stay in the tab or the owner's memory, and Overture attribution is unchanged.
 
 ### Map and execution decisions
 

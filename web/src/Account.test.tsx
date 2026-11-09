@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
-import { RESULT } from "./test-fixtures";
+import { RESULT, VOCABULARY } from "./test-fixtures";
 import type { Me, Recommendation, Taste } from "./types";
 
 // The Supabase client is the only thing mocked here: it stands for the network calls to Supabase
@@ -104,6 +104,7 @@ function stubApi(
             fit: options.fit === true,
             online_fit: options.onlineFit === true,
           },
+          ...(options.fit === true && { cuisines: VOCABULARY }),
         });
       }
       api.calls.push({ method, url, headers, body });
@@ -190,7 +191,7 @@ it("clears guest tastes and results at sign-in and sign-out instead of carrying 
   const user = userEvent.setup();
   render(<App />);
   await user.click(await screen.findByText("Your tastes"));
-  await user.selectOptions(screen.getByLabelText("Thai"), "like");
+  await user.click(screen.getByRole("button", { name: "Like Thai" }));
   await user.type(screen.getByLabelText("What are you in the mood for?"), "thai");
   await user.click(screen.getByRole("button", { name: "Find food here" }));
   await screen.findByRole("heading", { name: "Nearby options" });
@@ -209,7 +210,10 @@ it("clears guest tastes and results at sign-in and sign-out instead of carrying 
   expect(screen.queryByRole("heading", { name: "Nearby options" })).not.toBeInTheDocument();
   act(() => supabase.emit("SIGNED_OUT", null));
   expect(screen.queryByRole("heading", { name: "Nearby options" })).not.toBeInTheDocument();
-  expect(screen.getByLabelText("Thai")).toHaveValue("");
+  expect(screen.getByRole("button", { name: "Like Thai" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
 });
 
 it("drops a guest consent reply that lands after sign-in", async () => {
@@ -227,7 +231,7 @@ it("drops a guest consent reply that lands after sign-in", async () => {
   const user = userEvent.setup();
   render(<App />);
   await user.click(await screen.findByText("Your tastes"));
-  await user.selectOptions(screen.getByLabelText("Thai"), "like");
+  await user.click(screen.getByRole("button", { name: "Like Thai" }));
   await user.click(screen.getByRole("checkbox", { name: "Use online taste scoring in this tab" }));
   await waitFor(() => expect(release).toBeDefined());
   act(() => supabase.emit("SIGNED_IN", SESSION));
@@ -252,7 +256,7 @@ it("purges a guest's online scope when the guest signs in", async () => {
   const user = userEvent.setup();
   render(<App />);
   await user.click(await screen.findByText("Your tastes"));
-  await user.selectOptions(screen.getByLabelText("Thai"), "like");
+  await user.click(screen.getByRole("button", { name: "Like Thai" }));
   const checkbox = screen.getByRole("checkbox", { name: "Use online taste scoring in this tab" });
   await user.click(checkbox);
   await waitFor(() => expect(checkbox).toBeChecked());

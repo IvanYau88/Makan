@@ -7,7 +7,7 @@ run the graph, and return its recommendation and failure evidence together.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
@@ -74,6 +74,28 @@ class Candidate:
     request_fit: int
     lat: float | None = None  # the venue's own coordinates, None when the source gave none
     lon: float | None = None
+    cuisines: tuple[str, ...] = ()  # vocabulary terms the source's categories name
+    diets: tuple[str, ...] = ()  # soft diet labels from the source, never verified safety
+    website: str | None = None
+    brand: str | None = None
+
+    @classmethod
+    def from_tool(cls, p: Mapping[str, Any]) -> Candidate:
+        """One place from the places tool's JSON, which has each optional field only when known."""
+        return cls(
+            p["id"],
+            p["name"],
+            p["category"],
+            p["distance_m"],
+            p.get("address"),
+            0,
+            p.get("lat"),
+            p.get("lon"),
+            tuple(p.get("cuisines") or ()),
+            tuple(p.get("diets") or ()),
+            p.get("website"),
+            p.get("brand"),
+        )
 
     def matches(self, term: str) -> bool:
         # The tool exposes the primary category only, not the source's full taxonomy.
@@ -264,16 +286,7 @@ def research_steps(
             found = json.loads(result.unwrap())
             truncated = truncated or found["count"] >= MAX_LIMIT
             for p in found["places"]:
-                candidate = Candidate(
-                    p["id"],
-                    p["name"],
-                    p["category"],
-                    p["distance_m"],
-                    p.get("address"),
-                    0,
-                    p.get("lat"),
-                    p.get("lon"),
-                )
+                candidate = Candidate.from_tool(p)
                 fit = sum(
                     bool(term) and (name == "requested_places" or candidate.matches(term))
                     for term in (intent.cuisine, intent.category)

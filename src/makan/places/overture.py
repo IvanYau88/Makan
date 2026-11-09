@@ -5,7 +5,8 @@ DuckDB reads only the rows whose bounding box falls in the search area, so nothi
 up front and no API key is needed.
 DuckDB is an optional dependency: `pip install "makan[overture]"`.
 
-Overture has names, categories, addresses, and locations. It has no hours, ratings, or prices.
+Overture has names, categories, addresses, locations, websites, and brands. It has no hours,
+ratings, prices, or menus.
 """
 
 from __future__ import annotations
@@ -19,7 +20,8 @@ from typing import Any, Protocol
 
 import httpx
 
-from makan.places.base import Place, PlaceQuery, PlacesError, rank_nearby
+from makan.cuisines import place_cuisines, place_diets
+from makan.places.base import Place, PlaceQuery, PlacesError, rank_nearby, web_link
 
 STAC_CATALOG = "https://stac.overturemaps.org/catalog.json"
 PLACES_PATH = "s3://overturemaps-us-west-2/release/{release}/theme=places/type=place/*"
@@ -48,6 +50,9 @@ SELECT
     taxonomy.primary AS category,
     taxonomy.hierarchy AS hierarchy,
     taxonomy.alternates AS alternates,
+    basic_category,
+    websites,
+    brand.names.primary AS brand,
     bbox.ymin AS lat,
     bbox.xmin AS lon,
     addresses[1].freeform AS street,
@@ -291,16 +296,23 @@ class OvertureProvider:
 
 
 def _place(row: Row) -> Place:
+    """One place from one row. Rows from an older query, with no website or brand, still read."""
     labels = [*(row["hierarchy"] or ()), *(row["alternates"] or ())]
-    category = row["category"] or (labels[-1] if labels else FOOD_ROOT)
+    category = row["category"] or (labels[-1] if labels else row.get("basic_category") or FOOD_ROOT)
+    categories = tuple(dict.fromkeys([*labels, category]))
+    brand = row.get("brand")
     return Place(
         id=row["id"],
         name=row["name"],
         category=category,
-        categories=tuple(dict.fromkeys([*labels, category])),
+        categories=categories,
         lat=row["lat"],
         lon=row["lon"],
         address=_address(row["street"], row["locality"]),
+        cuisines=place_cuisines(category, categories),
+        diets=place_diets(category, categories),
+        website=next(filter(None, map(web_link, row.get("websites") or ())), None),
+        brand=brand.strip() if isinstance(brand, str) and brand.strip() else None,
     )
 
 

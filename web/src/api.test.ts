@@ -143,6 +143,37 @@ describe("fetchConfig", () => {
       ...config,
       auth: null,
       features: { recommend: true, groups: true, fit: false, online_fit: false },
+      cuisines: null,
+    });
+  });
+
+  it("keeps only well-formed cuisine terms from the server's vocabulary", async () => {
+    const config = {
+      mode: "places",
+      map: { tile_url: "https://t/{z}/{x}/{y}.png", attribution: "© T", attribution_url: null },
+      features: { fit: true },
+      cuisines: {
+        version: "cuisines-v1",
+        groups: ["Southeast Asian", 7],
+        cuisines: [
+          { id: "thai", label: "Thai", group: "Southeast Asian", aliases: ["siamese", 3] },
+          { id: "thai", label: "Again", group: "Southeast Asian", aliases: [] },
+          { id: "", label: "Blank", group: "Southeast Asian", aliases: [] },
+          { id: "bad", label: null, group: "Southeast Asian" },
+          "prose",
+          { id: "lao", label: "Laotian", group: "Southeast Asian" },
+        ],
+      },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(config))));
+    const read = await fetchConfig();
+    expect(read?.cuisines).toEqual({
+      version: "cuisines-v1",
+      groups: ["Southeast Asian"],
+      cuisines: [
+        { id: "thai", label: "Thai", group: "Southeast Asian", aliases: ["siamese"] },
+        { id: "lao", label: "Laotian", group: "Southeast Asian", aliases: [] },
+      ],
     });
   });
 

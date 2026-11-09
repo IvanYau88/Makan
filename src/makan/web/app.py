@@ -30,6 +30,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -42,10 +43,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from makan.accounts.tokens import Identity
 from makan.browse import BrowseRequest, BrowseResult, browse
 from makan.config import Config, ConfigError
+from makan.cuisines import CUISINE_IDS, cuisine_label, diet_label, public_vocabulary
 from makan.env import load_dotenv
 from makan.fit import FitReason
-from makan.fit_inputs import Cuisine, FitInputs, owner_fit_inputs
-from makan.places.base import MAX_RADIUS_M, MIN_RADIUS_M, PlaceQuery, PlacesProvider
+from makan.fit_inputs import FitInputs, owner_fit_inputs
+from makan.places.base import MAX_RADIUS_M, MIN_RADIUS_M, PlaceQuery, PlacesProvider, web_link
 from makan.places.factory import places_provider
 from makan.profile_fit import FitStrategy
 from makan.providers.base import Provider
@@ -84,11 +86,21 @@ Mode = Literal["demo", "live", "places"]
 DEFAULT_WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 
+def _known_cuisine(term: str) -> str:
+    if term not in CUISINE_IDS:
+        raise ValueError("not a cuisine in the vocabulary")
+    return term
+
+
+# A guest names cuisines only by their vocabulary id; free text is an account-only path.
+VocabularyCuisine = Annotated[str, StringConstraints(max_length=40), AfterValidator(_known_cuisine)]
+
+
 class GuestTastes(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    likes: list[Cuisine] = Field(default_factory=list, max_length=8)
-    dislikes: list[Cuisine] = Field(default_factory=list, max_length=8)
+    likes: list[VocabularyCuisine] = Field(default_factory=list, max_length=len(CUISINE_IDS))
+    dislikes: list[VocabularyCuisine] = Field(default_factory=list, max_length=len(CUISINE_IDS))
 
 
 class OnlineFit(BaseModel):
@@ -239,6 +251,8 @@ def create_app(
                 "fit": config.fit_enabled,
                 "online_fit": fit_strategy.online,
             },
+            # The taste picker's choices, only where fit is on to use them.
+            "cuisines": public_vocabulary() if config.fit_enabled else None,
         }
 
     app.state.accounts = accounts
@@ -759,6 +773,11 @@ def _place_json(ranked: RankedCandidate, rank: int) -> dict[str, Any]:
         "address": p.address,
         "lat": p.lat,
         "lon": p.lon,
+        "cuisines": [{"id": c, "label": cuisine_label(c)} for c in p.cuisines],
+        # Soft labels from the source's categories, which the page shows with a not-verified note.
+        "diets": [{"id": d, "label": diet_label(d)} for d in p.diets],
+        "website": web_link(p.website),
+        "brand": p.brand,
         "rank": rank,
         "matched": p.request_fit > 0,
         "reasons": list(ranked.reasons),

@@ -13,6 +13,13 @@ export interface Place {
   rank: number;
   /** True when the place matched what the request asked for, not just being nearby. */
   matched: boolean;
+  /** Cuisines the source's own categories name, most specific first. Missing on older servers. */
+  cuisines?: Label[];
+  /** Soft diet labels from the source's categories. Never verified dietary safety. */
+  diets?: Label[];
+  /** The venue's own http or https address, checked by the server. */
+  website?: string | null;
+  brand?: string | null;
   reasons: string[];
   /** Optional for compatibility with older servers. A missing assessment is Unrated. */
   fit?: FitAssessment | null;
@@ -32,6 +39,8 @@ export interface FitAssessment {
     | "conflicting_tastes"
     | "unsupported_tastes"
     | "no_exact_category_match"
+    | "no_listed_cuisine"
+    | "mixed_cuisine_match"
     | "exact_like"
     | "exact_dislike"
     | "model_estimate"
@@ -49,20 +58,29 @@ export interface FitAssessment {
   explanation: string;
 }
 
-export const CUISINES = [
-  "chinese",
-  "indian",
-  "italian",
-  "japanese",
-  "korean",
-  "mexican",
-  "thai",
-  "vietnamese",
-] as const;
-export type Cuisine = (typeof CUISINES)[number];
+export interface Label {
+  id: string;
+  label: string;
+}
+
+/** One term of the server's controlled cuisine vocabulary. */
+export interface CuisineTerm extends Label {
+  /** Where the taste picker files it. Display only. */
+  group: string;
+  /** Other words people search for it by, such as "bbq" for Barbecue. */
+  aliases: string[];
+}
+
+export interface CuisineVocabulary {
+  version: string;
+  groups: string[];
+  cuisines: CuisineTerm[];
+}
+
+/** Vocabulary ids only: the server rejects anything else. */
 export interface SessionTastes {
-  likes: Cuisine[];
-  dislikes: Cuisine[];
+  likes: string[];
+  dislikes: string[];
 }
 
 export interface StaleFact {
@@ -136,6 +154,8 @@ export interface AppConfig {
   mode: Mode;
   map: MapConfig;
   features: AppFeatures;
+  /** The taste picker's choices. Null or missing when fit is off or the server predates it. */
+  cuisines?: CuisineVocabulary | null;
   /** Null when the server has no accounts, so everyone is a guest and there is no Account page. */
   auth: AuthSettings | null;
 }

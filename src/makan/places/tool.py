@@ -23,7 +23,9 @@ VENUE_COORD_DECIMALS = 5  # about 1 m: a venue is a public point, unlike the use
 DESCRIPTION = (
     "Find places to eat or drink near a location, nearest first. "
     "Each result has an id, name, category, distance in meters, coordinates, "
-    "and address when known. "
+    "and, when known, address, listed cuisines, listed diets, website and brand. "
+    "Listed cuisines and diets are the data source's own category labels: "
+    "they are not menus and never verify a dietary requirement. "
     "Use cuisine for a kind of food (such as thai, ramen, or indian) and category for a kind of "
     "venue (such as cafe, bakery, bar, or fast food). "
     "If a search finds nothing, widen the radius or drop a filter. "
@@ -105,5 +107,9 @@ def _compact(place: Place) -> dict[str, Any]:
         "lat": round(place.lat, VENUE_COORD_DECIMALS),
         "lon": round(place.lon, VENUE_COORD_DECIMALS),
         "address": place.address,
+        "cuisines": list(place.cuisines) or None,
+        "diets": list(place.diets) or None,
+        "website": place.website,
+        "brand": place.brand,
     }
     return {k: v for k, v in fields.items() if v is not None}

@@ -1,3 +1,4 @@
+import { readVocabulary } from "./cuisineVocabulary";
 import type { AppConfig, Recommendation, RecommendRequest, Run } from "./types";
 
 /** The backend's stable error code for a rate limited or overloaded language model. */
@@ -34,7 +35,7 @@ export async function fetchConfig(signal?: AbortSignal): Promise<AppConfig | nul
   try {
     const response = await fetch("/api/config", { signal });
     const body = (await response.json()) as Partial<AppConfig>;
-    const { mode, map, auth, features } = body;
+    const { mode, map, auth, features, cuisines } = body;
     if (
       (mode !== "demo" && mode !== "live" && mode !== "places") ||
       typeof map?.tile_url !== "string"
@@ -53,6 +54,7 @@ export async function fetchConfig(signal?: AbortSignal): Promise<AppConfig | nul
         fit: features?.fit === true,
         online_fit: features?.online_fit === true,
       },
+      cuisines: readVocabulary(cuisines),
     };
   } catch {
     return null;
