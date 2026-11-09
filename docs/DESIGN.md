@@ -1671,7 +1671,7 @@ It changes no ranking, no fit score, no hard rule and no default, and makes no l
   The places tool hands the model the same compact `osm` object with the raw hours text, and the description says the facts may be out of date and never verify a dietary or access need.
   `Candidate.from_tool` checks it again, and trace summaries still hold no place facts.
 - **Hours at display:** the raw tag is read when a place is serialized, by `makan.places.hours`, into minutes per weekday, Monday first.
-  It reads `24/7`, day lists and ranges (wrapping, such as `Fr-Mo`), several time ranges, `off`, ranges past midnight, and the comma that starts an additional rule, with later rules replacing earlier ones and unmentioned days closed, as the OpenStreetMap specification says.
+  It reads `24/7`, day lists and ranges (wrapping, such as `Fr-Mo`), several time ranges, `off`, ranges past midnight, and the comma that starts an additional rule, with a later `;` rule replacing what earlier ones said for its days, an additional rule adding its times to those days unless it says `off` or `closed`, which closes them (`Mo-Fr 10:00-20:00, We off`), and unmentioned days closed, as the OpenStreetMap specification says.
   Holiday rules (`PH`, `SH`) are noted, and the page says holiday hours may differ, but not applied.
   Anything else (months, weeks, sunrise, comments, open ends, fallbacks) is `unreadable`, and the page shows the mapped text and says Makan cannot read it, never "Closed" or a guess.
   The page words the times on a US 12-hour clock, joins neighbouring days with the same hours, marks today by the device's clock (a diner looking nearby is in the venue's time zone), and computes no "open now".
