@@ -63,3 +63,10 @@ def test_comments_blank_values_and_stray_rules_are_ignored() -> None:
 def test_robots_txt_itself_is_always_allowed() -> None:
     assert DISALLOW_ALL.allows("MakanBot", "/robots.txt")
     assert not DISALLOW_ALL.allows("MakanBot", "/")
+
+
+def test_names_counts_only_a_group_that_names_the_agent() -> None:
+    rules = parse_robots("User-agent: *\nDisallow: /\n\nUser-agent: GPTBot\nDisallow: /\n")
+    assert rules.names("gptbot") and rules.names("GPTBot")
+    assert not rules.names("ClaudeBot")
+    assert not DISALLOW_ALL.names("ClaudeBot")

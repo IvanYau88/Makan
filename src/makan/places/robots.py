@@ -20,13 +20,18 @@ class RobotsRules:
 
     groups: tuple[tuple[frozenset[str], tuple[tuple[bool, str], ...]], ...] = ()
 
+    def names(self, agent: str) -> bool:
+        """Whether a group names the crawler `agent` itself, not only through `*`."""
+        token = agent.lower()
+        return any(token in agents for agents, _ in self.groups)
+
     def allows(self, agent: str, path: str) -> bool:
         """Whether the crawler named `agent` may fetch `path` (the path and query of a URL)."""
         if path == "/robots.txt":
             return True
         token = agent.lower()
         rules = [rule for agents, group in self.groups if token in agents for rule in group]
-        if not any(token in agents for agents, _ in self.groups):
+        if not self.names(token):
             rules = [rule for agents, group in self.groups if "*" in agents for rule in group]
         best: tuple[int, bool] | None = None
         for allow, pattern in rules:

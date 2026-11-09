@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from makan.config import Config, ConfigError, MenuFactsConfig
 from makan.places import FakePlacesProvider, Place
-from makan.places.facts import OSM_LICENCE, FactSource, facts_from_tags
+from makan.places.facts import OSM_LICENCE, FactSource, OsmFacts, facts_from_tags
 from makan.places.menu_fetch import MenuFetcher
 from makan.providers import FakeProvider
 from makan.web import create_app
@@ -34,6 +34,15 @@ ORDER_ONLY = replace(
     place("Order Only", "cafe", 3.1483, 101.6951), website="https://www.doordash.com/store/x"
 )
 PLAIN = place("Plain Noodle", "noodle_restaurant", 3.1482, 101.6951)
+HOSTED = replace(
+    place("Hosted Menu", "cafe", 3.1481, 101.6951),
+    website="https://hosted.example/",
+    osm=facts_from_tags("node/8", {"website:menu": "https://hosted.popmenu.com/menu"}, SOURCE),
+)
+MAPPED_ONLY = replace(
+    place("Mapped Only", "cafe", 3.1480, 101.6951),
+    osm=facts_from_tags("node/9", {"website:menu": "https://mapped.example/menu"}, SOURCE),
+)
 
 
 class Venue:
@@ -55,7 +64,9 @@ def app(config: Config, venue: Venue | None = None, *places: Place) -> TestClien
     return TestClient(
         create_app(
             provider=FakeProvider([]),
-            places=FakePlacesProvider(list(places or (THAI, RAMEN, ORDER_ONLY, PLAIN))),
+            places=FakePlacesProvider(
+                list(places or (THAI, RAMEN, ORDER_ONLY, PLAIN, HOSTED, MAPPED_ONLY))
+            ),
             config=config,
             menus=fetcher,
         )
@@ -89,6 +100,8 @@ def test_on_each_place_with_its_own_site_carries_a_ref_and_search_reads_no_page(
     assert refs.read(found["Ramen Ya"]["menu_ref"]) == "https://ramen.example/menu"  # OSM's menu
     assert found["Order Only"]["menu_ref"] is None  # a platform is never read
     assert found["Plain Noodle"]["menu_ref"] is None
+    assert found["Hosted Menu"]["menu_ref"] is None  # a menu on another domain is not its own
+    assert found["Mapped Only"]["menu_ref"] is None  # no website to say which domain is its own
     assert venue.requests == []  # a search list never fetches a menu
 
 
@@ -152,9 +165,36 @@ def test_the_body_takes_only_a_ref() -> None:
     assert client.post("/api/places/menu", json={"ref": "x" * 5000}).status_code == 422
 
 
-def test_menu_page_prefers_the_mapped_menu_and_never_a_platform() -> None:
-    osm = facts_from_tags("node/1", {"website:menu": "https://www.grubhub.com/x"}, SOURCE)
-    assert menu_page("venue.example/home", osm) == "https://venue.example/home"
+def mapped(menu_url: str) -> OsmFacts:
+    return facts_from_tags("node/1", {"website:menu": menu_url}, SOURCE)
+
+
+def test_menu_page_prefers_the_mapped_menu_on_the_venues_own_domain() -> None:
+    assert menu_page("venue.example/home", None) == "https://venue.example/home"
+    menu = mapped("https://venue.example/menu")
+    assert menu_page("https://www.venue.example/", menu) == "https://venue.example/menu"
+    on_subdomain = mapped("https://menus.venue.example/dinner")
+    assert menu_page("venue.example", on_subdomain) == "https://menus.venue.example/dinner"
+
+
+@pytest.mark.parametrize(
+    "menu_url",
+    [
+        "https://www.grubhub.com/x",
+        "https://venue.popmenu.com/menu",
+        "https://venue.example.net/menu",
+        "https://other.github.io/menu",
+    ],
+)
+def test_a_mapped_menu_on_another_domain_is_never_read(menu_url: str) -> None:
+    assert menu_page("https://venue.example/", mapped(menu_url)) is None
+    assert menu_page("https://venue.github.io/", mapped(menu_url)) is None
+
+
+def test_no_readable_website_means_no_menu_page() -> None:
+    assert menu_page(None, mapped("https://venue.example/menu")) is None
+    assert menu_page("https://www.doordash.com/store/x", mapped("https://doordash.com/m")) is None
+    assert menu_page("https://93.184.215.14/", None) is None
     assert menu_page("javascript:alert(1)", None) is None
     assert menu_page(None, None) is None
 

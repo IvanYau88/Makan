@@ -15,6 +15,8 @@ from makan.places.menu_fetch import (
     USER_AGENT,
     MenuFetcher,
     public_host,
+    same_site,
+    site_of,
     third_party,
 )
 
@@ -121,6 +123,25 @@ def test_the_request_names_makan_and_carries_nothing_about_the_diner() -> None:
         }
 
 
+def test_a_cookie_a_site_sets_is_never_sent_back() -> None:
+    cookie = {"set-cookie": "visitor=abc123; Path=/; Max-Age=86400"}
+    site = Site(
+        {
+            "https://lemongrass.example/robots.txt": httpx.Response(
+                200, headers={"content-type": "text/plain", **cookie}, text=""
+            ),
+            MENU: httpx.Response(200, headers={**HTML, **cookie}, content=page("json_ld.html")),
+            "https://lemongrass.example/dinner": ok(),
+        }
+    )
+    reader = fetcher(site)
+    assert reader.read(MENU).status == "found"
+    assert reader.read("https://lemongrass.example/dinner").status == "found"
+    assert len(site.requests) == 4
+    for request in site.requests:
+        assert "cookie" not in request.headers
+
+
 def test_robots_disallow_stops_the_read_before_the_page() -> None:
     site = Site(
         {
@@ -141,6 +162,12 @@ def test_a_site_that_turns_ai_crawlers_away_is_a_no_for_makan_too() -> None:
         facts = fetcher(site).read(MENU)
         assert (facts.status, facts.reason) == ("refused", "ai_rules")
         assert MENU not in site.urls
+
+
+def test_ai_crawler_rules_count_only_when_a_group_names_that_crawler() -> None:
+    rules = "User-agent: MakanBot\nAllow: /\n\nUser-agent: *\nDisallow: /\n"
+    site = Site({"https://lemongrass.example/robots.txt": robots(rules), MENU: ok()})
+    assert fetcher(site).read(MENU).status == "found"
 
 
 def test_a_robots_rule_for_makan_itself_is_honoured() -> None:
@@ -295,7 +322,7 @@ def test_a_redirect_to_a_platform_or_a_disallowed_path_is_not_followed() -> None
     assert (facts.status, facts.reason) == ("refused", "robots")
 
 
-def test_a_redirect_to_another_site_reads_that_sites_robots() -> None:
+def test_a_redirect_to_a_subdomain_reads_that_sites_robots() -> None:
     site = Site(
         {
             "https://lemongrass.example/robots.txt": robots(""),
@@ -305,6 +332,33 @@ def test_a_redirect_to_another_site_reads_that_sites_robots() -> None:
     )
     facts = fetcher(site).read(MENU)
     assert (facts.status, facts.reason) == ("refused", "robots")
+
+
+def test_a_redirect_off_the_venues_own_domain_is_not_followed() -> None:
+    for target in ("https://lemongrass.popmenu.com/menu", "https://lemongrass.example.co.uk/"):
+        site = Site(
+            {
+                "https://lemongrass.example/robots.txt": robots(""),
+                MENU: httpx.Response(302, headers={"location": target}),
+            }
+        )
+        facts = fetcher(site).read(MENU)
+        assert (facts.status, facts.reason) == ("platform", "off_site")
+        assert site.urls == ["https://lemongrass.example/robots.txt", MENU]
+
+
+def test_a_robots_redirect_off_the_venues_own_domain_disallows_the_page() -> None:
+    site = Site(
+        {
+            "https://lemongrass.example/robots.txt": httpx.Response(
+                301, headers={"location": "https://host.example.net/robots.txt"}
+            ),
+            MENU: ok(),
+        }
+    )
+    facts = fetcher(site).read(MENU)
+    assert (facts.status, facts.reason) == ("refused", "robots")
+    assert site.urls == ["https://lemongrass.example/robots.txt"]
 
 
 def test_redirect_loops_end() -> None:
@@ -358,6 +412,18 @@ def test_third_party_matches_the_host_and_its_parents_only() -> None:
     assert third_party("https://order.toasttab.com/online/x")
     assert not third_party("https://grubhub.com.lemongrass.example/")
     assert not third_party("https://notyelp.com/")
+
+
+def test_a_site_is_its_registrable_domain_by_the_public_suffix_list() -> None:
+    assert site_of("https://menus.venue.co.uk/m") == "venue.co.uk"
+    assert site_of("https://www.Venue.Example./") == "venue.example"
+    assert site_of("https://venue.github.io/") == "venue.github.io"
+    assert site_of("https://co.uk/") is None
+    assert site_of("https://93.184.215.14/") is None
+    assert site_of("https://café.fr/") == site_of("https://xn--caf-dma.fr/") == "xn--caf-dma.fr"
+    assert same_site("https://menus.venue.example/", "https://www.venue.example/home")
+    assert not same_site("https://venue.github.io/", "https://other.github.io/")
+    assert not same_site("https://venue.example/", "https://venue.example.net/")
 
 
 def test_an_outcome_is_remembered_for_a_day_and_then_read_again() -> None:

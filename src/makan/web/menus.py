@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from makan.places.facts import OsmFacts
 from makan.places.links import MAX_URL_CHARS, web_link
-from makan.places.menu_fetch import MenuFetcher, third_party
+from makan.places.menu_fetch import MenuFetcher, same_site, site_of, third_party
 from makan.web.errors import ApiError
 
 REF_VERSION = "v1"
@@ -34,13 +34,17 @@ MAX_REF_CHARS = len(REF_VERSION) + 2 + (MAX_URL_CHARS * 4 + 2) // 3 + _SIGNATURE
 
 
 def menu_page(website: str | None, osm: OsmFacts | None) -> str | None:
-    """The one page a menu read of a venue would fetch: its OpenStreetMap menu link when it has
-    one off any platform, else its website. A platform link is never chosen."""
-    for candidate in (osm.menu_url if osm else None, website):
-        url = web_link(candidate)
-        if url is not None and not third_party(url):
-            return url
-    return None
+    """The one page a menu read of a venue would fetch: its OpenStreetMap menu link when that is
+    on the venue's own website's registrable domain, else the website itself. None when the venue
+    has no website, the website is a platform, or the menu link is on another domain, since a
+    menu hosted elsewhere is a platform's page and not the venue's own."""
+    home = web_link(website)
+    if home is None or third_party(home) or site_of(home) is None:
+        return None
+    menu = web_link(osm.menu_url) if osm else None
+    if menu is None:
+        return home
+    return menu if same_site(menu, home) and not third_party(menu) else None
 
 
 class MenuRefs:

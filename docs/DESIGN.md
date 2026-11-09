@@ -1711,16 +1711,23 @@ It changes no ranking, no fit score, no hard rule and no Clef state, and calls n
   The page sends that ref back in `POST /api/places/menu` only when the diner opens that place's detail (for the collapsible map panel, when it is expanded).
   The server reads only a URL inside a ref it signed, so the endpoint can never be pointed at an address someone chose, and it needs no memory of earlier searches, so it works on any instance that shares the secret.
   A ref carries no expiry: it names a public venue URL from the source data, and a leaked one can only ask for that venue's page, which the cache answers for a day.
-- **Which page:** the OpenStreetMap `website:menu` link when the venue has one, else the Overture website, skipping any on an ordering, delivery, review, link or social platform (`THIRD_PARTY_HOSTS`, matched on the host and its parent domains).
+- **Which page:** the OpenStreetMap `website:menu` link when it is on the venue's own website's registrable domain, else the Overture website itself, never one on an ordering, delivery, review, link or social platform (`THIRD_PARTY_HOSTS`, matched on the host and its parent domains).
+  The intent is the venue's own published page, and a denylist alone cannot name every hosted menu or ordering service (Popmenu, SinglePlatform, Flipdish and many more), so the rule is an allowlist of one domain with the denylist kept as an extra guard.
+  A venue with no website gets no `menu_ref`, even with a mapped menu link, since nothing says which domain is its own, and so does one whose mapped menu link is on another domain: the detail then shows no menu section rather than reading a page the venue does not own.
+  Every hop, robots.txt redirects included, must stay on the registrable domain of the page asked for, so a subdomain such as `menus.venue.example` is followed and a redirect elsewhere ends the read as `platform` with reason `off_site`.
+  The registrable domain comes from the Public Suffix List through `publicsuffixlist`, a free, pure-Python package that bundles the list and never fetches it, released whenever the list changes; `venue.co.uk` and `venue.github.io` are then each their own site, which a last-two-labels rule gets wrong.
+  Address hosts and bare suffixes have no site and are never read.
   Exactly one page per read: robots.txt for each site the read touches, then the page and at most three redirects, each checked again.
   Links in the page are never followed, so a home page whose menu is on another page or in a PDF honestly says it has no dish list.
 - **Polite fetching (`makan.places.menu_fetch`):**
   - A named user agent, `MakanBot/1 (+https://github.com/IvanYau88/Makan; reads one menu page when a diner opens a place)`, and only `Accept`, with no cookie, referrer, credentials or anything about the diner.
     The request names nothing but the venue's own public URL, and a test checks the headers.
+    The client's cookie jar refuses every cookie (`DefaultCookiePolicy(allowed_domains=[])`), so a `Set-Cookie` from robots.txt or a page is never sent back, a venue cannot tie Makan's reads for different diners together, and the jar never grows.
   - robots.txt is read the RFC 9309 way (`makan.places.robots`): groups by product token, the longest match wins, `allow` wins a tie, and `*` and `$` in paths.
     Python's `urllib.robotparser` uses first match and ignores wildcards, so it was not used.
     A missing robots.txt (404, 410 or another 4xx) sets no rules; one that answers 401 or 403 is a no, and one that fails, times out or answers 429 or 5xx means no read now.
   - A site whose robots.txt keeps out any common AI crawler (GPTBot, ClaudeBot, CCBot, Google-Extended and the others in `AI_CRAWLER_TOKENS`) from the page is treated as a no for Makan too, as the data report recommended.
+    Only a group that names that crawler counts: the `*` group already applies to Makan through its own token, so a site that allows `MakanBot` by name and disallows `*` is read.
   - A 401 or 403 on the page is a no.
     Only `text/html` and `application/xhtml+xml` are read: a PDF, an image or anything else is unreadable, since reading them would need OCR or a model.
   - The whole read, robots.txt included, has an 8 second deadline, with each request given only the time left and a 3 second connect limit.
@@ -1899,14 +1906,14 @@ Most checks below ran locally, the live places lookup was verified on a real pre
   DuckDB is imported on the first search, the release lookup and the `httpfs` download wait for it too, no database is connected, and no key is needed.
   A test imports the root file with every key unset and the network blocked.
   A missing `web/dist` at import is a logged warning and not an error, because the order of Vercel's build command and its import cannot be checked from here, and the site would then serve only the API.
-- **Python and dependencies:** `.python-version` pins 3.12, the version CI runs, and the pinned production dependencies are `httpx`, `fastapi`, `pyjwt[crypto]`, and `duckdb`.
+- **Python and dependencies:** `.python-version` pins 3.12, the version CI runs, and the pinned production dependencies are `httpx`, `fastapi`, `pyjwt[crypto]`, `duckdb`, and `publicsuffixlist` (for the menu reader's own-domain rule, imported with the web app and loaded only on the first menu read).
   They are listed twice, in the `public` dependency group of `pyproject.toml`, which Vercel installs, and in `requirements.txt`, which Vercel ignores and a person can `pip install -r`.
   Both leave out `uvicorn`, tests, linters, and `psycopg`, and a test keeps the two lists identical and in step with the `web` and `overture` extras.
   The first deployment failed with `ModuleNotFoundError: No module named 'fastapi'`, and the cause is now known from Vercel's open-source Python builder (`packages/python/src` in `vercel/vercel`), which a local run of its commands reproduced:
   when a `pyproject.toml` exists it wins over `requirements.txt`, which is converted only when there is none, and a `uv.lock` wins over both.
   Vercel runs `uv lock` and then `uv sync --active --no-dev --locked --no-editable`, so it installs the base `dependencies` and the project itself (as `_vendor/makan`), never an extra, so the `web` and `overture` extras were never installed.
   `--no-dev` removes only the `dev` group, so the `public` group is installed by `[tool.uv] default-groups = ["public"]`, and a local `uv sync` run with Vercel's flags then installed exactly the four packages and their dependencies.
-  Moving the packages into the base `dependencies` would have worked too, but it makes `fastapi`, `duckdb` and `cryptography` mandatory for every user of the core loop, which only needs `httpx`.
+  Moving the packages into the base `dependencies` would have worked too, but it makes `fastapi`, `duckdb` and `cryptography` mandatory for every user of the core loop, which only needs `httpx` and `publicsuffixlist`.
   A `vercel.json` `installCommand` was not chosen because the builder honours it only for a detected Python framework, which cannot be checked from here.
   A test imports `app.py` with every installed package outside the Vercel install blocked, and fails on a missing `fastapi` the way the deployment did.
   `makan.web.accounts` used to import the Postgres stores, and so `psycopg`, at startup even with accounts off, so `makan.web` could not be imported with the `web` and `overture` extras alone.

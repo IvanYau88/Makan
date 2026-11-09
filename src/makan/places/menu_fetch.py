@@ -4,16 +4,20 @@ This runs only when a diner opens one place's detail, never for a search list or
 One read is at most one page: the venue's robots.txt (once per site), then the page itself,
 following a few redirects and checking each hop again. Nothing about the diner goes to the venue:
 the request carries only the venue's own public URL, a named user agent, and an `Accept` header,
-with no cookies, referrer, location, taste or identity.
+with no cookies, referrer, location, taste or identity. The client keeps no cookie a site sets, so
+no read can be tied to another.
 
 Rules, in the order they are checked:
 - Only http and https, on the default ports to a host that resolves only to public addresses
   (`public_host`), so a hostile link can never reach the server's own network.
 - Never an ordering, delivery, review or social platform (`THIRD_PARTY_HOSTS`): their terms
   forbid reading them, and they are not the venue's own site.
-- robots.txt is honoured for Makan's own token and for every common AI crawler token: a site
-  that turns AI crawlers away is treated as a no for Makan too. A robots.txt that answers 401 or
-  403, fails, or times out is a no; one that is missing (404 or another 4xx) allows the page.
+- Every hop stays on the registrable domain of the page asked for (`site_of`, by the Public Suffix
+  List), so a redirect to a hosted menu or ordering service the list misses is never followed.
+- robots.txt is honoured for Makan's own token and for every common AI crawler token a group
+  names: a site that turns AI crawlers away is treated as a no for Makan too. A robots.txt that
+  answers 401 or 403, fails, or times out is a no; one that is missing (404 or another 4xx)
+  allows the page.
 - A 401 or 403 on the page is a no. Only HTML is read: a PDF, an image or anything else is
   unreadable, and so is a page over `MAX_PAGE_BYTES`.
 - The whole read, robots.txt included, has `DEADLINE_S` seconds.
@@ -31,9 +35,12 @@ from collections import OrderedDict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import cache
+from http.cookiejar import DefaultCookiePolicy
 from urllib.parse import urljoin, urlsplit
 
 import httpx
+from publicsuffixlist import PublicSuffixList
 
 from makan.places.links import web_link
 from makan.places.menu_extract import extract_dishes
@@ -161,6 +168,34 @@ def public_host(host: str, port: int, resolve: Resolver = _system_resolve) -> bo
     return bool(addresses) and all(a.is_global and not a.is_multicast for a in addresses)
 
 
+@cache
+def _suffixes() -> PublicSuffixList:
+    return PublicSuffixList()
+
+
+def site_of(url: str) -> str | None:
+    """The registrable domain of `url`'s host by the Public Suffix List (`menus.venue.co.uk` is
+    `venue.co.uk`, `venue.github.io` is itself), or None for an address, a bare suffix or no
+    host."""
+    host = (urlsplit(url).hostname or "").lower().rstrip(".")
+    try:
+        ipaddress.ip_address(host)
+        return None
+    except ValueError:
+        pass
+    try:
+        host = host.encode("idna").decode("ascii")
+    except UnicodeError:
+        return None
+    return _suffixes().privatesuffix(host) if host else None
+
+
+def same_site(url: str, other: str) -> bool:
+    """Whether two URLs are on one registrable domain, so one site owns both."""
+    site = site_of(url)
+    return site is not None and site == site_of(other)
+
+
 def third_party(url: str) -> bool:
     """Whether `url` is on an ordering, delivery, review or social platform."""
     host = (urlsplit(url).hostname or "").lower().rstrip(".")
@@ -180,14 +215,16 @@ class _Stop(Exception):
 @dataclass
 class _Read:
     deadline: float
+    site: str
     robots: dict[str, RobotsRules]
 
 
 class MenuFetcher:
     """Reads venue menu pages and keeps each outcome in memory for at most a day.
 
-    `client` is an `httpx.Client` (tests give it a mock transport). `host_allowed` decides which
-    hosts may be contacted, and defaults to public addresses only. Both clocks are injectable.
+    `client` is an `httpx.Client` (tests give it a mock transport), set here to refuse every
+    cookie. `host_allowed` decides which hosts may be contacted, and defaults to public addresses
+    only. Both clocks are injectable.
     """
 
     def __init__(
@@ -200,6 +237,8 @@ class MenuFetcher:
         max_entries: int = MAX_ENTRIES,
     ) -> None:
         self._client = client or httpx.Client()
+        self._client.cookies.clear()
+        self._client.cookies.jar.set_policy(DefaultCookiePolicy(allowed_domains=[]))
         self._host_allowed = host_allowed
         self._now = now
         self._monotonic = monotonic
@@ -263,10 +302,13 @@ class MenuFetcher:
 
     def _fetch(self, url: str) -> tuple[Method | None, tuple[DishFact, ...], bool, str]:
         """The dishes on the page at `url`, after its redirects, and the URL they came from."""
-        read = _Read(self._monotonic() + DEADLINE_S, {})
+        site = site_of(url)
+        if site is None:
+            raise _Stop("unavailable", "bad_url")
+        read = _Read(self._monotonic() + DEADLINE_S, site, {})
         current = url
         for _ in range(MAX_REDIRECTS + 1):
-            self._check(current)
+            self._check(current, site)
             parts = urlsplit(current)
             origin = f"{parts.scheme}://{parts.netloc}"
             rules = read.robots.get(origin)
@@ -275,7 +317,9 @@ class MenuFetcher:
             path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
             if not rules.allows(PRODUCT_TOKEN, path):
                 raise _Stop("refused", "robots")
-            if any(not rules.allows(token, path) for token in AI_CRAWLER_TOKENS):
+            if any(
+                rules.names(token) and not rules.allows(token, path) for token in AI_CRAWLER_TOKENS
+            ):
                 raise _Stop("refused", "ai_rules")
             with self._stream(current, read, "text/html,application/xhtml+xml") as response:
                 location = _redirect(response)
@@ -287,7 +331,7 @@ class MenuFetcher:
                 return method, dishes, truncated, current
         raise _Stop("unavailable", "redirects")
 
-    def _check(self, url: str) -> None:
+    def _check(self, url: str, site: str) -> None:
         if web_link(url) != url:
             raise _Stop("unavailable", "bad_url")
         parts = urlsplit(url)
@@ -295,6 +339,8 @@ class MenuFetcher:
             raise _Stop("unavailable", "bad_url")
         if third_party(url):
             raise _Stop("platform", "third_party")
+        if site_of(url) != site:
+            raise _Stop("platform", "off_site")
         host = parts.hostname or ""
         try:
             port = parts.port or (443 if parts.scheme == "https" else 80)
@@ -311,7 +357,7 @@ class MenuFetcher:
                 location = _redirect(response)
                 if location is not None:
                     try:
-                        self._check(location)
+                        self._check(location, read.site)
                     except _Stop:
                         return DISALLOW_ALL
                     current = location
