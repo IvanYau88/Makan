@@ -20,6 +20,7 @@ Read `docs/DESIGN.md` before making architectural decisions.
 - Every function a migration creates pins `search_path` (see migration `0003`), so Supabase's security advisor stays clean.
 - Cuisine terms for places and diners live only in `makan.cuisines`; changing a term or its source categories needs a new `VOCABULARY_VERSION`, and the frozen Clef states keep `makan.fit.CLEF_CUISINES`.
 - OpenStreetMap facts stay in `Place.osm`, read from a local extract and never from Overpass on a request, and anything that shows one credits "© OpenStreetMap contributors" with the copyright link (ODbL); see "OpenStreetMap venue facts" in `docs/DESIGN.md`.
+- A venue's website is read only by `makan.places.menu_fetch`, for a server-signed `menu_ref`, when a diner opens that one place, behind the default-off `MAKAN_MENU_FACTS_ENABLED`; never fetch a client-chosen URL, during a search, or from an ordering platform, and keep only dish names and prices (see "Venue website dish facts" in `docs/DESIGN.md`).
 - Show people miles and feet, never meters or kilometers.
   Storage and the API stay in meters, and conversion happens at the display and input edges (`web/src/units.ts`, `distance_label` in `makan/places/base.py`).
 - Visits, dishes, ratings and tags are private to their owner.

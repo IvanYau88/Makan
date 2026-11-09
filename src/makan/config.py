@@ -120,6 +120,26 @@ class DuckDbConfig:
 
 
 @dataclass(frozen=True)
+class MenuFactsConfig:
+    """Dish facts read on demand from a venue's own website (`makan.places.menu_fetch`).
+
+    Off by default. On, every place with a website carries a signed `menu_ref`, and the server
+    reads a page only for a ref it signed itself, so it never fetches a URL a client chose.
+    `secret` signs those refs and must be the same on every instance of one deployment.
+    """
+
+    enabled: bool = False
+    secret: str = field(default="", repr=False)
+
+    def __post_init__(self) -> None:
+        if self.enabled and len(self.secret.encode()) < 32:
+            raise ConfigError(
+                "MAKAN_MENU_FACTS_SECRET must be at least 32 bytes "
+                "when MAKAN_MENU_FACTS_ENABLED is on"
+            )
+
+
+@dataclass(frozen=True)
 class SupabaseConfig:
     """The Supabase project that holds accounts. Present only when `SUPABASE_URL` is set.
 
@@ -163,6 +183,7 @@ class Config:
     accounts_enabled: bool = True  # False leaves everyone a guest, whatever SUPABASE_URL says
     fit_enabled: bool = False  # display fit; online scoring also needs fit.online_enabled
     fit: FitConfig = field(default_factory=FitConfig)
+    menu_facts: MenuFactsConfig = field(default_factory=MenuFactsConfig)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -243,6 +264,10 @@ class Config:
                 gateway_scope=env.get("MAKAN_FIT_GATEWAY_SCOPE", "").strip() or "preview",
                 cloudflare_account_id=env.get("CLOUDFLARE_ACCOUNT_ID", "").strip(),
                 cloudflare_api_token=env.get("CLOUDFLARE_API_TOKEN", "").strip(),
+            ),
+            menu_facts=MenuFactsConfig(
+                enabled=_flag(env, "MAKAN_MENU_FACTS_ENABLED", False),
+                secret=env.get("MAKAN_MENU_FACTS_SECRET", "").strip(),
             ),
         )
 

@@ -22,6 +22,11 @@ export interface Place {
   brand?: string | null;
   /** What OpenStreetMap volunteers mapped for this venue, when it matched. Missing on older servers. */
   osm?: OsmFacts | null;
+  /**
+   * A server-signed ref to read this venue's own menu page when its detail opens. Present only
+   * where the server has menu facts on, and null for a place with no website Makan may read.
+   */
+  menu_ref?: string | null;
   reasons: string[];
   /** Optional for compatibility with older servers. A missing assessment is Unrated. */
   fit?: FitAssessment | null;
@@ -447,4 +452,34 @@ export interface GroupResult {
   attribution: string | null;
   partial: boolean;
   mode: Mode;
+}
+
+/** What one read of a venue's own menu page came to. See `makan.places.menus` on the server. */
+export type MenuStatus = "found" | "none" | "refused" | "platform" | "unreadable" | "unavailable";
+
+export interface MenuPrice {
+  amount: string;
+  currency: string | null;
+  /** As the page shows it, such as "$12.95". */
+  label: string;
+}
+
+export interface MenuDish {
+  name: string;
+  price: MenuPrice | null;
+}
+
+export interface MenuFacts {
+  status: MenuStatus;
+  /** A short code such as "robots" or "pdf", for the wording of an empty state. */
+  reason: string | null;
+  dishes: MenuDish[];
+  truncated: boolean;
+  source: {
+    url: string;
+    host: string;
+    method: "json_ld" | "microdata" | "html" | null;
+    retrieved_at: string;
+    expires_at: string;
+  };
 }

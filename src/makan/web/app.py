@@ -58,6 +58,7 @@ from makan.places.facts import (
     osm_url,
 )
 from makan.places.hours import parse_hours
+from makan.places.menu_fetch import MenuFetcher
 from makan.profile_fit import FitStrategy
 from makan.providers.base import Provider
 from makan.providers.openrouter import OpenRouterProvider
@@ -83,6 +84,7 @@ from makan.web.demo import DemoPlaces, DemoProvider
 from makan.web.errors import ApiError, error, public_warnings, workflow_failure
 from makan.web.fit_sessions import FitSessions
 from makan.web.groups import register_group_routes
+from makan.web.menus import MenuRefs, register_menu_routes
 from makan.web.purge import purge_forever
 from makan.web.runs import Outcome, RunRecorder, SearchMode
 from makan.web.visits import register_visit_routes
@@ -173,6 +175,7 @@ def create_app(
     scorer: Scorer | None = None,
     accounts: AccountServices | None = None,
     fit_strategy: FitStrategy | None = None,
+    menus: MenuFetcher | None = None,
 ) -> FastAPI:
     """Build the app around ready providers. Tests pass fakes, and the CLI passes real ones.
 
@@ -190,10 +193,15 @@ def create_app(
 
     In `places` mode the app answers Browse nearby only: a recommendation is
     refused, and `provider` is never called. Optional consented fit decorates graph results.
+
+    With `config.menu_facts.enabled`, places with a website carry a signed `menu_ref`, and
+    `/api/places/menu` reads that one venue page through `menus` (a default `MenuFetcher` when
+    None). Off, places carry no ref and the endpoint answers 404.
     """
     # A group needs the language model to pick, so there are none in a run with no model.
     fit_strategy = fit_strategy or FitStrategy(config)
     fit_sessions = FitSessions(config.fit.hmac_secret)
+    menu_refs = MenuRefs(config.menu_facts.secret) if config.menu_facts.enabled else None
     groups = config.groups_enabled and mode != "places"
     group_sessions: GroupSessions | None = None
     if groups:
@@ -447,7 +455,7 @@ def create_app(
             recorder.finish(_browse_outcome(found))
             if found.places is None:
                 return Answer(recorder, failure=workflow_failure(found.graph))
-            return Answer(recorder, _browse_json(found, mode, recorder))
+            return Answer(recorder, _browse_json(found, mode, recorder, menu_refs))
         assert body.request is not None  # a recommendation always has one, see RecommendBody
         # `identity` is None for a guest, and always when accounts are off.
         result = recommend(
@@ -491,7 +499,7 @@ def create_app(
             )
         recorder.finish(_outcome(replace(result, recommendation=rec)))
         payload = _recommendation_json(
-            rec, result.graph.ok, mode, _query_json(body, result), recorder
+            rec, result.graph.ok, mode, _query_json(body, result), recorder, menu_refs
         )
         return Answer(recorder, payload)
 
@@ -588,7 +596,13 @@ def create_app(
 
     # A switched off feature is a plain 404 for every method, not a fall through to the static
     # files, which would answer a POST with a 405 that suggests the route exists.
-    switched_off = [("/api/groups", not groups), ("/api/me", accounts is None)]
+    if menu_refs is not None:
+        register_menu_routes(app, menu_refs, menus or MenuFetcher())
+    switched_off = [
+        ("/api/groups", not groups),
+        ("/api/me", accounts is None),
+        ("/api/places/menu", menu_refs is None),
+    ]
     for prefix, off in switched_off:
         if off:
             _refuse_every_method(app, prefix)
@@ -817,8 +831,11 @@ def _osm_json(facts: OsmFacts | None) -> dict[str, Any] | None:
     }
 
 
-def _place_json(ranked: RankedCandidate, rank: int) -> dict[str, Any]:
+def _place_json(
+    ranked: RankedCandidate, rank: int, menu_refs: MenuRefs | None = None
+) -> dict[str, Any]:
     p = ranked.place
+    menu = {"menu_ref": menu_refs.for_venue(p.website, p.osm)} if menu_refs is not None else {}
     return {
         "id": p.id,
         "name": p.name,
@@ -837,6 +854,8 @@ def _place_json(ranked: RankedCandidate, rank: int) -> dict[str, Any]:
         "matched": p.request_fit > 0,
         "reasons": list(ranked.reasons),
         "fit": ranked.fit.to_json(),
+        # Only with menu facts on: a signed ref the detail sends back to read the venue's menu.
+        **menu,
     }
 
 
@@ -846,6 +865,7 @@ def _recommendation_json(
     mode: Mode,
     query: dict[str, Any],
     recorder: RunRecorder,
+    menu_refs: MenuRefs | None = None,
 ) -> dict[str, Any]:
     warnings, explanation = public_warnings(rec.warnings, rec.explanation)
     rank_of = {r.place.id: i for i, r in enumerate(rec.ranked, start=1)}
@@ -854,9 +874,9 @@ def _recommendation_json(
         "intent": (
             {"cuisine": rec.intent.cuisine, "category": rec.intent.category} if rec.intent else None
         ),
-        "pick": _place_json(rec.pick, 1) if rec.pick else None,
-        "runners_up": [_place_json(r, rank_of[r.place.id]) for r in rec.runners_up],
-        "places": [_place_json(r, i) for i, r in enumerate(rec.ranked, start=1)],
+        "pick": _place_json(rec.pick, 1, menu_refs) if rec.pick else None,
+        "runners_up": [_place_json(r, rank_of[r.place.id], menu_refs) for r in rec.runners_up],
+        "places": [_place_json(r, i, menu_refs) for i, r in enumerate(rec.ranked, start=1)],
         "candidate_count": len(rec.ranked),
         "truncated": rec.truncated,
         "explanation": explanation,
@@ -880,7 +900,9 @@ def _recommendation_json(
     }
 
 
-def _browse_json(result: BrowseResult, mode: Mode, recorder: RunRecorder) -> dict[str, Any]:
+def _browse_json(
+    result: BrowseResult, mode: Mode, recorder: RunRecorder, menu_refs: MenuRefs | None = None
+) -> dict[str, Any]:
     """The same shape as a recommendation, with no pick, no runners-up, and no intent."""
     assert result.places is not None
     return {
@@ -894,7 +916,7 @@ def _browse_json(result: BrowseResult, mode: Mode, recorder: RunRecorder) -> dic
         "intent": None,
         "pick": None,
         "runners_up": [],
-        "places": [_place_json(r, i) for i, r in enumerate(result.places, start=1)],
+        "places": [_place_json(r, i, menu_refs) for i, r in enumerate(result.places, start=1)],
         "candidate_count": len(result.places),
         "truncated": result.truncated,
         "explanation": "The places nearest to you come first. Makan made no recommendation.",
