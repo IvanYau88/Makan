@@ -30,7 +30,14 @@ from makan.places.facts import (
     OsmFacts,
     facts_from_tags,
 )
-from makan.places.osm_format import EXTRACT_FORMAT, NAME_KEYS, TIMESTAMP, Box, ExtractError
+from makan.places.osm_format import (
+    EXTRACT_FORMAT,
+    HOUSE_NUMBER_KEY,
+    NAME_KEYS,
+    TIMESTAMP,
+    Box,
+    ExtractError,
+)
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +71,7 @@ class OsmElement:
     lon: float
     names: frozenset[str]  # every name the element carries, as `name_key` gives them
     facts: OsmFacts
+    house_number: str | None = None  # `addr:housenumber`, as `house_number` gives it
 
 
 def name_key(text: str) -> str:
@@ -81,22 +89,49 @@ def name_key(text: str) -> str:
     return "".join(words)
 
 
+def house_number(text: str | None) -> str | None:
+    """The house number an address starts with, such as "265" or "12a", reduced like a name."""
+    if not text:
+        return None
+    found = re.match(r"\s*(\d+[a-z]?)\b", text.casefold())
+    return found.group(1) if found else None
+
+
 def match(place: Place, elements: Sequence[OsmElement]) -> OsmElement | None:
     """The one element that is this venue, or None.
 
     The rule is deliberately strict, because a wrong match shows another venue's hours:
-    an element matches when it is within `MATCH_RADIUS_M` of the place and one of its names has
-    the same `name_key` as the place's name. When two different elements match, nothing does.
+    an element matches when it is within `MATCH_RADIUS_M` of the place, one of its names has the
+    same `name_key` as the place's name, and, when both give a house number, the numbers agree, so
+    a chain's branch at another address never lends its hours. When two different elements match,
+    nothing does.
     """
     key = name_key(place.name)
     if not key:
         return None
+    number = house_number(place.address)
     hits = {
         e.ref: e
         for e in elements
-        if key in e.names and distance_m(place.lat, place.lon, e.lat, e.lon) <= MATCH_RADIUS_M
+        if key in e.names
+        and distance_m(place.lat, place.lon, e.lat, e.lon) <= MATCH_RADIUS_M
+        and (number is None or e.house_number is None or number == e.house_number)
     }
     return next(iter(hits.values())) if len(hits) == 1 else None
+
+
+def match_all(places: Sequence[Place], elements: Sequence[OsmElement]) -> list[OsmElement | None]:
+    """`match` for each place, except that an element two places at different addresses both
+    match is no one's: one of them is another branch whose source point is off."""
+    found = [match(place, elements) for place in places]
+    addresses: dict[str, set[str]] = {}
+    for place, element in zip(places, found, strict=True):
+        if element is not None:
+            addresses.setdefault(element.ref, set()).add(name_key(place.address or ""))
+    return [
+        element if element is not None and len(addresses[element.ref]) == 1 else None
+        for element in found
+    ]
 
 
 class OsmExtract:
@@ -196,7 +231,12 @@ def _element(row: tuple[Any, ...], source: FactSource) -> OsmElement | None:
         return None
     ref = f"{osm_type}/{osm_id}"
     return OsmElement(
-        ref, float(lat), float(lon), frozenset(names), facts_from_tags(ref, tags, source)
+        ref,
+        float(lat),
+        float(lon),
+        frozenset(names),
+        facts_from_tags(ref, tags, source),
+        house_number(tags.get(HOUSE_NUMBER_KEY)),
     )
 
 
@@ -230,8 +270,7 @@ class OsmEnrichedProvider:
             log.warning("searching without OpenStreetMap facts: %s", exc)
             return places
         enriched = []
-        for place in places:
-            found = match(place, elements)
+        for place, found in zip(places, match_all(places, elements), strict=True):
             facts = found.facts if found is not None else None
             enriched.append(replace(place, osm=facts) if facts and facts.has_facts else place)
         return enriched

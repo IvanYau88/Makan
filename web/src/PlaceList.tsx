@@ -4,7 +4,20 @@ import { PlatePlaceholder } from "./PlatePlaceholder";
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { categoryLabel, distanceLabel } from "./format";
+import { serviceLabels, todayLabel } from "./osm";
 import type { Place } from "./types";
+
+/** Today's mapped hours and what the venue offers, for one short row line. */
+export function osmParts(place: Place, now: Date): string[] {
+  if (!place.osm) return [];
+  const parts = [todayLabel(place.osm, now), ...serviceLabels(place.osm, true)];
+  return parts.filter((part): part is string => !!part);
+}
+
+export function osmLine(place: Place, now: Date): string | null {
+  const parts = osmParts(place, now);
+  return parts.length ? parts.join(" · ") : null;
+}
 
 interface Props {
   places: Place[];
@@ -30,6 +43,7 @@ export function PlaceList({
   inlineDetail,
 }: Props) {
   const selected = useRef<HTMLLIElement>(null);
+  const now = new Date();
   // A pin tapped on the map may be far down the list, so bring its row into view.
   useEffect(() => {
     selected.current?.scrollIntoView?.({ block: "nearest" });
@@ -39,6 +53,7 @@ export function PlaceList({
     <ol className="rows" aria-label="Nearby places">
       {places.map((place) => {
         const isSelected = place.id === selectedId;
+        const mapped = osmParts(place, now);
         return (
           <li
             key={place.id}
@@ -50,7 +65,7 @@ export function PlaceList({
               className="row-button"
               data-place-id={place.id}
               aria-current={isSelected ? "true" : undefined}
-              aria-label={rowLabel(place, place.id === pickId, hasTerms)}
+              aria-label={rowLabel(place, place.id === pickId, hasTerms, mapped)}
               onClick={() => onSelect(place.id)}
               onMouseEnter={() => onHover(place.id)}
               onMouseLeave={() => onHover(null)}
@@ -67,6 +82,7 @@ export function PlaceList({
                 <span className="row-meta">
                   {categoryLabel(place.category)} · {distanceLabel(place.distance_m)}
                 </span>
+                {mapped.length > 0 && <span className="row-osm">{mapped.join(" · ")}</span>}
                 {hasTerms && (
                   <span className={`row-fit${place.matched ? " row-fit-matched" : ""}`}>
                     {place.matched ? "Matches your request" : "Nearby alternative"}
@@ -87,12 +103,13 @@ export function PlaceList({
   );
 }
 
-function rowLabel(place: Place, isPick: boolean, hasTerms: boolean): string {
+function rowLabel(place: Place, isPick: boolean, hasTerms: boolean, mapped: string[]): string {
   const parts = [
     `${place.rank}. ${place.name}${isPick ? " (top pick)" : ""}`,
     categoryLabel(place.category),
     distanceLabel(place.distance_m),
   ];
+  if (mapped.length) parts.push(`mapped on OpenStreetMap: ${mapped.join(", ")}`);
   if (hasTerms) parts.push(place.matched ? "matches your request" : "nearby alternative");
   // With fit off, the visible plate still says Unrated, and nothing else about fit is shown,
   // so the label says no more than that.

@@ -29,7 +29,14 @@ from typing import Any
 import httpx
 
 from makan.places.facts import DIET_KEYS, OSM_LICENCE, SERVICE_VALUES
-from makan.places.osm_format import EXTRACT_FORMAT, NAME_KEYS, TIMESTAMP, Box, ExtractError
+from makan.places.osm_format import (
+    EXTRACT_FORMAT,
+    HOUSE_NUMBER_KEY,
+    NAME_KEYS,
+    TIMESTAMP,
+    Box,
+    ExtractError,
+)
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 USER_AGENT = "Makan-OSM-extract/1 (+https://github.com/IvanYau88/Makan)"
@@ -52,7 +59,7 @@ FACT_KEYS = (
     "check_date",
     "website:menu",
 )
-KEPT_KEYS = frozenset((*NAME_KEYS, "amenity", *FACT_KEYS))
+KEPT_KEYS = frozenset((*NAME_KEYS, HOUSE_NUMBER_KEY, "amenity", *FACT_KEYS))
 MAX_TAG_CHARS = 255  # OpenStreetMap's own limit on a tag value
 TILE_DEGREES = 0.25  # one Overpass query covers at most this much of a degree each way
 MAX_TILES = 16  # about 4 square degrees: a metro area, not a country

@@ -13,12 +13,13 @@ Read `docs/DESIGN.md` before making architectural decisions.
   API keys come from the environment, and `.env.example` documents every variable.
 - Keep model names in config, never hardcoded in the loop.
 - Keep `user_id` optional throughout the schema so guest sessions keep working.
-- Allergies and other hard constraints stay in plain code, and neither a fixed-answer scorer nor a place's listed diet ever decides them.
+- Allergies and other hard constraints stay in plain code, and neither a fixed-answer scorer nor a place's listed diet or OpenStreetMap tag ever decides them.
   Paid Jev is only ever used when `MAKAN_SCORER_BACKEND=jev` is set, never as a fallback.
 - Change the schema with a new numbered file in `migrations/`, and update `makan.models` in the same change.
   Never run the live schema tests against a hosted database: they create and drop their own schema, so use a local Postgres for `MAKAN_TEST_DATABASE_URL`.
 - Every function a migration creates pins `search_path` (see migration `0003`), so Supabase's security advisor stays clean.
 - Cuisine terms for places and diners live only in `makan.cuisines`; changing a term or its source categories needs a new `VOCABULARY_VERSION`, and the frozen Clef states keep `makan.fit.CLEF_CUISINES`.
+- OpenStreetMap facts stay in `Place.osm`, read from a local extract and never from Overpass on a request, and anything that shows one credits "© OpenStreetMap contributors" with the copyright link (ODbL); see "OpenStreetMap venue facts" in `docs/DESIGN.md`.
 - Show people miles and feet, never meters or kilometers.
   Storage and the API stay in meters, and conversion happens at the display and input edges (`web/src/units.ts`, `distance_label` in `makan/places/base.py`).
 - Visits, dishes, ratings and tags are private to their owner.

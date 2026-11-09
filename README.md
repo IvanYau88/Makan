@@ -198,6 +198,11 @@ Keep online fit disabled until the qualification and rollout described in [the d
 With online fit selected, unavailable scoring leaves places Unrated with a reason and never falls back to another model or local numbers.
 The first search in this mode installs DuckDB's `httpfs` extension and reads Overture over the network, which takes several seconds.
 
+Places can also carry soft OpenStreetMap facts (mapped hours, takeout, delivery, diet and access tags) from a local regional extract.
+Build one once, outside any request, with `python -m makan.places.osm_build --bbox WEST,SOUTH,EAST,NORTH --region "Name" --out osm/places.parquet`, which asks the public Overpass server one query per quarter-degree tile, and set `MAKAN_OSM_EXTRACT=osm/places.parquet`.
+Without the setting or the file, places are exactly as before.
+The page credits "© OpenStreetMap contributors" wherever such a fact appears; see [OpenStreetMap venue facts](docs/DESIGN.md#openstreetmap-venue-facts).
+
 For real providers, copy `.env.example` to `.env` and set `MAKAN_MODEL` and `OPENROUTER_API_KEY`.
 The backend loads `.env` from the current directory itself, or the file named by `MAKAN_ENV_FILE`.
 Windows line endings are fine, and a variable already set in the environment is never overridden.
@@ -210,6 +215,7 @@ The public site is guest-only: groups and accounts are off, and the places are r
 `MAKAN_GROUPS_ENABLED` and `MAKAN_ACCOUNTS_ENABLED` are the switches, and `.env.example` lists every variable.
 Run the same app locally with `python -c "from app import app"` after `npm --prefix web run build`, or point uvicorn at `app:app`.
 The proposed project settings, the limits that were checked, and what only a real deployment can show are in `docs/DESIGN.md`, under "Vercel deployment decisions".
+Setting `MAKAN_OSM_BUILD_BBOX` (Production only, so previews do not query Overpass) makes each build write the OpenStreetMap extract into the function; without it, or if Overpass fails, the build still ships with no OpenStreetMap facts.
 
 For front end work, `npm run dev` in `web/` proxies `/api` to the backend on `http://127.0.0.1:8000`.
 There you also have `npm run lint` (eslint and prettier), `npm test` (vitest, with no network calls), and `npm run build`.

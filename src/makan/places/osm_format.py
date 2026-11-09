@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 EXTRACT_FORMAT = "makan-osm-food-v1"
 NAME_KEYS = ("name", "name:en", "official_name", "alt_name")
+HOUSE_NUMBER_KEY = "addr:housenumber"  # kept only to reject a same-named branch at another address
 TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")  # OpenStreetMap's data time
 
 

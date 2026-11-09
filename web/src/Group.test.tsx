@@ -113,7 +113,7 @@ class FakeGroups {
         ? "Try Mid Thai: liked by 1 of 2. Alex is least happy with it."
         : "Try Mid Thai: liked by 1 of 2. Nobody scored it below 0.62.",
       warnings: [
-        "Opening hours, menus, prices, and public reviews are unavailable; verify before going.",
+        "Opening hours, menus, prices, and public reviews are not verified; check before going.",
       ],
       participant_count: this.people.length,
       pending: [],

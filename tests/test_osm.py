@@ -6,6 +6,7 @@ to a mock transport, so nothing reaches the network.
 
 import json
 import logging
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -23,7 +24,9 @@ from makan.places.osm import (
     OsmElement,
     OsmEnrichedProvider,
     OsmExtract,
+    house_number,
     match,
+    match_all,
     name_key,
 )
 from makan.places.osm_build import (
@@ -137,12 +140,16 @@ def test_different_words_never_match(a: str, b: str) -> None:
     assert name_key(a) != name_key(b)
 
 
-def element(ref: str, lat: float, lon: float, *names: str) -> OsmElement:
+def element(ref: str, lat: float, lon: float, *names: str, number: str | None = None) -> OsmElement:
     from makan.places.facts import FactSource, facts_from_tags
 
     source = FactSource("openstreetmap", BASE, OSM_LICENCE, "2026-11-08")
     facts = facts_from_tags(ref, {"takeaway": "yes"}, source)
-    return OsmElement(ref, lat, lon, frozenset(name_key(n) for n in names), facts)
+    return OsmElement(ref, lat, lon, frozenset(name_key(n) for n in names), facts, number)
+
+
+def at(venue: Place, address: str | None) -> Place:
+    return replace(venue, address=address)
 
 
 def test_a_same_named_element_within_the_radius_matches() -> None:
@@ -175,6 +182,40 @@ def test_two_matching_elements_are_ambiguous_so_neither_matches() -> None:
     assert match(venue, [one, two]) is None
 
 
+def test_house_numbers_must_agree_when_both_are_known() -> None:
+    venue = at(place("Dunkin", "coffee_shop", 3.0, 101.0), "265 W 37th St, New York")
+    assert match(venue, [element("node/1", 3.0, 101.0, "Dunkin", number="240")]) is None
+    same = element("node/1", 3.0, 101.0, "Dunkin", number="265")
+    assert match(venue, [same]) == same
+    unknown = element("node/1", 3.0, 101.0, "Dunkin")
+    assert match(venue, [unknown]) == unknown
+    assert match(at(venue, "New York"), [same]) == same  # the place gives no number
+
+
+def test_the_right_branch_wins_when_numbers_tell_them_apart() -> None:
+    venue = at(place("Starbucks", "coffee_shop", 3.0, 101.0), "350 5th Ave")
+    here = element("node/1", 3.0, 101.0, "Starbucks", number="350")
+    there = element("node/2", 3.0 + 20 * METER, 101.0, "Starbucks", number="977")
+    assert match(venue, [here, there]) == here
+
+
+@pytest.mark.parametrize(
+    ("text", "number"),
+    [("265 W 37th St, New York", "265"), ("12A Main St", "12a"), ("Broadway", None), (None, None)],
+)
+def test_house_number(text: str | None, number: str | None) -> None:
+    assert house_number(text) == number
+
+
+def test_one_element_two_places_at_different_addresses_is_no_ones() -> None:
+    one = at(place("Paris Baguette", "bakery", 3.0, 101.0), "567 7th Ave")
+    two = replace(at(one, "990 6th Ave"), id="other")
+    shared = element("node/1", 3.0, 101.0, "Paris Baguette")
+    assert match_all([one, two], [shared]) == [None, None]
+    duplicate = replace(one, id="duplicate")  # two records of one venue at one address
+    assert match_all([one, duplicate], [shared]) == [shared, shared]
+
+
 def test_a_place_with_no_name_left_matches_nothing() -> None:
     venue = place("!!!", "restaurant", 3.0, 101.0)
     assert match(venue, [element("node/1", 3.0, 101.0, "!!!")]) is None
@@ -202,7 +243,15 @@ def test_elements_keep_only_food_places_with_a_name_a_point_and_the_listed_tags(
             node(4, 3.1, 101.6, amenity="bench", name="Not food"),
             node(5, 3.1, 101.6, amenity="cafe"),  # no name
             {"type": "way", "id": 6, "tags": {"amenity": "cafe", "name": "No center"}},
-            node(7, 3.1, 101.6, amenity="cafe", name="Long", cuisine="x" * 300),
+            node(
+                7,
+                3.1,
+                101.6,
+                amenity="cafe",
+                name="Long",
+                cuisine="x" * 300,
+                **{"addr:street": "X"},
+            ),
         ]
     )
     assert [(e.osm_type, e.osm_id) for e in found] == [
@@ -213,7 +262,7 @@ def test_elements_keep_only_food_places_with_a_name_a_point_and_the_listed_tags(
     ]
     assert "phone" not in found[0].tags and found[0].tags["diet:vegan"] == "yes"
     assert found[1].lat == 3.1481  # a way is placed at its center
-    assert "cuisine" not in found[3].tags
+    assert "cuisine" not in found[3].tags and "addr:street" not in found[3].tags
 
 
 def test_a_box_is_cut_into_capped_tiles() -> None:
@@ -427,3 +476,10 @@ def test_write_needs_a_valid_timestamp(tmp_path: Path) -> None:
             osm_base="yesterday",
             built=BUILT,
         )
+
+
+def test_the_extract_keeps_the_house_number_for_matching_only(tmp_path: Path) -> None:
+    numbered = node(8, 3.1485, 101.6951, amenity="cafe", name="N", **{"addr:housenumber": "12A"})
+    (found,) = OsmExtract(str(write(tmp_path, numbered))).nearby(BOX)
+    assert found.house_number == "12a"
+    assert not found.facts.has_facts  # a house number is not a fact anyone is shown
