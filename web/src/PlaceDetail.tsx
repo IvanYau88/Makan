@@ -1,4 +1,5 @@
 import { FitCaption } from "./FitCaption";
+import { MenuDetail, useMenu } from "./MenuDetail";
 import { OsmDetail } from "./OsmDetail";
 import { Plate } from "./Plate";
 import { categoryLabel, distanceLabel } from "./format";
@@ -17,6 +18,20 @@ export function webLink(raw: string | null | undefined): { href: string; host: s
   } catch {
     return null;
   }
+}
+
+/** What the detail cannot vouch for, which depends on what it shows. */
+function caveatText(mappedHours: boolean, dishes: boolean): string {
+  if (mappedHours && dishes) {
+    return "mapped hours and the website's dishes and prices can be out of date, and reviews and dietary suitability are not in this data, so none of them is verified.";
+  }
+  if (mappedHours) {
+    return "mapped hours can be out of date, and price, menus, reviews and dietary suitability are not in this data, so none of them is verified.";
+  }
+  if (dishes) {
+    return "the website's dishes and prices can be out of date, and opening hours, reviews and dietary suitability are not in this data, so none of them is verified.";
+  }
+  return "opening hours, price, menus, reviews and dietary suitability are not in this data, so none of them is verified.";
 }
 
 function listOf(words: string[]): string {
@@ -41,6 +56,9 @@ export function PlaceDetail({ place, isPick, mode, expanded = true, onToggle, on
   const menu = webLink(place.osm?.menu_url);
   const osmPage = webLink(place.osm?.url);
   const mappedHours = !!place.osm?.hours;
+  // Read only once the diner has this place's detail open, never for the list.
+  const [menuRead, retryMenu] = useMenu(place.menu_ref, open);
+  const dishes = menuRead.kind === "ready" && menuRead.facts.status === "found";
   return (
     <section className="detail" aria-labelledby={titleId}>
       <div className="detail-head">
@@ -99,6 +117,12 @@ export function PlaceDetail({ place, isPick, mode, expanded = true, onToggle, on
             </p>
           )}
           {place.osm && <OsmDetail osm={place.osm} placeName={place.name} />}
+          <MenuDetail
+            load={menuRead}
+            placeName={place.name}
+            headingId={`menu-${place.id}`}
+            onRetry={retryMenu}
+          />
           <h4 className="subtitle">Why this option</h4>
           <ul className="reasons">
             {place.reasons.map((reason) => (
@@ -106,18 +130,7 @@ export function PlaceDetail({ place, isPick, mode, expanded = true, onToggle, on
             ))}
           </ul>
           <p className="caveat">
-            {mappedHours ? (
-              <>
-                <strong>Check before going:</strong> mapped hours can be out of date, and price,
-                menus, reviews and dietary suitability are not in this data, so none of them is
-                verified.
-              </>
-            ) : (
-              <>
-                <strong>Check before going:</strong> opening hours, price, menus, reviews and
-                dietary suitability are not in this data, so none of them is verified.
-              </>
-            )}
+            <strong>Check before going:</strong> {caveatText(mappedHours, dishes)}
           </p>
           {mode === "demo" ? (
             <p className="hint">Sample venue for the demo, not a real place.</p>

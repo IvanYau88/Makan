@@ -203,6 +203,9 @@ Build one once, outside any request, with `python -m makan.places.osm_build --bb
 Without the setting or the file, places are exactly as before.
 The page credits "© OpenStreetMap contributors" wherever such a fact appears; see [OpenStreetMap venue facts](docs/DESIGN.md#openstreetmap-venue-facts).
 
+Dishes from a venue's own website are off by default.
+`MAKAN_MENU_FACTS_ENABLED=1` with a random `MAKAN_MENU_FACTS_SECRET` of at least 32 bytes turns them on: opening a place's detail then reads that one venue page, politely and at most once a day, and shows any dish names and prices it lists; see [Venue website dish facts](docs/DESIGN.md#venue-website-dish-facts).
+
 For real providers, copy `.env.example` to `.env` and set `MAKAN_MODEL` and `OPENROUTER_API_KEY`.
 The backend loads `.env` from the current directory itself, or the file named by `MAKAN_ENV_FILE`.
 Windows line endings are fine, and a variable already set in the environment is never overridden.

@@ -964,7 +964,8 @@ Makan has no way to know a meal happened except what the person does in the app,
 - Foursquare is another option with a small free allowance.
 - Overture has no opening hours, ratings, or prices.
   OpenStreetMap adds mapped hours and a few venue facts for the places it matches, from a regional extract, see "OpenStreetMap venue facts".
-  Ratings and prices still depend on a later tool or provider.
+  Dish names and prices can come from a venue's own website, read on demand, see "Venue website dish facts".
+  Ratings still depend on a later tool or provider.
 
 ## Evals and trace viewer
 
@@ -1622,7 +1623,7 @@ Overture names over a hundred kinds of restaurant, but the fit knew eight cuisin
   The places tool tells the model the same: listed cuisines and diets are the source's labels, not menus, and never verify a dietary requirement.
 - **Website and brand:** the place detail links out to the venue's website as a plain link that opens a new tab with `noopener noreferrer`, after Directions and View on OpenStreetMap, and never for demo venues.
   The brand is carried in the API for later use and not shown, since it usually repeats the name.
-  No website is fetched; on-demand menu facts are a later slice.
+  No website is fetched for a search; slice C reads one on demand, see "Venue website dish facts".
 - **API shape:** each serialized place carries `cuisines` and `diets` as `{id, label}` lists, `website` and `brand`, so a client needs no vocabulary to display them.
   Older clients ignore the fields and older servers' places still render.
 - **Clef stays frozen:** the Clef state versions 1 and 2, their schemas, manifests, fixtures and gateway pin are unchanged.
@@ -1694,7 +1695,66 @@ It changes no ranking, no fit score, no hard rule and no default, and makes no l
 - **Clef stays frozen:** no state version 3 in this slice either.
   The facts would need closed vocabularies (`hours_known`, services, diets) and a requalification run, online fit is off and unqualified in production, and the OpenStreetMap facts reach only 17% of places in the measured sample.
   One state version should carry the widened cuisine vocabulary and these facts together, when a pre-registered requalification is authorized.
-- **Not built here:** "open now", holiday calendars, an Overture extract, venue website fetching, and any OpenStreetMap fact in fit or ranking.
+- **Not built here:** "open now", holiday calendars, an Overture extract, and any OpenStreetMap fact in fit or ranking.
+  Venue website fetching came next, in "Venue website dish facts".
+
+### Venue website dish facts
+
+This is slice C of the richer place data plan: real dish names, and prices where listed, read from a restaurant's own website when a diner opens that place.
+No free source has real menus, and dish-level evidence is the first input that could match a diner to specific foods, so it is worth reading the one place that publishes them.
+A probe of 20 venues found about half have a reachable website, and none of 10 had schema.org menu markup, so a careful reading of the page itself is needed too.
+It changes no ranking, no fit score, no hard rule and no Clef state, and calls no model.
+
+- **Off by default:** `MAKAN_MENU_FACTS_ENABLED` (a `_flag`, so a typo is an error) turns it on, and then `MAKAN_MENU_FACTS_SECRET` of at least 32 bytes is required at startup.
+  Off, a place carries no `menu_ref`, `/api/places/menu` answers 404 for every method, and nothing else changes, so merging this leaves the public site as it was.
+- **Only on a detail, never in bulk:** a search serializes each place with `menu_ref`, an HMAC-signed copy of the one URL the server would read for it (`makan.web.menus`), and never fetches anything.
+  The page sends that ref back in `POST /api/places/menu` only when the diner opens that place's detail (for the collapsible map panel, when it is expanded).
+  The server reads only a URL inside a ref it signed, so the endpoint can never be pointed at an address someone chose, and it needs no memory of earlier searches, so it works on any instance that shares the secret.
+  A ref carries no expiry: it names a public venue URL from the source data, and a leaked one can only ask for that venue's page, which the cache answers for a day.
+- **Which page:** the OpenStreetMap `website:menu` link when the venue has one, else the Overture website, skipping any on an ordering, delivery, review, link or social platform (`THIRD_PARTY_HOSTS`, matched on the host and its parent domains).
+  Exactly one page per read: robots.txt for each site the read touches, then the page and at most three redirects, each checked again.
+  Links in the page are never followed, so a home page whose menu is on another page or in a PDF honestly says it has no dish list.
+- **Polite fetching (`makan.places.menu_fetch`):**
+  - A named user agent, `MakanBot/1 (+https://github.com/IvanYau88/Makan; reads one menu page when a diner opens a place)`, and only `Accept`, with no cookie, referrer, credentials or anything about the diner.
+    The request names nothing but the venue's own public URL, and a test checks the headers.
+  - robots.txt is read the RFC 9309 way (`makan.places.robots`): groups by product token, the longest match wins, `allow` wins a tie, and `*` and `$` in paths.
+    Python's `urllib.robotparser` uses first match and ignores wildcards, so it was not used.
+    A missing robots.txt (404, 410 or another 4xx) sets no rules; one that answers 401 or 403 is a no, and one that fails, times out or answers 429 or 5xx means no read now.
+  - A site whose robots.txt keeps out any common AI crawler (GPTBot, ClaudeBot, CCBot, Google-Extended and the others in `AI_CRAWLER_TOKENS`) from the page is treated as a no for Makan too, as the data report recommended.
+  - A 401 or 403 on the page is a no.
+    Only `text/html` and `application/xhtml+xml` are read: a PDF, an image or anything else is unreadable, since reading them would need OCR or a model.
+  - The whole read, robots.txt included, has an 8 second deadline, with each request given only the time left and a 3 second connect limit.
+    A page over 1 MB (by `Content-Length`, or counted while streaming) is not read; robots.txt is read up to 512 KiB, as RFC 9309 asks.
+  - Only http and https on ports 80 and 443, to a host that resolves only to public addresses (`public_host`), so source data can never point the server at its own network.
+    httpx resolves the name again when it connects, so a name that changes its answer in between could still slip through; that needs a hostile venue domain in Overture or OpenStreetMap, and pinning the address in the connection was left out as more machinery than this off-by-default slice needs.
+- **Cache:** in memory only, per URL, like `CachedPlacesProvider`: a read and every refusal are kept for a day, so a site that said no is not asked again, and a failure (timeout, network, 5xx) for ten minutes.
+  Reads of one URL that arrive together wait for the first, so a venue is asked once even when two diners, or React's development double effect, open it at the same moment.
+  The browser keeps answers in the tab until their `expires_at`, so reopening a place asks nobody.
+  At most 512 pages are held, oldest first out.
+- **Facts only (`makan.places.menu_extract`):** a `DishFact` is a name and an optional `Price` (the amount as written, an ISO currency only when the page names one or uses € or £, and the symbol, since a bare "$" names no one currency).
+  `MenuFacts` holds the dishes, the outcome, the page URL, `retrieved_at`, `expires_at` and the method, so every dish's provenance is the object's, as with `OsmFacts`.
+  No page text, description, section name, restaurant prose or image is kept or sent, and at most 50 dishes, with `truncated` saying when there were more.
+  `Place` gains no `dishes` field: dishes never travel with a search result, only in the answer for one opened place.
+  Order of preference: JSON-LD `MenuItem` objects (through `@graph`, `hasMenu`, `hasMenuSection`, `hasMenuItem` and the list keys), then schema.org microdata `MenuItem` elements, then the page's visible text.
+  The text reading takes a block that reads "Dish ... $12.95", or a name block right before a block that is only a price, and needs at least three of them, so one "Draft beer $5.00" is not a menu.
+  It skips scripts, styles, navigation, footers, forms, buttons, and anything hidden (`hidden`, `aria-hidden`, `display: none`, `visibility: hidden`, and the common screen-reader and hidden classes).
+  A name between which and its price sits a description is dropped rather than guessed at, because the block before a price might be the previous dish.
+- **Untrusted text:** every name, from JSON-LD too, must read as a dish: 2 to 80 printable characters, at most eight words, letters, no markup, link, code or price characters, not two sentences or an ingredient list, not a fee, checkout, promotion or add-on line, and no words that address a reader or a model ("ignore", "instructions", "system", "you are", "rate this" and the like).
+  A fixture menu with injection lines, hidden lines and markup keeps only its three real dishes.
+  React renders names as text, and nothing sends them to a model; if a later slice does, they go as data in a pinned shape, never as instructions.
+- **On the page:** the detail shows "From the restaurant's website" after the OpenStreetMap section, with the dishes and their prices (a list over ten shows eight and the rest behind "Show all"), and "Read from host on date" linking the page, which says dishes and prices can change and none is checked for a diet or an allergy.
+  The check-before-going caveat then names the website's dishes and prices as possibly out of date.
+  When nothing could be read, the section says why in plain words (no dish list found, the site asks not to be read, a PDF or image, an ordering platform, no answer) and "Tried host on date" with the link, so the diner can look themselves; a place with no readable website shows no section.
+  The detail asks while it shows "Reading the menu on the restaurant's website…", and a failed request offers "Try again".
+- **Soft only:** a dish name such as "Vegan Pad Thai" is the page's own word, never verified, and never feeds fit, eligibility, exclusion, ranking or the hard-rule warnings.
+- **Clef stays frozen:** no state version 3.
+  Dish names are free text with no pinned vocabulary, they reach only the places a diner opens, and online fit is off and unqualified, so no candidate state carries them; the data report's rule that no dish text enters a state until it has its own pinned vocabulary still holds.
+- **Not used:** the Wikidata dish and USDA FNDDS vocabularies.
+  The extractor finds dishes by structure and price, which a vocabulary would not make more precise, and mapping dishes to cuisines or ingredients belongs to the slice that first lets dishes reach fit.
+  A useful copy is thousands of items fetched from SPARQL or a CSV download, not small, and not needed here.
+- **Tests** use hand-made fixture pages in `tests/fixtures/menus/` in the shapes site builders produce, and an `httpx` mock transport for robots disallow, AI crawler rules, 401 and 403, timeouts, the deadline, oversized pages, content types, charsets, redirects, platforms, private hosts, caching, single flight and the flag; no test touches the network.
+  The detail was checked in a browser at desktop and 390 pixel widths against eight local fixture sites.
+- **Not built here:** PDF or image menus, following a home page's menu link, a persistent or shared cache, a dead-domain closure hint, dish facts in fit, and turning the flag on in production.
 
 ### Map and execution decisions
 

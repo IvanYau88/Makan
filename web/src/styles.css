@@ -1386,6 +1386,57 @@ input[aria-invalid="true"] {
   overflow-wrap: anywhere;
 }
 
+.menu {
+  display: grid;
+  gap: 0.5rem;
+  padding-block: 0.25rem 0.5rem;
+}
+
+.menu-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.menu-failed {
+  align-items: center;
+}
+
+.menu-dishes {
+  display: grid;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+  font-size: 0.9375rem;
+}
+
+.menu-dishes li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  padding: 0.375rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.menu-dish {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.menu-price {
+  flex: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.menu .button-link {
+  justify-self: start;
+  padding-inline: 0;
+}
+
 .source a {
   color: inherit;
   text-decoration: underline;
