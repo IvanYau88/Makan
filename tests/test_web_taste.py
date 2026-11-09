@@ -236,17 +236,21 @@ def test_a_rating_change_through_the_api_refits_on_the_next_search() -> None:
     alice, headers = setup.person("Alice")
     models = TasteModels(setup.services.visits.taste_ratings)
     client = site(setup, models=models)
-    body = {
-        "place": {
-            "data_source": SOURCE,
-            "id": "sushi-bar",
-            "name": "Sushi Bar",
-            "facts": {"cuisines": ["sushi", "japanese"], "diets": [], "hours_known": False},
-        },
-        "rating": 9.5,
-        "party": "solo",
-    }
-    created = [client.post("/api/me/visits", json=body, headers=headers) for _ in range(5)]
+
+    def body(n: int) -> dict[str, Any]:
+        # Five distinct sushi places, since repeat visits to one place count once.
+        return {
+            "place": {
+                "data_source": SOURCE,
+                "id": f"sushi-bar-{n}",
+                "name": f"Sushi Bar {n}",
+                "facts": {"cuisines": ["sushi", "japanese"], "diets": [], "hours_known": False},
+            },
+            "rating": 9.5,
+            "party": "solo",
+        }
+
+    created = [client.post("/api/me/visits", json=body(n), headers=headers) for n in range(5)]
     assert all(r.status_code == 201 for r in created)
     rate(setup, alice, KEBAB, 3.0, 5)
     before = tastes(result(client, BROWSE, False, headers=headers))["Sushi Bar"]
