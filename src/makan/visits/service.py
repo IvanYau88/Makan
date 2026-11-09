@@ -16,6 +16,9 @@
   tagger's value as it was.
 - Taste evidence (`taste_history`) reads only the person's own visits and dish rows, by owner, and
   summarizes them with `makan.visits.evidence`. It never follows a tag to the tagger's visit.
+- The own taste model's ratings (`taste_ratings`) are read the same way: the person's own rated
+  visits with the place facts kept on them when they were saved. Accepting a tag copies the
+  venue's public facts with its name and address, and never the tagger's rating.
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 from uuid import UUID, uuid4
 
 from makan.memory.service import utc_now
@@ -43,6 +46,7 @@ from makan.visits.content import (
     MAX_COMPANIONS,
     MAX_DISH_COMMENT_CHARS,
     MAX_DISHES,
+    PlaceFacts,
     PlaceRef,
     check_visit_date,
     clean_description,
@@ -57,6 +61,8 @@ from makan.visits.evidence import policy as history_policy
 from makan.visits.store import VisitStore
 
 GOING_HERE_WINDOW = timedelta(hours=48)
+# The taste model reads at most this many of the owner's most recent visits.
+TASTE_READ_LIMIT = 1000
 # A reminder is dropped for good once it is this long overdue, so one that was never sent (the
 # sender was down, or the person was away) is not sent weeks late.
 REMINDER_GRACE = timedelta(days=7)
@@ -160,6 +166,16 @@ class VisitSummary:
     dish_count: int
     companions: tuple[str | None, ...]  # accepted tags only, as names
     tagged_by_name: str | None
+
+
+@dataclass(frozen=True)
+class RatedPlace:
+    """One of the owner's own ratings of a place, with the facts that place listed then."""
+
+    visit_id: UUID
+    place: tuple[str, str]  # (place_source, place_id), so repeat visits to a place are known
+    facts: PlaceFacts
+    rating: Decimal
 
 
 @dataclass(frozen=True)
@@ -290,6 +306,7 @@ class Visits:
             description=clean_description(description),
             created_at=now,
             updated_at=now,
+            **_facts_columns(place.facts),
         )
         rows = _dish_rows(visit_id, user, dishes, {}, now)
         self.store.add_visit(visit, rows, going_here_id=going_here_id)
@@ -343,6 +360,23 @@ class Visits:
             return owner_history(user, (), (), self._today(), complete=False)
         return owner_history(user, visits, self.store.dishes_by_owner(user), self._today())
 
+    def taste_ratings(self, user_id: UUID | None) -> list[RatedPlace]:
+        """The person's own rated visits that kept the place's facts, newest meal first.
+
+        Only the person's own visits are read, by owner, and a rating counts only once they gave
+        or confirmed it, so a visit made from a tag counts after they answer it. At most the
+        `TASTE_READ_LIMIT` most recent visits are read.
+        """
+        user = _signed_in(user_id)
+        return [
+            RatedPlace(v.id, (v.place_source, v.place_id), facts, v.rating)
+            for v in self.store.list_visits(user, limit=TASTE_READ_LIMIT)
+            if v.user_id == user
+            and v.rating is not None
+            and v.rating_origin is not None
+            and (facts := place_facts(v)) is not None
+        ]
+
     def _today(self) -> date:
         return self._clock().astimezone(UTC).date()
 
@@ -374,6 +408,10 @@ class Visits:
                 "place_name": place.name,
                 "place_address": place.address,
             }
+            # New facts replace the old. A different place without facts keeps none, since the
+            # old ones describe another venue, and the same place without facts keeps its own.
+            if place.facts is not None or moved:
+                changes |= _facts_columns(place.facts)
         if not isinstance(rating, _Unset):
             if rating is None:
                 if visit.rating is not None:
@@ -500,6 +538,8 @@ class Visits:
                 created_at=now,
                 updated_at=now,
                 tagged_by_user_id=tag.tagger_id,
+                # Public facts about the venue, like its name and address. No rating comes along.
+                **_facts_columns(place_facts(source)),
             )
             if accept
             else None
@@ -758,3 +798,34 @@ def _dish_rows(
             )
         )
     return rows
+
+
+def place_facts(visit: Visit) -> PlaceFacts | None:
+    """The facts a visit kept about its place, or None for a visit saved without them."""
+    if (
+        visit.place_cuisines is None
+        or visit.place_diets is None
+        or visit.place_dishes is None
+        or visit.place_hours_known is None
+    ):
+        return None
+    return PlaceFacts(
+        visit.place_cuisines, visit.place_diets, visit.place_dishes, visit.place_hours_known
+    )
+
+
+def _facts_columns(facts: PlaceFacts | None) -> dict[str, Any]:
+    """The visit columns that keep `facts`, all None together when there are none."""
+    if facts is None:
+        return {
+            "place_cuisines": None,
+            "place_diets": None,
+            "place_dishes": None,
+            "place_hours_known": None,
+        }
+    return {
+        "place_cuisines": facts.cuisines,
+        "place_diets": facts.diets,
+        "place_dishes": facts.dishes,
+        "place_hours_known": facts.hours_known,
+    }

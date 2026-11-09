@@ -1,4 +1,4 @@
-from makan.visits.content import PlaceRef, parse_place, parse_rating
+from makan.visits.content import PlaceFacts, PlaceRef, parse_place, parse_place_facts, parse_rating
 from makan.visits.errors import (
     Conflict,
     InvalidVisit,
@@ -8,10 +8,12 @@ from makan.visits.errors import (
 )
 from makan.visits.service import (
     TAG_SHARING_NOTICE,
+    TASTE_READ_LIMIT,
     UNSET,
     Answered,
     DishAnswer,
     DishInput,
+    RatedPlace,
     RatingAnswer,
     SharedDish,
     SharedView,
@@ -20,6 +22,7 @@ from makan.visits.service import (
     Visits,
     VisitSummary,
     VisitView,
+    place_facts,
 )
 from makan.visits.store import InMemoryVisitStore, VisitStore
 
@@ -27,6 +30,7 @@ from makan.visits.store import InMemoryVisitStore, VisitStore
 
 __all__ = [
     "TAG_SHARING_NOTICE",
+    "TASTE_READ_LIMIT",
     "UNSET",
     "Answered",
     "Conflict",
@@ -35,7 +39,9 @@ __all__ = [
     "InMemoryVisitStore",
     "InvalidVisit",
     "NotFound",
+    "PlaceFacts",
     "PlaceRef",
+    "RatedPlace",
     "RatingAnswer",
     "SharedDish",
     "SharedView",
@@ -48,5 +54,7 @@ __all__ = [
     "VisitView",
     "Visits",
     "parse_place",
+    "parse_place_facts",
     "parse_rating",
+    "place_facts",
 ]

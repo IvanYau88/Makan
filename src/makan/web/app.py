@@ -67,6 +67,7 @@ from makan.providers.unavailable import UnavailableProvider
 from makan.sessions import GroupSessions, InMemorySessionStore
 from makan.sessions.service import MAX_REQUEST_CHARS
 from makan.solo import (
+    Candidate,
     RankedCandidate,
     Recommendation,
     SoloRequest,
@@ -74,6 +75,8 @@ from makan.solo import (
     build_solo_graph,
     recommend,
 )
+from makan.taste_model import TasteModels, place_facts
+from makan.visits import PlaceFacts
 from makan.web.accounts import (
     AccountServices,
     build_account_services,
@@ -176,6 +179,7 @@ def create_app(
     accounts: AccountServices | None = None,
     fit_strategy: FitStrategy | None = None,
     menus: MenuFetcher | None = None,
+    taste_models: TasteModels | None = None,
 ) -> FastAPI:
     """Build the app around ready providers. Tests pass fakes, and the CLI passes real ones.
 
@@ -197,11 +201,19 @@ def create_app(
     With `config.menu_facts.enabled`, places with a website carry a signed `menu_ref`, and
     `/api/places/menu` reads that one venue page through `menus` (a default `MenuFetcher` when
     None). Off, places carry no ref and the endpoint answers 404.
+
+    With `config.taste_model_enabled` and `accounts`, a signed-in diner's places carry a `taste`
+    estimate from their own model (`taste_models`, by default one fitted from their own visits)
+    once they have enough rated visits. Otherwise the response is exactly as without it.
     """
     # A group needs the language model to pick, so there are none in a run with no model.
     fit_strategy = fit_strategy or FitStrategy(config)
     fit_sessions = FitSessions(config.fit.hmac_secret)
     menu_refs = MenuRefs(config.menu_facts.secret) if config.menu_facts.enabled else None
+    if not config.taste_model_enabled or accounts is None:
+        taste_models = None
+    elif taste_models is None:
+        taste_models = TasteModels(accounts.visits.taste_ratings)
     groups = config.groups_enabled and mode != "places"
     group_sessions: GroupSessions | None = None
     if groups:
@@ -315,6 +327,26 @@ def create_app(
                 identity = None
             if identity is not None:
                 await fit_strategy.purge(f"owner:{identity.user_id}")
+        return response
+
+    @app.middleware("http")
+    async def forget_deleted_taste(request: Request, call_next: Any) -> Any:
+        """A deleted account's taste model leaves memory at once, not when it ages out."""
+        response = await call_next(request)
+        if (
+            taste_models is not None
+            and request.method == "DELETE"
+            and request.url.path == "/api/me"
+            and response.status_code < 400
+        ):
+            try:
+                identity = await run_in_threadpool(
+                    optional_identity, request, request.headers.get("authorization")
+                )
+            except ApiError:
+                identity = None
+            if identity is not None:
+                taste_models.forget(identity.user_id)
         return response
 
     # The stages of the full solo graph, so a browse run can show the ones it skipped.
@@ -433,7 +465,24 @@ def create_app(
                     )
             # A separate bounded summary: fit is decoration, never a fictional graph stage.
             recorder.fit_summary(summary)
-            return assessed
+            return personal(assessed)
+
+        def personal(ranked: tuple[RankedCandidate, ...]) -> tuple[RankedCandidate, ...]:
+            """The signed-in diner's own estimates, on places the hard rules already kept.
+
+            Only their own model is read. Without one (a guest, too few ratings, the switch off,
+            or a failure) every place stays exactly as it was, and nothing is reordered.
+            """
+            if taste_models is None or identity is None:
+                return ranked
+            try:
+                model = taste_models.for_owner(identity.user_id)
+            except Exception:
+                log.exception("could not fit the taste model")
+                return ranked
+            if model is None:
+                return ranked
+            return tuple(replace(r, taste=model.estimate(_taste_facts(r.place))) for r in ranked)
 
         if body.mode == "browse":
             found = browse(
@@ -831,11 +880,17 @@ def _osm_json(facts: OsmFacts | None) -> dict[str, Any] | None:
     }
 
 
+def _taste_facts(place: Candidate) -> PlaceFacts:
+    return place_facts(place.cuisines, place.diets, place.osm.opening_hours if place.osm else None)
+
+
 def _place_json(
     ranked: RankedCandidate, rank: int, menu_refs: MenuRefs | None = None
 ) -> dict[str, Any]:
     p = ranked.place
     menu = {"menu_ref": menu_refs.for_venue(p.website, p.osm)} if menu_refs is not None else {}
+    # Only for the signed-in diner it belongs to, and only when they have a model.
+    taste = {"taste": ranked.taste.to_json()} if ranked.taste is not None else {}
     return {
         "id": p.id,
         "name": p.name,
@@ -856,6 +911,7 @@ def _place_json(
         "fit": ranked.fit.to_json(),
         # Only with menu facts on: a signed ref the detail sends back to read the venue's menu.
         **menu,
+        **taste,
     }
 
 

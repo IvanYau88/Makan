@@ -30,6 +30,23 @@ export interface Place {
   reasons: string[];
   /** Optional for compatibility with older servers. A missing assessment is Unrated. */
   fit?: FitAssessment | null;
+  /**
+   * The signed-in diner's own taste estimate, from a model fitted only on their own ratings.
+   * Present only for them, once they have rated enough places, and never changes the order.
+   */
+  taste?: TasteEstimate | null;
+}
+
+export interface TasteEstimate {
+  /** On the diner's own rating scale, in half steps. */
+  score: number;
+  scale: number;
+  /** True below the number of ratings at which the score is settled. */
+  estimate: boolean;
+  ratings: number;
+  /** One plain line, such as "You tend to like Japanese." */
+  why: string;
+  policy_version: string;
 }
 
 export interface FitAssessment {

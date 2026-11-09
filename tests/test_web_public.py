@@ -105,6 +105,8 @@ def test_the_root_entrypoint_exports_an_app_without_any_key_or_remote_work(
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("SUPABASE_URL", "https://project.supabase.test")  # half set, and ignored
     monkeypatch.setenv("MAKAN_FIT_ENABLED", fit)
+    # Even switched on by mistake, the own taste model needs accounts, which stay off here.
+    monkeypatch.setenv("MAKAN_TASTE_MODEL_ENABLED", fit)
     spec = importlib.util.spec_from_file_location("vercel_entrypoint", ROOT / "app.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

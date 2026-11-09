@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
+from makan.cuisines import CUISINE_IDS, DIET_LABELS
 from makan.visits.errors import InvalidVisit
 
 MIN_RATING = Decimal(0)
@@ -36,6 +37,10 @@ MAX_TAG_CHARS = 40
 MAX_TAGS_PER_DISH = 20
 MAX_DISHES = 50
 MAX_COMPANIONS = 10
+# A place's facts kept on a visit, matching the bounds in migration 0005.
+MAX_PLACE_CUISINES = 20
+MAX_PLACE_DIETS = 10
+MAX_PLACE_DISHES = 50
 
 EARLIEST_VISIT = date(2000, 1, 1)
 _SOURCE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
@@ -92,21 +97,76 @@ def clean_description(raw: str | None) -> str | None:
 
 
 @dataclass(frozen=True)
+class PlaceFacts:
+    """What a place listed when it was rated, kept on the visit for the owner's taste model.
+
+    `cuisines` are vocabulary ids (`makan.cuisines`) and `diets` the source's soft diet labels,
+    each unique and in the order given. `dishes` are the dish names the place lists, when they
+    were known (empty otherwise), and `hours_known` says whether its weekly hours were readable.
+    None of these is ever a safety fact: a listed diet decides nothing.
+    """
+
+    cuisines: tuple[str, ...] = ()
+    diets: tuple[str, ...] = ()
+    dishes: tuple[str, ...] = ()
+    hours_known: bool = False
+
+
+@dataclass(frozen=True)
 class PlaceRef:
-    """A restaurant as the places layer names it: the provider family and that provider's id."""
+    """A restaurant as the places layer names it: the provider family and that provider's id.
+
+    `facts` is what the place listed, when the client sent it, to keep with a rating.
+    """
 
     source: str
     id: str
     name: str
     address: str | None = None
+    facts: PlaceFacts | None = None
 
 
-def parse_place(data_source: str, place_id: str, name: str, address: str | None = None) -> PlaceRef:
+def parse_place_facts(
+    cuisines: Sequence[str],
+    diets: Sequence[str],
+    dishes: Sequence[str] = (),
+    hours_known: bool = False,
+) -> PlaceFacts:
+    """Check place facts against the vocabularies, so only known ids and bounded text are kept.
+
+    Repeated ids are kept once. A dish name is cleaned like a typed one, and an empty one is
+    dropped, since a listed menu can have blank entries.
+    """
+    if len(cuisines) > MAX_PLACE_CUISINES or not set(cuisines) <= CUISINE_IDS:
+        raise InvalidVisit("The place's cuisines must be terms from the cuisine vocabulary.")
+    if len(diets) > MAX_PLACE_DIETS or not set(diets) <= set(DIET_LABELS):
+        raise InvalidVisit("The place's diets must be known diet labels.")
+    if len(dishes) > MAX_PLACE_DISHES:
+        raise InvalidVisit(f"Send {MAX_PLACE_DISHES} of the place's dishes or fewer.")
+    if type(hours_known) is not bool:
+        raise InvalidVisit("Say whether the place's hours are known.")
+    names = (clean_text(d, "dish name", max_chars=MAX_DISH_NAME_CHARS) for d in dishes)
+    return PlaceFacts(
+        tuple(dict.fromkeys(cuisines)),
+        tuple(dict.fromkeys(diets)),
+        tuple(name for name in names if name),
+        hours_known,
+    )
+
+
+def parse_place(
+    data_source: str,
+    place_id: str,
+    name: str,
+    address: str | None = None,
+    facts: PlaceFacts | None = None,
+) -> PlaceRef:
     """Qualify a place id by its provider, so two venues never merge by name or across providers.
 
     `data_source` is the places provider's `name` (such as `overture:2026-09-23.1`), which the
     search response carries as `data_source`. Only the family before the colon is kept, since the
-    release is a version of the data and not part of what the venue is.
+    release is a version of the data and not part of what the venue is. `facts` are already
+    checked by `parse_place_facts`.
     """
     source = data_source.split(":", 1)[0].strip().lower()
     if not _SOURCE.match(source):
@@ -122,6 +182,7 @@ def parse_place(data_source: str, place_id: str, name: str, address: str | None 
         clean_id,
         clean_name,
         clean_optional(address, "place address", max_chars=MAX_PLACE_ADDRESS_CHARS),
+        facts,
     )
 
 

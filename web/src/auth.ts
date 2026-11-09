@@ -67,6 +67,23 @@ export interface AuthSession {
 
 export type SignUpResult = "signed_in" | "confirm_email";
 
+// One client per project: two would share one storage key and race each other's refreshes, which
+// React's development double render of the page's `useMemo` would otherwise cause.
+const clients = new Map<string, SupabaseClient>();
+
+function sharedClient(settings: AuthSettings): SupabaseClient {
+  const key = `${settings.url}\n${settings.anon_key}`;
+  let client = clients.get(key);
+  if (!client) {
+    client = createClient(settings.url, settings.anon_key, {
+      // PKCE keeps the confirmation link from carrying a usable token in the address bar.
+      auth: { flowType: "pkce", persistSession: true, autoRefreshToken: true },
+    });
+    clients.set(key, client);
+  }
+  return client;
+}
+
 /** The few things the page does with Supabase Auth, over a client that can be swapped in a test. */
 export class Auth {
   private readonly client: SupabaseClient;
@@ -75,12 +92,7 @@ export class Auth {
 
   constructor(settings: AuthSettings, client?: SupabaseClient) {
     this.redirect = settings.redirect_url;
-    this.client =
-      client ??
-      createClient(settings.url, settings.anon_key, {
-        // PKCE keeps the confirmation link from carrying a usable token in the address bar.
-        auth: { flowType: "pkce", persistSession: true, autoRefreshToken: true },
-      });
+    this.client = client ?? sharedClient(settings);
   }
 
   /** The current session, refreshed first if its token ran out. Null when signed out. */

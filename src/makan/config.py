@@ -184,6 +184,8 @@ class Config:
     fit_enabled: bool = False  # display fit; online scoring also needs fit.online_enabled
     fit: FitConfig = field(default_factory=FitConfig)
     menu_facts: MenuFactsConfig = field(default_factory=MenuFactsConfig)
+    # A signed-in diner's own taste model (`makan.taste_model`), which also needs accounts.
+    taste_model_enabled: bool = False
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -269,6 +271,7 @@ class Config:
                 enabled=_flag(env, "MAKAN_MENU_FACTS_ENABLED", False),
                 secret=env.get("MAKAN_MENU_FACTS_SECRET", "").strip(),
             ),
+            taste_model_enabled=_flag(env, "MAKAN_TASTE_MODEL_ENABLED", False),
         )
 
 

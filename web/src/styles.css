@@ -3136,6 +3136,47 @@ html {
   min-width: 0;
 }
 
+/* The diner's own score: their number on their own scale, then one plain reason. */
+.taste {
+  display: grid;
+  gap: 0.0625rem;
+  min-width: 0;
+  margin-block: var(--space-1);
+}
+.taste-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-2);
+}
+.taste-score {
+  color: var(--accent);
+  font-size: var(--type-card);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.taste-scale {
+  margin-left: -0.375rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+.taste-name {
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.taste-why {
+  max-width: 65ch;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.taste-detail .taste-score {
+  font-size: var(--type-section);
+}
 /* Fit provenance stays beside the existing plate, with no new badge language. */
 .fit-caption {
   display: block;

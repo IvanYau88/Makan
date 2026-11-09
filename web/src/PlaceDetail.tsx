@@ -2,6 +2,7 @@ import { FitCaption } from "./FitCaption";
 import { MenuDetail, useMenu } from "./MenuDetail";
 import { OsmDetail } from "./OsmDetail";
 import { Plate } from "./Plate";
+import { TasteLine } from "./TasteLine";
 import { categoryLabel, distanceLabel } from "./format";
 import { hasCoordinates } from "./places";
 import type { Mode, Place } from "./types";
@@ -70,6 +71,7 @@ export function PlaceDetail({ place, isPick, mode, expanded = true, onToggle, on
             {isPick && <span className="chip">Top pick</span>}
           </div>
           <p className="meta">{categoryLabel(place.category)}</p>
+          <TasteLine taste={place.taste} detail />
           <Plate score={place.fit?.score} />
           <FitCaption fit={place.fit} />
           <p className="meta">

@@ -28,6 +28,7 @@ from makan.visits import (
     Answered,
     DishAnswer,
     DishInput,
+    PlaceFacts,
     PlaceRef,
     RatingAnswer,
     SharedView,
@@ -37,6 +38,8 @@ from makan.visits import (
     VisitSummary,
     VisitView,
     parse_place,
+    parse_place_facts,
+    place_facts,
 )
 from makan.web.accounts import AccountServices, guarded, required_identity
 from makan.web.errors import ApiError, error
@@ -50,6 +53,24 @@ Note = Annotated[str, StringConstraints(max_length=8000)]
 Party = Literal["solo", "with_others"]
 
 
+class PlaceFactsBody(BaseModel):
+    """What the place listed in the search it came from, kept with a rating for the owner's own
+    taste model: the ids of its `cuisines` and `diets`, whether its `osm.hours` were listed, and
+    the dish names its menu listed when the diner read it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cuisines: Annotated[
+        list[Annotated[str, StringConstraints(max_length=40)]], Field(max_length=100)
+    ]
+    diets: Annotated[list[Annotated[str, StringConstraints(max_length=40)]], Field(max_length=100)]
+    dishes: Annotated[list[Name], Field(max_length=200)] = []
+    hours_known: bool = Field(strict=True)
+
+    def parsed(self) -> PlaceFacts:
+        return parse_place_facts(self.cuisines, self.diets, self.dishes, self.hours_known)
+
+
 class PlaceBody(BaseModel):
     """A place as a search returned it: its id and name, and the `data_source` of that search."""
 
@@ -59,9 +80,11 @@ class PlaceBody(BaseModel):
     id: Annotated[str, StringConstraints(max_length=1000)]
     name: Name
     address: Annotated[str | None, StringConstraints(max_length=1000)] = None
+    facts: PlaceFactsBody | None = None
 
     def parsed(self) -> PlaceRef:
-        return parse_place(self.data_source, self.id, self.name, self.address)
+        facts = self.facts.parsed() if self.facts is not None else None
+        return parse_place(self.data_source, self.id, self.name, self.address, facts)
 
 
 class DishBody(BaseModel):
@@ -166,6 +189,17 @@ def _place_json(row: Visit | GoingHere) -> dict[str, Any]:
     }
 
 
+def _facts_json(facts: PlaceFacts | None) -> dict[str, Any] | None:
+    if facts is None:
+        return None
+    return {
+        "cuisines": list(facts.cuisines),
+        "diets": list(facts.diets),
+        "dishes": list(facts.dishes),
+        "hours_known": facts.hours_known,
+    }
+
+
 def _going_here_json(m: GoingHere) -> dict[str, Any]:
     return {
         "id": str(m.id),
@@ -219,7 +253,7 @@ def _visit_json(view: VisitView) -> dict[str, Any]:
     v = view.visit
     return {
         "id": str(v.id),
-        "place": _place_json(v),
+        "place": {**_place_json(v), "facts": _facts_json(place_facts(v))},
         "visited_on": v.visited_on.isoformat(),
         "party": v.party,
         "rating": _num(v.rating),
