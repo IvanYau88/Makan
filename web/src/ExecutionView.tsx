@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { FitNotice } from "./FitCaption";
 import { FlowGraph } from "./FlowGraph";
-import { coordinateLabel, durationLabel, radiusLabel } from "./format";
+import { coordinateLabel, durationLabel, radiusLabel, usUnitsForDisplay } from "./format";
 import type { HistoryEntry } from "./history";
 import {
   STAGE_INFO,
@@ -314,7 +314,7 @@ function Json({ title, value }: { title: string; value: unknown }) {
     <div className="json">
       <h4 className="subtitle">{title}</h4>
       <pre tabIndex={0} role="region" aria-label={`${title}, as JSON`}>
-        {JSON.stringify(value, null, 2)}
+        {JSON.stringify(usUnitsForDisplay(value), null, 2)}
       </pre>
     </div>
   );

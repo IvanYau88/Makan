@@ -4,6 +4,7 @@ import {
   distanceLabel,
   durationLabel,
   radiusLabel,
+  usUnitsForDisplay,
 } from "./format";
 
 describe("format", () => {
@@ -20,6 +21,21 @@ describe("format", () => {
     expect(distanceLabel(482)).toBe("~0.3 mi");
     expect(distanceLabel(1609)).toBe("~1.0 mi");
     expect(distanceLabel(5000)).toBe("~3.1 mi");
+  });
+
+  it("rewrites every meter value in run JSON as miles and feet, and leaves the rest alone", () => {
+    const run = {
+      searched: { latitude: 3.148, radius_m: 1609 },
+      places: [{ name: "Ny - Times Square", distance_m: 34, rank: 1 }],
+      count: 1,
+    };
+    expect(usUnitsForDisplay(run)).toEqual({
+      searched: { latitude: 3.148, radius: "1 mi" },
+      places: [{ name: "Ny - Times Square", distance: "~110 ft", rank: 1 }],
+      count: 1,
+    });
+    expect(usUnitsForDisplay(null)).toBeNull();
+    expect(usUnitsForDisplay("radius_m")).toBe("radius_m");
   });
 
   it("labels radii, coordinates and durations", () => {

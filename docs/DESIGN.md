@@ -1600,6 +1600,8 @@ There is no generated evidence table, inference transport, background enrichment
   A distance reads in miles to one decimal, and in feet (to the nearest 10) under a tenth of a mile, since "0.0 mi" says nothing.
   The same words come from `distance_label` in `makan/places/base.py` for the backend's "why this option" reasons, so the two must change together.
   Tool text for the model stays in meters, because the model never shows it to anyone.
+  The Execution view prints run JSON, so it is the one screen where a meter value could reach a person.
+  It converts instead of hiding: `usUnitsForDisplay` in `web/src/format.ts` rewrites every numeric key ending `_m` before printing, so `radius_m` shows as `radius` in miles and `distance_m` as `distance` in miles or feet, and the run record and its API keep meters.
 - **The map starts on the person, not a country of ours:** on load the page asks the browser for the location once, and the map starts there at the zoom that fits the chosen radius.
   When the browser cannot say or the person declines, nothing is shown as an error, and the map shows the contiguous United States instead, centered on its geographic middle (`US_CENTER` in `web/src/geo.ts`), which is a view and not a place to search.
   While the map is in that state, "Find food here" asks for the person's location instead of searching the middle of Kansas, until they zoom in to town scale (zoom 10), use their location, or type coordinates.

@@ -94,7 +94,11 @@ function rowLabel(place: Place, isPick: boolean, hasTerms: boolean): string {
     distanceLabel(place.distance_m),
   ];
   if (hasTerms) parts.push(place.matched ? "matches your request" : "nearby alternative");
-  if (place.fit) {
+  // With fit off, the visible plate still says Unrated, and nothing else about fit is shown,
+  // so the label says no more than that.
+  if (place.fit?.reason === "disabled") {
+    parts.push("Unrated");
+  } else if (place.fit) {
     parts.push(
       place.fit.score === null
         ? `Unrated. ${place.fit.explanation}`

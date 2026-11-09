@@ -4,7 +4,7 @@ import { onTestFinished } from "vitest";
 import L from "leaflet";
 import { App } from "./App";
 import { BROWSE_RESULT, RESULT, browseRun, place, run, scoredRun, stage } from "./test-fixtures";
-import type { AppFeatures, Mode, Recommendation, Run } from "./types";
+import type { AppFeatures, Mode, Place, Recommendation, Run } from "./types";
 
 type Handler = (body: Record<string, unknown>) => Response | Promise<Response>;
 
@@ -1288,6 +1288,80 @@ describe("Search mode", () => {
     await user.click(pickForMe());
     expect(screen.getByRole("heading", { name: "Places nearby" })).toBeInTheDocument();
     expect(screen.queryByText("Top pick")).not.toBeInTheDocument();
+  });
+
+  it("leaves the fit explanation out of a place's label while fit is off", async () => {
+    const offFit: Place["fit"] = {
+      score: null,
+      status: "disabled",
+      basis: "cuisine_profile",
+      policy_version: "test",
+      reason: "disabled",
+      explanation: "Cuisine fit is not enabled.",
+    };
+    const unsure: Place["fit"] = {
+      ...offFit,
+      status: "no_taste",
+      reason: "no_taste",
+      explanation: "Add tastes to see fit.",
+    };
+    stubApi(() =>
+      answer({
+        ...BROWSE_RESULT,
+        places: [
+          place("Chuy's Fiestas", 110, { category: "mexican_restaurant", fit: offFit }),
+          place("Taco Corner", 140, { category: "mexican_restaurant", rank: 2, fit: unsure }),
+        ],
+      }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(browseNearby());
+    await user.click(browseHere());
+    await screen.findByRole("heading", { name: "Places nearby" });
+    const rows = within(screen.getByRole("list", { name: "Nearby places" }));
+    expect(
+      rows.getByRole("button", { name: "1. Chuy's Fiestas, Mexican restaurant, ~360 ft, Unrated" }),
+    ).toBeInTheDocument();
+    expect(rows.getByRole("button", { name: /^2\. Taco Corner/ })).toHaveAccessibleName(
+      "2. Taco Corner, Mexican restaurant, ~460 ft, Unrated. Add tastes to see fit.",
+    );
+    expect(screen.queryByText(/not enabled/)).not.toBeInTheDocument();
+  });
+
+  it("shows a browse run's distances in miles and feet, never in meters", async () => {
+    const searched = browseRun();
+    const stages = searched.stages.map((s) =>
+      s.name === "nearby_places"
+        ? stage("nearby_places", {
+            after: [],
+            input: {
+              tool: "search_nearby_places",
+              latitude: 3.148,
+              longitude: 101.695,
+              radius_m: 1609,
+            },
+            output: {
+              count: 1,
+              places: [{ name: "Ny - Times Square", category: "cafe", distance_m: 34 }],
+              more: 0,
+            },
+          })
+        : s,
+    );
+    stubApi(() => answer({ ...BROWSE_RESULT, run: { ...searched, stages } }));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(browseNearby());
+    await user.click(browseHere());
+    await screen.findByRole("heading", { name: "Places nearby" });
+    await user.click(screen.getByRole("button", { name: "Execution" }));
+
+    await user.click(screen.getByRole("button", { name: /^Nearby places/ }));
+    const detail = screen.getByRole("region", { name: "Nearby places" });
+    expect(detail).toHaveTextContent('"radius": "1 mi"');
+    expect(detail).toHaveTextContent('"distance": "~110 ft"');
+    expect(detail.textContent).not.toMatch(/_m"|\d\s*m\b/);
   });
 
   it("says a browse run skipped the model stages in the Execution view", async () => {
